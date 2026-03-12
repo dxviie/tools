@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- tool-meta: {"name":"PTPX Postcard Plotter","slug":"ptpx-postcard-plotter","description":"Postcard back generator — lays out 4× A6 cards on A4 with Hershey single-stroke text, address lines, stamp boxes, and Inkscape layers ready for plotting.","tags":["postcard","plotter","hershey","inkscape"]} -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PTPX · Postcard Back Generator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+
+  :root {
+    --bg:#0e0e0e; --panel:#161616; --border:#2a2a2a; --border-hi:#404040;
+    --accent:#c8f060; --accent-dim:#8aaa3a; --text:#d4d4d4; --text-dim:#666;
+    --text-muted:#444; --input-bg:#1c1c1c; --mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;
+       height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+
+  header{display:flex;align-items:center;gap:16px;padding:10px 20px;
+         border-bottom:1px solid var(--border);flex-shrink:0;}
+  .logo{font-size:11px;font-weight:500;letter-spacing:.18em;color:var(--accent);text-transform:uppercase;}
+  .subtitle{font-size:11px;color:var(--text-dim);letter-spacing:.05em;}
+  .header-right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .badge{font-size:10px;padding:2px 8px;border:1px solid var(--border-hi);color:var(--text-dim);letter-spacing:.1em;}
+
+  .main{display:grid;grid-template-columns:310px 1fr;flex:1;overflow:hidden;}
+
+  .sidebar{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+  .section{border-bottom:1px solid var(--border);padding:10px 13px;flex-shrink:0;}
+  .section-label{font-size:10px;letter-spacing:.16em;color:var(--text-dim);text-transform:uppercase;
+                 margin-bottom:6px;display:flex;align-items:center;gap:8px;}
+  .section-label .count{color:var(--accent);font-weight:500;}
+
+  textarea,input[type=text],input[type=number],select{
+    background:var(--input-bg);border:1px solid var(--border);color:var(--text);
+    font-family:var(--mono);font-size:11.5px;line-height:1.6;outline:none;transition:border-color .15s;}
+  textarea{width:100%;padding:7px 10px;resize:none;}
+  textarea::placeholder,input::placeholder{color:var(--text-muted);}
+  textarea:focus,input:focus,select:focus{border-color:var(--border-hi);}
+  input[type=text],input[type=number]{padding:4px 7px;}
+  select{padding:4px 7px;cursor:pointer;}
+  select option{background:var(--panel);}
+
+  .addresses-wrap{flex:1;overflow:hidden;display:flex;flex-direction:column;
+                  padding:10px 13px;gap:6px;min-height:0;}
+  #addressInput{flex:1;min-height:0;}
+  .hint{font-size:10px;color:var(--text-muted);line-height:1.6;flex-shrink:0;}
+  .hint code{color:var(--text-dim);background:#222;padding:0 3px;}
+
+  .actions{padding:9px 13px;display:flex;flex-direction:column;gap:5px;
+           border-top:1px solid var(--border);flex-shrink:0;}
+  .row{display:flex;gap:5px;}
+
+  button{font-family:var(--mono);font-size:11px;letter-spacing:.1em;cursor:pointer;
+         padding:6px 11px;border:1px solid var(--border-hi);transition:all .12s;text-transform:uppercase;}
+  .btn-primary{background:var(--accent);color:#0e0e0e;font-weight:500;border-color:var(--accent);flex:1;}
+  .btn-primary:hover{background:#d8ff70;}
+  .btn-primary:disabled{opacity:.4;cursor:default;}
+  .btn-secondary{background:transparent;color:var(--text-dim);}
+  .btn-secondary:hover{border-color:var(--accent-dim);color:var(--text);}
+  .btn-dl{background:transparent;color:var(--accent);border-color:var(--accent-dim);flex:1;}
+  .btn-dl:hover{background:rgba(200,240,96,.08);}
+  .btn-dl:disabled{opacity:.3;cursor:default;}
+
+  .toggle-row{display:flex;align-items:center;gap:8px;}
+  .toggle-label{font-size:10px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;}
+  .toggle{position:relative;width:28px;height:14px;flex-shrink:0;}
+  .toggle input{opacity:0;width:0;height:0;}
+  .toggle-track{position:absolute;inset:0;background:var(--border-hi);cursor:pointer;transition:background .2s;}
+  .toggle input:checked+.toggle-track{background:var(--accent-dim);}
+  .toggle-thumb{position:absolute;top:2px;left:2px;width:10px;height:10px;
+                background:#aaa;transition:transform .2s,background .2s;pointer-events:none;}
+  .toggle input:checked~.toggle-thumb{transform:translateX(14px);background:var(--accent);}
+
+  .opts-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px 8px;}
+  .param-row{display:flex;align-items:center;gap:6px;}
+  .param-label{font-size:10px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;
+               white-space:nowrap;flex-shrink:0;}
+
+  .font-status{display:flex;align-items:center;gap:7px;font-size:10px;flex-wrap:wrap;margin-top:2px;}
+  .font-dot{width:7px;height:7px;border-radius:50%;background:var(--text-muted);flex-shrink:0;}
+  .font-dot.ok{background:var(--accent);}
+  .font-dot.loading{background:#e0a040;animation:pulse .7s ease-in-out infinite alternate;}
+  .font-dot.err{background:#e05050;}
+  @keyframes pulse{from{opacity:.3}to{opacity:1}}
+  .font-status-text{color:var(--text-dim);}
+  .font-file-btn{font-size:10px;padding:2px 7px;border:1px solid var(--border);color:var(--text-dim);
+                 background:transparent;cursor:pointer;font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;}
+  .font-file-btn:hover{border-color:var(--border-hi);color:var(--text);}
+
+  .preview-area{background:#111;display:flex;flex-direction:column;overflow:hidden;}
+  .preview-toolbar{display:flex;align-items:center;gap:9px;padding:6px 13px;
+                   border-bottom:1px solid var(--border);flex-shrink:0;}
+  .preview-label{font-size:10px;letter-spacing:.16em;color:var(--text-dim);text-transform:uppercase;}
+  .page-indicator{font-size:10px;color:var(--text-muted);margin-left:auto;}
+  .page-nav{display:flex;gap:3px;}
+  .page-nav button{padding:3px 9px;font-size:10px;border-color:var(--border);color:var(--text-dim);background:transparent;}
+  .page-nav button:hover:not(:disabled){border-color:var(--border-hi);color:var(--text);}
+  .page-nav button:disabled{opacity:.3;cursor:default;}
+
+  .svg-viewport{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:20px;}
+  #svgContainer svg{max-width:100%;max-height:100%;box-shadow:0 4px 32px rgba(0,0,0,.5);}
+  .empty-state{text-align:center;color:var(--text-muted);font-size:11px;line-height:2;}
+  .empty-icon{font-size:30px;margin-bottom:8px;opacity:.3;}
+
+  .status-bar{padding:4px 13px;border-top:1px solid var(--border);font-size:10px;
+              color:var(--text-muted);display:flex;gap:12px;flex-shrink:0;}
+  .ok{color:var(--accent-dim);} .warn{color:#e0a040;} .err{color:#e05050;}
+
+  ::-webkit-scrollbar{width:4px;height:4px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:var(--border-hi);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">PTPX <span style="color:var(--text-muted)">·</span> Plotter</div>
+  <div class="subtitle">postcard back generator</div>
+  <div class="header-right">
+    <div class="badge">A4 LANDSCAPE · 4× A6</div>
+    <div class="badge">HERSHEY · LAYERS</div>
+  </div>
+</header>
+
+<div class="main">
+<div class="sidebar">
+
+  <div class="section">
+    <div class="section-label">Message <span style="color:var(--text-muted);font-size:9px">— all cards</span></div>
+    <textarea id="messageInput" rows="4" placeholder="Your message here…&#10;Fits left half of card."></textarea>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Sender <span style="color:var(--text-muted);font-size:9px">— optional</span></div>
+    <textarea id="senderInput" rows="2" placeholder="Your Name&#10;City, Country"></textarea>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Hershey Font</div>
+    <div style="display:flex;flex-direction:column;gap:7px;">
+      <div class="param-row">
+        <select id="fontSelect" style="flex:1;">
+          <optgroup label="Hershey">
+            <option value="HersheySans1">HersheySans 1  ★ single-stroke</option>
+            <option value="HersheyScript1">HersheyScript 1  ★ single-stroke</option>
+            <option value="HersheySerifMed">HersheySerif Med</option>
+            <option value="HersheySerifMedItalic">HersheySerif Med Italic</option>
+          </optgroup>
+          <optgroup label="EMS">
+            <option value="ems/EMSReadability">EMS Readability</option>
+            <option value="ems/EMSReadabilityItalic">EMS Readability Italic</option>
+          </optgroup>
+        </select>
+        <button class="btn-secondary" onclick="loadSelectedFont(true)" style="padding:4px 9px;font-size:11px;" title="Reload font">↻</button>
+      </div>
+      <div class="font-status">
+        <div class="font-dot" id="fontDot"></div>
+        <span class="font-status-text" id="fontStatusText">Not loaded</span>
+        <button class="font-file-btn" onclick="document.getElementById('fontFileInput').click()">Load .svg file</button>
+        <input type="file" id="fontFileInput" accept=".svg" style="display:none" onchange="loadFontFile(this)">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Options</div>
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      <div class="opts-grid">
+        <label class="toggle-row">
+          <div class="toggle"><input type="checkbox" id="plotMode" checked>
+            <div class="toggle-track"></div><div class="toggle-thumb"></div></div>
+          <span class="toggle-label">Plot mode</span>
+        </label>
+        <label class="toggle-row">
+          <div class="toggle"><input type="checkbox" id="showCutMarks" checked>
+            <div class="toggle-track"></div><div class="toggle-thumb"></div></div>
+          <span class="toggle-label">Cut marks</span>
+        </label>
+        <label class="toggle-row">
+          <div class="toggle"><input type="checkbox" id="showCardOutline" checked>
+            <div class="toggle-track"></div><div class="toggle-thumb"></div></div>
+          <span class="toggle-label">Card outline</span>
+        </label>
+        <label class="toggle-row">
+          <div class="toggle"><input type="checkbox" id="stampBox" checked>
+            <div class="toggle-track"></div><div class="toggle-thumb"></div></div>
+          <span class="toggle-label">Stamp box</span>
+        </label>
+        <label class="toggle-row">
+          <div class="toggle"><input type="checkbox" id="showHeader" checked>
+            <div class="toggle-track"></div><div class="toggle-thumb"></div></div>
+          <span class="toggle-label">Header</span>
+        </label>
+        <label class="toggle-row">
+          <div class="toggle"><input type="checkbox" id="showLines" checked>
+            <div class="toggle-track"></div><div class="toggle-thumb"></div></div>
+          <span class="toggle-label">Addr. lines</span>
+        </label>
+      </div>
+      <div class="param-row" style="margin-top:2px;">
+        <span class="param-label">Header text</span>
+        <input type="text" id="headerText" value="BRIEFKAART · POST CARD" style="flex:1;">
+      </div>
+      <div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:4px 6px;align-items:center;margin-top:3px;">
+        <span class="param-label">Stroke</span>
+        <input type="number" id="strokeWidth" value="0.4" min="0.1" max="2" step="0.05">
+        <span class="param-label">Addr.</span>
+        <input type="number" id="addrSize" value="3.5" min="1" max="8" step="0.5">
+        <span class="param-label">Msg.</span>
+        <input type="number" id="msgSize" value="2.9" min="1" max="8" step="0.5">
+        <span class="param-label">Sender</span>
+        <input type="number" id="senderSize" value="2.4" min="1" max="8" step="0.5">
+        <span class="param-label">Header</span>
+        <input type="number" id="headerSize" value="3.0" min="1" max="8" step="0.5">
+      </div>
+    </div>
+  </div>
+
+  <div class="addresses-wrap">
+    <div class="section-label">
+      Addresses <span class="count" id="addressCount">0</span>
+    </div>
+    <textarea id="addressInput"
+      placeholder="#1.HANDLE&#10;&#10;Full Name&#10;Street 42&#10;12345 City&#10;Country"></textarea>
+    <div class="hint">
+      <code>#1.HANDLE</code> or <code>1: Name</code><br>
+      then: NAME · STREET · ZIP CITY · COUNTRY
+    </div>
+  </div>
+
+  <div class="actions">
+    <div class="row">
+      <button class="btn-primary" id="generateBtn" onclick="generate()">▶ Generate SVGs</button>
+    </div>
+    <div class="row">
+      <button class="btn-dl" id="downloadBtn" onclick="downloadCurrent()" disabled>↓ Current page</button>
+      <button class="btn-secondary" onclick="downloadAll()">↓ All</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="preview-area">
+  <div class="preview-toolbar">
+    <span class="preview-label">Preview</span>
+    <div class="page-nav">
+      <button id="prevBtn" onclick="changePage(-1)" disabled>◀</button>
+      <button id="nextBtn" onclick="changePage(1)" disabled>▶</button>
+    </div>
+    <span class="page-indicator" id="pageIndicator">—</span>
+  </div>
+  <div class="svg-viewport">
+    <div id="svgContainer">
+      <div class="empty-state">
+        <div class="empty-icon">⬡</div>
+        Font will auto-load on startup.<br>
+        Enter addresses &amp; press <strong style="color:var(--text-dim)">Generate SVGs</strong>
+      </div>
+    </div>
+  </div>
+  <div class="status-bar"><span id="statusMsg">Loading font…</span></div>
+</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  FONT ENGINE  —  loads & caches Hershey SVG fonts
+// ═══════════════════════════════════════════════════════
+
+const fontCache = {};
+let activeFont  = null;
+
+function fontUrl(name){
+  if (name.startsWith('ems/')) return '/fonts/' + name + '.svg';
+  return '/fonts/hershey/' + name + '.svg';
+}
+
+async function loadSelectedFont(forceReload = false){
+  const name = document.getElementById('fontSelect').value;
+  if (fontCache[name] && !forceReload){ activeFont = fontCache[name]; setFontOk(name); return true; }
+  setFontStatus('loading', `Fetching ${name}…`);
+  try {
+    const r = await fetch(fontUrl(name));
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return parseFontSvg(await r.text(), name);
+  } catch(e){
+    setFontStatus('err', `Fetch failed — use "Load .svg file" instead`);
+    return false;
+  }
+}
+
+function loadFontFile(input){
+  const file = input.files[0]; if(!file) return;
+  setFontStatus('loading', `Reading ${file.name}…`);
+  const r = new FileReader();
+  r.onload = e => parseFontSvg(e.target.result, file.name.replace(/\.svg$/i,''));
+  r.readAsText(file);
+}
+
+function parseFontSvg(svgText, name){
+  try {
+    const doc  = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+    if (doc.querySelector('parsererror')) throw new Error('parse error');
+    const fontEl    = doc.querySelector('font');
+    const defaultAdv = parseFloat(fontEl?.getAttribute('horiz-adv-x') || '600');
+    const faceEl    = doc.querySelector('font-face');
+    const unitsPerEm = parseFloat(faceEl?.getAttribute('units-per-em') || '1000');
+    const glyphs = {};
+    for (const g of doc.querySelectorAll('glyph')){
+      const uni = g.getAttribute('unicode');
+      if (!uni) continue;
+      glyphs[uni] = {
+        horizAdvX: parseFloat(g.getAttribute('horiz-adv-x') || defaultAdv),
+        d: g.getAttribute('d') || ''
+      };
+    }
+    if (!glyphs[' ']) glyphs[' '] = { horizAdvX: defaultAdv * 0.5, d: '' };
+    const font = { name, unitsPerEm, defaultAdv, glyphs };
+    fontCache[name] = font;
+    activeFont = font;
+    setFontOk(name + ' · ' + Object.keys(glyphs).length + ' glyphs');
+    return true;
+  } catch(e){ setFontStatus('err', 'Parse failed: ' + e.message); return false; }
+}
+
+function setFontOk(msg)       { setFontStatus('ok', msg); }
+function setFontStatus(st, msg){
+  document.getElementById('fontDot').className = 'font-dot ' + st;
+  document.getElementById('fontStatusText').textContent = msg;
+}
+
+// ═══════════════════════════════════════════════════════
+//  HERSHEY RENDERER
+//  All text is rendered as <path> elements.
+//  Font coords: origin = baseline-left, Y = upward.
+//  SVG coords: Y = downward.
+//  Transform used: translate(x, baseline_y) scale(s, -s)
+// ═══════════════════════════════════════════════════════
+
+function measureText(text, sizeMm, font){
+  if (!font || !text) return 0;
+  const sc = sizeMm / font.unitsPerEm;
+  let w = 0;
+  for (const ch of text){
+    const g = font.glyphs[ch];
+    w += (g ? g.horizAdvX : font.defaultAdv) * sc;
+  }
+  return w;
+}
+
+/**
+ * Render text to SVG path string.
+ * x, y     : start position in mm (y = baseline in SVG space)
+ * sizeMm   : cap-height target in mm
+ * maxWidthMm: if > 0 and text is wider, auto-scales down
+ * Returns  : { paths: string, width: number }
+ */
+function renderText(text, x, y, sizeMm, font, sa, maxWidthMm = 0){
+  if (!font || !text) return { paths:'', width:0 };
+  let sc = sizeMm / font.unitsPerEm;
+  if (maxWidthMm > 0){
+    const w = measureText(text, sizeMm, font);
+    if (w > maxWidthMm) sc *= maxWidthMm / w;
+  }
+  let cur = x, paths = '';
+  for (const ch of text){
+    const g = font.glyphs[ch];
+    const adv = (g ? g.horizAdvX : font.defaultAdv) * sc;
+    if (g && g.d){
+      const s  = sc.toFixed(6);
+      const ns = (-sc).toFixed(6);
+      paths += `<path transform="translate(${cur.toFixed(4)},${y.toFixed(4)}) scale(${s},${ns})" d="${g.d}" ${sa} vector-effect="non-scaling-stroke"/>`;
+    }
+    cur += adv;
+  }
+  return { paths, width: cur - x };
+}
+
+// Metric-aware word wrap
+function wrapText(text, maxW, sizeMm, font){
+  const out = [];
+  for (const line of text.split('\n')){
+    if (!line.trim()){ out.push(''); continue; }
+    let cur = '';
+    for (const word of line.split(' ')){
+      const cand = cur ? cur + ' ' + word : word;
+      if (!cur || measureText(cand, sizeMm, font) <= maxW) cur = cand;
+      else { out.push(cur); cur = word; }
+    }
+    if (cur) out.push(cur);
+  }
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════
+//  ADDRESS PARSER
+// ═══════════════════════════════════════════════════════
+
+function parseAddresses(raw){
+  // Split on any supported header: "#1.NAME" or "1: NAME"
+  return raw.split(/(?=^(?:#\d+\.|\d+:))/m)
+    .map(b => b.trim()).filter(Boolean)
+    .map(block => {
+      const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+      const hdr = lines[0];
+      // Match "#1.HANDLE" or "1: NAME  (rest of line becomes handle)"
+      const m = hdr?.match(/^#?(\d+)[.:]\s*(.*)$/);
+      if (!m) return null;
+      return { num: parseInt(m[1]), handle: m[2].trim() || String(m[1]), lines: lines.slice(1) };
+    }).filter(Boolean);
+}
+
+document.getElementById('addressInput').addEventListener('input', () => {
+  document.getElementById('addressCount').textContent =
+    parseAddresses(document.getElementById('addressInput').value).length;
+});
+
+// ═══════════════════════════════════════════════════════
+//  SVG PAGE BUILDER  —  Inkscape-layered A4
+// ═══════════════════════════════════════════════════════
+
+const A4W = 297, A4H = 210;        // landscape A4 mm
+const A6W = 148.5, A6H = 105;      // A6 mm
+const SLOTS = [
+  {col:0,row:0},{col:1,row:0},
+  {col:0,row:1},{col:1,row:1}
+];
+
+// Layer order (id, label)
+const LAYER_DEF = [
+  ['background',   'Background'],
+  ['cut-marks',    'Cut Marks'],
+  ['card-outlines','Card Outlines'],
+  ['dividers',     'Dividers'],
+  ['header',       'Header'],
+  ['stamp-boxes',  'Stamp Boxes'],
+  ['addr-lines',   'Address Lines'],
+  ['addr-text',    'Address Text'],
+  ['message-text', 'Message Text'],
+];
+
+function buildPage(cards, opts, font){
+  const sw    = opts.strokeWidthMm;
+  const sa    = `stroke="#000000" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round"`;
+  const L     = Object.fromEntries(LAYER_DEF.map(([id])=>[id,'']));
+  const bgFill = opts.plotMode ? 'white' : '#f8f7f3';
+
+  L['background'] = `<rect width="${A4W}" height="${A4H}" fill="${bgFill}" stroke="none"/>`;
+
+  // Cut marks
+  if (opts.showCutMarks){
+    const mk = 4;
+    [
+      [A6W, 0,    A6W,   mk  ],   // top tick on vertical centre
+      [A6W, A4H,  A6W,   A4H-mk], // bottom tick
+      [0,   A6H,  mk,    A6H ],   // left tick on horizontal centre
+      [A4W, A6H,  A4W-mk,A6H ],   // right tick
+      // cross at (A6W, A6H)
+      [A6W-mk, A6H, A6W-1, A6H],
+      [A6W+1,  A6H, A6W+mk,A6H],
+      [A6W, A6H-mk, A6W, A6H-1],
+      [A6W, A6H+1,  A6W, A6H+mk],
+    ].forEach(([x1,y1,x2,y2]) =>
+      L['cut-marks'] += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${sa}/>`
+    );
+  }
+
+  // Per-card elements
+  for (let i = 0; i < 4; i++){
+    buildCardIntoLayers(SLOTS[i].col*A6W, SLOTS[i].row*A6H, cards[i], opts, font, sa, L);
+  }
+
+  // Wrap in Inkscape-layered SVG
+  const pxW = (A4W*3.7795).toFixed(1), pxH = (A4H*3.7795).toFixed(1);
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" `
+    + `xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" `
+    + `width="${pxW}px" height="${pxH}px" viewBox="0 0 ${A4W} ${A4H}">\n`;
+  for (const [id, label] of LAYER_DEF){
+    if (!L[id]) continue;
+    svg += `<g inkscape:groupmode="layer" inkscape:label="${label}" id="layer-${id}">\n${L[id]}\n</g>\n`;
+  }
+  return svg + '</svg>';
+}
+
+function buildCardIntoLayers(ox, oy, card, opts, font, sa, L){
+  const { showCardOutline, showHeader, stampBox, showLines, headerText } = opts;
+  const m   = 4;
+  const cw  = A6W, ch = A6H;
+  const X   = v => ox + v;   // translate helpers
+  const Y   = v => oy + v;
+  const divX = cw / 2;
+  const sw  = opts.strokeWidthMm;
+
+  // Card outline
+  if (showCardOutline)
+    L['card-outlines'] += `<rect x="${X(.5)}" y="${Y(.5)}" width="${cw-1}" height="${ch-1}" ${sa}/>`;
+
+  // Vertical divider
+  L['dividers'] += `<line x1="${X(divX)}" y1="${Y(m)}" x2="${X(divX)}" y2="${Y(ch-m)}" ${sa}/>`;
+
+  // Header line + text
+  const headerLineY = 10;
+  if (showHeader){
+    L['header'] += `<line x1="${X(m)}" y1="${Y(headerLineY)}" x2="${X(cw-m)}" y2="${Y(headerLineY)}" ${sa}/>`;
+    if (font && headerText){
+      const hSz  = opts.headerSizeMm;
+      const hMaxW = cw - m*2;
+      // Measure at full size, then center
+      const w0  = measureText(headerText, hSz, font);
+      const offX = Math.max(0, (hMaxW - Math.min(w0, hMaxW)) / 2);
+      const { paths } = renderText(headerText, X(m) + offX, Y(headerLineY - 2.2), hSz, font, sa, hMaxW);
+      L['header'] += paths;
+    }
+  }
+
+  // Stamp box
+  const stW = 22, stH = 28;
+  const stX = cw - m - stW;
+  const stY = headerLineY + 3;
+  if (stampBox)
+    L['stamp-boxes'] += `<rect x="${X(stX)}" y="${Y(stY)}" width="${stW}" height="${stH}" ${sa}/>`;
+
+  // Address guide lines
+  const rightX     = divX + m;
+  // Address starts just below the stamp box bottom
+  // +2 gap, +addrSizeMm so the text cap-height clears the stamp bottom
+  const addrStartY = stY + stH + opts.addrSizeMm + 2;
+  const addrLineH  = 8;
+  const numLines   = 5;
+  const addrEndX   = cw - m;  // always full width of right half
+
+  if (showLines){
+    for (let i = 0; i < numLines; i++){
+      const ly = addrStartY + i * addrLineH;
+      L['addr-lines'] += `<line x1="${X(rightX)}" y1="${Y(ly)}" x2="${X(addrEndX)}" y2="${Y(ly)}" ${sa}/>`;
+    }
+  }
+
+  // Address text — auto-fit per line using full right-half width
+  if (card && card.lines && font){
+    const addrSz = opts.addrSizeMm;
+    const maxW   = X(addrEndX) - X(rightX + 1);
+    for (let i = 0; i < Math.min(card.lines.length, numLines); i++){
+      const ly = addrStartY + i * addrLineH;
+      const { paths } = renderText(card.lines[i], X(rightX + 1), Y(ly - 1.5), addrSz, font, sa, maxW);
+      L['addr-text'] += paths;
+    }
+  }
+
+  // ── Left half: message + sender + handle ───────────────────────
+  const msgMaxW  = divX - m * 2;
+  const msgSz    = opts.msgSizeMm;
+  const msgLineH = msgSz * 1.85;
+
+  // Handle tag above header line
+  if (font){
+    const handleStr = card ? `#${card.num} · ${card.handle}` : '';
+    if (handleStr){
+      const { paths } = renderText(handleStr, X(m), Y(headerLineY - 2.8), 1.8, font, sa, divX - m);
+      L['message-text'] += paths;
+    }
+  }
+
+  // Message
+  if (font && opts.message){
+    const wrapped = wrapText(opts.message, msgMaxW, msgSz, font);
+    let cur = Y(headerLineY + 5);
+    const maxY = Y(ch - m - 14);
+    for (const line of wrapped.slice(0, 10)){
+      if (cur > maxY) break;
+      const { paths } = renderText(line, X(m), cur, msgSz, font, sa, msgMaxW);
+      L['message-text'] += paths;
+      cur += msgLineH;
+    }
+  }
+
+  // Sender at bottom-left
+  if (font && opts.sender){
+    const sLines = opts.sender.split('\n').filter(l => l.trim());
+    const sSz    = opts.senderSizeMm;
+    const sH     = sSz * 1.9;
+    let sy = Y(ch - m - (sLines.length - 1) * sH);
+    for (const sl of sLines){
+      const { paths } = renderText(sl.trim(), X(m), sy, sSz, font, sa, msgMaxW);
+      L['message-text'] += paths;
+      sy += sH;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  STATE + CONTROLS
+// ═══════════════════════════════════════════════════════
+
+let pages = [], currentPage = 0;
+
+async function generate(){
+  if (!activeFont){
+    const ok = await loadSelectedFont();
+    if (!ok){ setStatus('Font not loaded — use "Load .svg file" or fix network.', 'err'); return; }
+  }
+
+  const opts = {
+    plotMode        : document.getElementById('plotMode').checked,
+    showCutMarks    : document.getElementById('showCutMarks').checked,
+    showCardOutline : document.getElementById('showCardOutline').checked,
+    showHeader      : document.getElementById('showHeader').checked,
+    stampBox        : document.getElementById('stampBox').checked,
+    showLines       : document.getElementById('showLines').checked,
+    headerText      : document.getElementById('headerText').value.trim(),
+    strokeWidthMm   : parseFloat(document.getElementById('strokeWidth').value) || 0.4,
+    addrSizeMm      : parseFloat(document.getElementById('addrSize').value) || 3.5,
+    msgSizeMm       : parseFloat(document.getElementById('msgSize').value) || 2.9,
+    senderSizeMm    : parseFloat(document.getElementById('senderSize').value) || 2.4,
+    headerSizeMm    : parseFloat(document.getElementById('headerSize').value) || 3.0,
+    message         : document.getElementById('messageInput').value.trim(),
+    sender          : document.getElementById('senderInput').value.trim(),
+  };
+
+  const addresses = parseAddresses(document.getElementById('addressInput').value);
+  if (!addresses.length){ setStatus('⚠ No addresses parsed — check format.', 'warn'); return; }
+
+  pages = [];
+  for (let i = 0; i < addresses.length; i += 4){
+    const chunk = [...addresses.slice(i, i+4)];
+    while (chunk.length < 4) chunk.push(null);
+    pages.push(buildPage(chunk, opts, activeFont));
+  }
+
+  currentPage = 0;
+  renderPage();
+  document.getElementById('downloadBtn').disabled = false;
+  setStatus(`✓ ${pages.length} page(s) for ${addresses.length} card(s) · ${activeFont.name}`, 'ok');
+}
+
+function renderPage(){
+  if (!pages.length) return;
+  document.getElementById('svgContainer').innerHTML = pages[currentPage];
+  document.getElementById('pageIndicator').textContent = `Page ${currentPage+1} / ${pages.length}`;
+  document.getElementById('prevBtn').disabled = currentPage === 0;
+  document.getElementById('nextBtn').disabled = currentPage === pages.length - 1;
+}
+
+function changePage(dir){
+  currentPage = Math.max(0, Math.min(pages.length-1, currentPage+dir));
+  renderPage();
+}
+
+function downloadCurrent(){
+  if (!pages.length) return;
+  dlSvg(pages[currentPage], `ptpx-page-${currentPage+1}.svg`);
+}
+
+function downloadAll(){
+  if (!pages.length){ generate(); return; }
+  pages.forEach((s,i) => setTimeout(() => dlSvg(s, `ptpx-page-${i+1}.svg`), i*160));
+}
+
+function dlSvg(svgStr, name){
+  const a = Object.assign(document.createElement('a'),{
+    href: URL.createObjectURL(new Blob([svgStr],{type:'image/svg+xml;charset=utf-8'})),
+    download: name
+  });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function setStatus(msg, cls){
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg; el.className = cls || '';
+}
+
+// ═══════════════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════════════
+
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('addressInput').value =
+`#1.INKWITCH
+
+Sophie Müller
+Musterstraße 42
+10115 Berlin
+Germany
+
+#2.PAPERTRAIL
+
+James Cooper
+18 High Street
+EH1 1YZ Edinburgh
+United Kingdom
+
+#3.HEXPLOT
+
+Yuki Tanaka
+3-14-5 Shinjuku
+160-0022 Tokyo
+Japan
+
+#4.DOTMATRIX
+
+Lea Fontaine
+27 Rue des Lilas
+75020 Paris
+France`;
+
+  document.getElementById('messageInput').value =
+`Greetings from Amsterdam!\nPen plotting forever.\n\nHope this finds you well —\nkeep on drawing!`;
+  document.getElementById('senderInput').value = `Your Name\nAmsterdam, NL`;
+  document.getElementById('addressCount').textContent = '4';
+
+  loadSelectedFont();
+});
+
+document.getElementById('fontSelect').addEventListener('change', () => loadSelectedFont());
+</script>
+</body>
+</html>
