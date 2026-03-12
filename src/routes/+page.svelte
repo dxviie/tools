@@ -14,11 +14,22 @@
     <span class="logo">DXVIIE<span class="sep"> / </span>TOOLS</span>
     <span class="subtitle">generative tools for the analogue world</span>
     <div class="header-right">
+      <a href="https://d17e.dev" target="_blank" rel="noopener noreferrer" class="badge link">d17e.dev</a>
+      <a href="https://github.com/dxviie/tools" target="_blank" rel="noopener noreferrer" class="badge link">↗ github</a>
       <span class="badge">{data.tools.length} tool{data.tools.length !== 1 ? 's' : ''}</span>
     </div>
   </header>
 
   <main>
+    <div class="about">
+      <p>
+        Self-contained single-file HTML+JS tools built to solve specific problems.
+        Each tool is a standalone <code>.html</code> file — no build step, no dependencies, runs anywhere.
+        Inspired by <a href="https://tools.simonwillison.net/" target="_blank" rel="noopener noreferrer">Simon Willison's approach</a>
+        to <a href="https://simonwillison.net/2025/Dec/10/html-tools/" target="_blank" rel="noopener noreferrer">HTML tools</a>.
+      </p>
+    </div>
+
     <div class="section-header">
       <span class="section-label">tools</span>
       <span class="section-count">{data.tools.length}</span>
@@ -39,7 +50,7 @@
     {/if}
 
     <footer>
-      <span>drop <code>.html</code> into <code>static/tools/</code> · run <code>npm run register-tools</code> to add metadata</span>
+      <span>open source · <a href="https://github.com/dxviie/tools" target="_blank" rel="noopener noreferrer">github.com/dxviie/tools</a></span>
     </footer>
   </main>
 </div>
@@ -94,12 +105,56 @@
     text-transform: uppercase;
   }
 
+  .badge.link {
+    text-decoration: none;
+    transition: border-color .12s, color .12s;
+  }
+
+  .badge.link:hover {
+    border-color: var(--accent-dim);
+    color: var(--text);
+  }
+
   /* ── Main ── */
   main {
     padding: 28px 24px 40px;
     flex: 1;
     max-width: 1200px;
     width: 100%;
+  }
+
+  /* ── About ── */
+  .about {
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .about p {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.8;
+    letter-spacing: .03em;
+    max-width: 680px;
+  }
+
+  .about a {
+    color: var(--text-dim);
+    text-decoration: underline;
+    text-decoration-color: var(--border-hi);
+    text-underline-offset: 3px;
+    transition: color .12s, text-decoration-color .12s;
+  }
+
+  .about a:hover {
+    color: var(--accent);
+    text-decoration-color: var(--accent-dim);
+  }
+
+  .about code {
+    color: var(--text);
+    background: var(--panel);
+    padding: 0 4px;
   }
 
   /* ── Section header ── */
@@ -169,5 +224,15 @@
     font-size: 10px;
     color: var(--text-muted);
     letter-spacing: .04em;
+  }
+
+  footer a {
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color .12s;
+  }
+
+  footer a:hover {
+    color: var(--text-dim);
   }
 </style>
