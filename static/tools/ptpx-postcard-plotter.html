@@ -675,7 +675,7 @@ function setStatus(msg, cls){
 //  BOOT
 // ═══════════════════════════════════════════════════════
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('addressInput').value =
 `#1.INKWITCH
 
@@ -710,7 +710,8 @@ France`;
   document.getElementById('senderInput').value = `Your Name\nAmsterdam, NL`;
   document.getElementById('addressCount').textContent = '4';
 
-  loadSelectedFont();
+  const ok = await loadSelectedFont();
+  if (ok) generate();
 });
 
 document.getElementById('fontSelect').addEventListener('change', () => loadSelectedFont());
