@@ -751,6 +751,7 @@
                 calibX: null,
                 calibY: null, // calib block top-left; null = default (top-right corner)
                 calibRotated: false, // rotate entire calib block 90°
+                artRotation: 0, // 0/1/2/3 × 90° CW
             };
 
             // ─────────────────────────────────────────────────────────────────────
@@ -875,6 +876,7 @@
                     S.filename = file.name;
                     S.ox = 0;
                     S.oy = 0;
+                    S.artRotation = 0;
                     document.getElementById("infoName").textContent = file.name;
                     document.getElementById("infoDims").textContent =
                         `${numFmt(S.wMm, 1)} × ${numFmt(S.hMm, 1)} mm`;
@@ -892,6 +894,7 @@
                 S.filename = "";
                 S.ox = 0;
                 S.oy = 0;
+                S.artRotation = 0;
                 document.getElementById("fileInfo").classList.remove("on");
                 document.getElementById("exportBtn").disabled = true;
                 document.getElementById("fileInput").value = "";
@@ -930,18 +933,44 @@
             }
 
             // ─────────────────────────────────────────────────────────────────────
+            // Artwork rotation helpers
+            // ─────────────────────────────────────────────────────────────────────
+
+            // Returns [effW, effH, rotVb] — effective display dims and viewBox
+            // accounting for S.artRotation (0/1/2/3 × 90° CW).
+            // For odd rotations, dims swap and viewBox shifts to frame the rotated content.
+            function artEffDims() {
+                const [vx, vy, vw, vh] = S.viewBox;
+                if (S.artRotation % 2 === 0) return [S.wMm, S.hMm, [vx, vy, vw, vh]];
+                // 90° or 270°: dims swap; new viewBox frames rotated content
+                const nvx = vx + (vw - vh) / 2;
+                const nvy = vy + (vh - vw) / 2;
+                return [S.hMm, S.wMm, [nvx, nvy, vh, vw]];
+            }
+
+            // Returns S.inner wrapped in a rotation <g> (or plain if r=0)
+            function artInner() {
+                if (S.artRotation === 0) return S.inner;
+                const [vx, vy, vw, vh] = S.viewBox;
+                const cx = vx + vw / 2;
+                const cy = vy + vh / 2;
+                return `<g transform="rotate(${S.artRotation * 90},${cx},${cy})">${S.inner}</g>`;
+            }
+
+            // ─────────────────────────────────────────────────────────────────────
             // Artwork transform helpers
             // ─────────────────────────────────────────────────────────────────────
             function artworkTransform(pageW, pageH) {
-                // Returns {tx, ty, sx, sy, ax, ay} in mm
-                const [vx, vy, vw, vh] = S.viewBox;
-                const sx = S.wMm / vw;
-                const sy = S.hMm / vh;
-                const ax = pageW / 2 + S.ox - S.wMm / 2; // artwork left in page-mm
-                const ay = pageH / 2 + S.oy - S.hMm / 2; // artwork top  in page-mm
-                const tx = ax - vx * sx;
-                const ty = ay - vy * sy;
-                return { tx, ty, sx, sy, ax, ay };
+                // Returns {tx, ty, sx, sy, ax, ay, effW, effH, rotVb} in mm
+                const [effW, effH, rotVb] = artEffDims();
+                const [nvx, nvy, nvw, nvh] = rotVb;
+                const sx = effW / nvw;
+                const sy = effH / nvh;
+                const ax = pageW / 2 + S.ox - effW / 2;
+                const ay = pageH / 2 + S.oy - effH / 2;
+                const tx = ax - nvx * sx;
+                const ty = ay - nvy * sy;
+                return { tx, ty, sx, sy, ax, ay, effW, effH, rotVb };
             }
 
             // ─────────────────────────────────────────────────────────────────────
@@ -1244,21 +1273,22 @@
                 // ── Artwork ──
                 if (hasSVG) {
                     const t = artworkTransform(pageW, pageH);
-                    const [vx, vy, vw, vh] = S.viewBox;
-                    html += `<svg x="${t.ax}" y="${t.ay}" width="${S.wMm}" height="${S.hMm}"
-      viewBox="${vx} ${vy} ${vw} ${vh}" overflow="hidden" opacity="0.88">${S.inner}</svg>`;
-                    // Artwork bounding box (dashed)
-                    html += `<rect x="${t.ax}" y="${t.ay}" width="${S.wMm}" height="${S.hMm}"
-      fill="none" stroke="#aaa" stroke-width="0.35" stroke-dasharray="2 1.5"/>`;
+                    const [nvx, nvy, nvw, nvh] = t.rotVb;
+                    if (!isDragging) {
+                        html += `<svg x="${t.ax}" y="${t.ay}" width="${t.effW}" height="${t.effH}"
+      viewBox="${nvx} ${nvy} ${nvw} ${nvh}" overflow="hidden" opacity="0.88">${artInner()}</svg>`;
+                    }
+                    // Bounding box outline — stays visible during drag
+                    html += `<rect x="${t.ax}" y="${t.ay}" width="${t.effW}" height="${t.effH}"
+      fill="${isDragging ? "rgba(200,240,96,0.04)" : "none"}" stroke="#aaa"
+      stroke-width="${isDragging ? "0.5" : "0.35"}" stroke-dasharray="2 1.5"/>`;
                 }
 
                 // ── Paper outline layer ──
                 if (document.getElementById("layPaper").checked && hasSVG) {
                     const t = artworkTransform(pageW, pageH);
-                    html += `<rect x="${t.ax - pm}" y="${t.ay - pm}" width="${S.wMm + pm * 2}" height="${S.hMm + pm * 2}"
-      fill="none" stroke="${PEN_COLS[0].replace("ff6b6b", "4fc3f7") || "#4fc3f7"}" stroke-width="0.55"
-      stroke="var(--blue)" stroke-dasharray="3 2"
-      style="stroke:#4fc3f7"/>`;
+                    html += `<rect x="${t.ax - pm}" y="${t.ay - pm}" width="${t.effW + pm * 2}" height="${t.effH + pm * 2}"
+      fill="none" stroke="#4fc3f7" stroke-width="0.55" stroke-dasharray="3 2"/>`;
                 }
 
                 // ── Calibration ──
@@ -1297,11 +1327,22 @@
       font-family="monospace" fill="#ccc" opacity="0.18">A3 landscape · 420 × 297 mm</text>`;
                 }
 
-                // ── Drag handle (transparent, on top of artwork) ──
+                // ── Artwork interactive layer (drag + rotate button) ──
                 if (hasSVG) {
                     const t = artworkTransform(pageW, pageH);
-                    html += `<rect id="drag-handle" x="${t.ax}" y="${t.ay}" width="${S.wMm}" height="${S.hMm}"
-      fill="transparent" stroke="none" style="cursor:move" data-drag="1"/>`;
+                    const btnR = 4.5;
+                    const btnCX = t.ax + t.effW - btnR - 1.5;
+                    const btnCY = t.ay + btnR + 1.5;
+                    html += `<g id="artwork-hover-group">
+      <rect id="drag-handle" x="${t.ax}" y="${t.ay}" width="${t.effW}" height="${t.effH}"
+        fill="transparent" stroke="none" style="cursor:move"/>
+      <g id="rotate-btn" opacity="0" style="cursor:pointer"
+        transform="translate(${btnCX},${btnCY})">
+        <circle r="${btnR}" fill="#161616" stroke="#c8f060" stroke-width="0.5"/>
+        <text font-size="${btnR * 0.95}" text-anchor="middle" dominant-baseline="central"
+          font-family="monospace" fill="#c8f060">↻</text>
+      </g>
+    </g>`;
                 }
 
                 previewSVG.innerHTML = html;
@@ -1312,6 +1353,15 @@
             // Drag to reposition (artwork + calibration block)
             // ─────────────────────────────────────────────────────────────────────
             let drag = null;
+            let isDragging = false; // true while dragging artwork — skips full render
+
+            function rotateArtworkCW() {
+                S.artRotation = (S.artRotation + 1) % 4;
+                S.ox = 0;
+                S.oy = 0;
+                syncOffsetInputs();
+                redraw();
+            }
 
             function svgPt(e) {
                 const bb = previewSVG.getBoundingClientRect();
@@ -1328,7 +1378,25 @@
             }
 
             function setupDrag() {
-                // Artwork handle
+                // Artwork hover group — show/hide rotate button on hover
+                const hg = previewSVG.querySelector("#artwork-hover-group");
+                const rb = previewSVG.querySelector("#rotate-btn");
+                if (hg && rb) {
+                    hg.addEventListener("mouseenter", () =>
+                        rb.setAttribute("opacity", "1"),
+                    );
+                    hg.addEventListener("mouseleave", () =>
+                        rb.setAttribute("opacity", "0"),
+                    );
+                    rb.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        rotateArtworkCW();
+                    });
+                    rb.addEventListener("mousedown", (e) =>
+                        e.stopPropagation(),
+                    );
+                }
+                // Artwork drag handle
                 const ah = previewSVG.querySelector("#drag-handle");
                 if (ah) {
                     ah.addEventListener("mousedown", (e) =>
@@ -1390,6 +1458,7 @@
                 }
 
                 drag = { target, pt: svgPt(e), ox0: S.ox, oy0: S.oy, cx0, cy0 };
+                if (target === "artwork") isDragging = true;
                 previewSVG.style.cursor = "grabbing";
                 document.addEventListener("mousemove", onDragMove);
                 document.addEventListener("mouseup", onDragEnd);
@@ -1412,10 +1481,13 @@
             }
 
             function onDragEnd() {
+                const wasArtworkDrag = isDragging;
                 drag = null;
+                isDragging = false;
                 previewSVG.style.cursor = "";
                 document.removeEventListener("mousemove", onDragMove);
                 document.removeEventListener("mouseup", onDragEnd);
+                if (wasArtworkDrag) redraw(); // restore full artwork render
             }
 
             // ─────────────────────────────────────────────────────────────────────
@@ -1456,7 +1528,7 @@
                 out += `  <!-- ═══ Artwork (original SVG, layers preserved) ═══ -->
   <g inkscape:label="artwork" inkscape:groupmode="layer" id="layer-artwork"
      transform="translate(${t.tx.toFixed(6)},${t.ty.toFixed(6)}) scale(${t.sx.toFixed(8)},${t.sy.toFixed(8)})">
-${S.inner}
+${artInner()}
   </g>
 
 `;
@@ -1466,7 +1538,7 @@ ${S.inner}
                     out += `  <!-- ═══ Paper outline: place paper within this rectangle ═══ -->
   <g inkscape:label="paper-outline" inkscape:groupmode="layer" id="layer-paper-outline">
     <rect x="${(t.ax - pm).toFixed(4)}" y="${(t.ay - pm).toFixed(4)}"
-          width="${(S.wMm + pm * 2).toFixed(4)}" height="${(S.hMm + pm * 2).toFixed(4)}"
+          width="${(t.effW + pm * 2).toFixed(4)}" height="${(t.effH + pm * 2).toFixed(4)}"
           fill="none" stroke="black" stroke-width="0.5"/>
   </g>
 
