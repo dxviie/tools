@@ -1,913 +1,1444 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<!-- tool-meta: {"name":"Plot Prep","slug":"plot-prep","description":"SVG decorator for pen plotting — adds paper outline, calibration markers, and page boundary layers.","tags":["svg","plotter","axidraw"]} -->
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PLOT PREP · SVG Decorator</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+    <head>
+        <!-- tool-meta: {"name":"Plot Prep","slug":"plot-prep","description":"SVG decorator for pen plotting — adds paper outline, calibration markers, and page boundary layers.","tags":["svg","plotter","axidraw"]} -->
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>PLOT PREP · SVG Decorator</title>
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap");
 
-  :root {
-    --bg:         #0e0e0e;
-    --panel:      #161616;
-    --border:     #2a2a2a;
-    --border-hi:  #404040;
-    --accent:     #c8f060;
-    --accent-dim: #8aaa3a;
-    --text:       #d4d4d4;
-    --text-dim:   #666;
-    --text-muted: #444;
-    --input-bg:   #1c1c1c;
-    --mono:       'IBM Plex Mono', monospace;
-    --red:        #ff6b6b;
-    --blue:       #4fc3f7;
-    --orange:     #ff8a65;
-    --purple:     #ce93d8;
-    --green:      #a5d6a7;
-  }
+            :root {
+                --bg: #0e0e0e;
+                --panel: #161616;
+                --border: #2a2a2a;
+                --border-hi: #404040;
+                --accent: #c8f060;
+                --accent-dim: #8aaa3a;
+                --text: #d4d4d4;
+                --text-dim: #666;
+                --text-muted: #444;
+                --input-bg: #1c1c1c;
+                --mono: "IBM Plex Mono", monospace;
+                --red: #ff6b6b;
+                --blue: #4fc3f7;
+                --orange: #ff8a65;
+                --purple: #ce93d8;
+                --green: #a5d6a7;
+            }
 
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 13px;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+            body {
+                background: var(--bg);
+                color: var(--text);
+                font-family: var(--mono);
+                font-size: 13px;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
 
-  /* ── Header ── */
-  header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 10px 20px;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-    background: var(--panel);
-  }
-  .logo {
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: .2em;
-    color: var(--accent);
-    text-transform: uppercase;
-  }
-  .logo-sep { color: var(--text-muted); margin: 0 2px; }
-  .subtitle { font-size: 11px; color: var(--text-dim); letter-spacing: .06em; }
-  .header-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
-  .badge {
-    font-size: 10px; padding: 2px 8px;
-    border: 1px solid var(--border-hi);
-    color: var(--text-dim); letter-spacing: .1em; text-transform: uppercase;
-  }
+            /* ── Header ── */
+            header {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                padding: 10px 20px;
+                border-bottom: 1px solid var(--border);
+                flex-shrink: 0;
+                background: var(--panel);
+            }
+            .logo {
+                font-size: 11px;
+                font-weight: 500;
+                letter-spacing: 0.2em;
+                color: var(--accent);
+                text-transform: uppercase;
+            }
+            .logo-sep {
+                color: var(--text-muted);
+                margin: 0 2px;
+            }
+            .subtitle {
+                font-size: 11px;
+                color: var(--text-dim);
+                letter-spacing: 0.06em;
+            }
+            .header-right {
+                margin-left: auto;
+                display: flex;
+                gap: 10px;
+                align-items: center;
+            }
+            .badge {
+                font-size: 10px;
+                padding: 2px 8px;
+                border: 1px solid var(--border-hi);
+                color: var(--text-dim);
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+            }
 
-  /* ── Layout ── */
-  .main { display: grid; grid-template-columns: 296px 1fr; flex: 1; overflow: hidden; min-height: 0; }
+            /* ── Layout ── */
+            .main {
+                display: grid;
+                grid-template-columns: 296px 1fr;
+                flex: 1;
+                overflow: hidden;
+                min-height: 0;
+            }
 
-  /* ── Sidebar ── */
-  .sidebar {
-    border-right: 1px solid var(--border);
-    display: flex; flex-direction: column;
-    overflow: hidden; background: var(--panel);
-  }
-  .sidebar-scroll {
-    flex: 1; overflow-y: auto; overflow-x: hidden;
-    scrollbar-width: thin; scrollbar-color: var(--border-hi) transparent;
-  }
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-thumb { background: var(--border-hi); }
+            /* ── Sidebar ── */
+            .sidebar {
+                border-right: 1px solid var(--border);
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                background: var(--panel);
+            }
+            .sidebar-scroll {
+                flex: 1;
+                overflow-y: auto;
+                overflow-x: hidden;
+                scrollbar-width: thin;
+                scrollbar-color: var(--border-hi) transparent;
+            }
+            ::-webkit-scrollbar {
+                width: 4px;
+            }
+            ::-webkit-scrollbar-thumb {
+                background: var(--border-hi);
+            }
 
-  .section { padding: 13px 15px; border-bottom: 1px solid var(--border); }
+            .section {
+                padding: 13px 15px;
+                border-bottom: 1px solid var(--border);
+            }
 
-  .section-label {
-    font-size: 9px; font-weight: 500; letter-spacing: .18em;
-    text-transform: uppercase; color: var(--text-dim);
-    margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
-  }
-  .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+            .section-label {
+                font-size: 9px;
+                font-weight: 500;
+                letter-spacing: 0.18em;
+                text-transform: uppercase;
+                color: var(--text-dim);
+                margin-bottom: 10px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .section-label::after {
+                content: "";
+                flex: 1;
+                height: 1px;
+                background: var(--border);
+            }
 
-  /* ── Drop zone ── */
-  .drop-zone {
-    border: 1px dashed var(--border-hi); padding: 18px 12px;
-    text-align: center; cursor: pointer;
-    transition: border-color .15s, background .15s;
-  }
-  .drop-zone:hover, .drop-zone.drag-over {
-    border-color: var(--accent); background: rgba(200,240,96,.04);
-  }
-  .drop-icon { font-size: 18px; margin-bottom: 5px; opacity: .45; }
-  .drop-label { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
-  .drop-label em { color: var(--accent); font-style: normal; text-decoration: underline; cursor: pointer; }
+            /* ── Drop zone ── */
+            .drop-zone {
+                border: 1px dashed var(--border-hi);
+                padding: 18px 12px;
+                text-align: center;
+                cursor: pointer;
+                transition:
+                    border-color 0.15s,
+                    background 0.15s;
+            }
+            .drop-zone:hover,
+            .drop-zone.drag-over {
+                border-color: var(--accent);
+                background: rgba(200, 240, 96, 0.04);
+            }
+            .drop-icon {
+                font-size: 18px;
+                margin-bottom: 5px;
+                opacity: 0.45;
+            }
+            .drop-label {
+                font-size: 11px;
+                color: var(--text-dim);
+                line-height: 1.6;
+            }
+            .drop-label em {
+                color: var(--accent);
+                font-style: normal;
+                text-decoration: underline;
+                cursor: pointer;
+            }
 
-  /* ── File info ── */
-  .file-info {
-    display: none; margin-top: 8px; padding: 9px 10px;
-    background: var(--input-bg); border: 1px solid var(--border);
-    flex-direction: column; gap: 6px;
-  }
-  .file-info.on { display: flex; }
-  .fi-row { display: flex; justify-content: space-between; align-items: center; }
-  .fi-key { font-size: 10px; color: var(--text-dim); }
-  .fi-val { font-size: 10px; color: var(--accent); font-weight: 500; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            /* ── File info ── */
+            .file-info {
+                display: none;
+                margin-top: 8px;
+                padding: 9px 10px;
+                background: var(--input-bg);
+                border: 1px solid var(--border);
+                flex-direction: column;
+                gap: 6px;
+            }
+            .file-info.on {
+                display: flex;
+            }
+            .fi-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .fi-key {
+                font-size: 10px;
+                color: var(--text-dim);
+            }
+            .fi-val {
+                font-size: 10px;
+                color: var(--accent);
+                font-weight: 500;
+                max-width: 160px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
 
-  /* ── Form controls ── */
-  .field-row { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
-  .field-row:last-child { margin-bottom: 0; }
-  .field-label { font-size: 10px; color: var(--text-dim); letter-spacing: .04em; width: 72px; flex-shrink: 0; }
-  .field-unit  { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+            /* ── Form controls ── */
+            .field-row {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                margin-bottom: 7px;
+            }
+            .field-row:last-child {
+                margin-bottom: 0;
+            }
+            .field-label {
+                font-size: 10px;
+                color: var(--text-dim);
+                letter-spacing: 0.04em;
+                width: 72px;
+                flex-shrink: 0;
+            }
+            .field-unit {
+                font-size: 10px;
+                color: var(--text-muted);
+                flex-shrink: 0;
+            }
 
-  select, input[type="number"] {
-    font-family: var(--mono); font-size: 12px;
-    background: var(--input-bg); border: 1px solid var(--border);
-    color: var(--text); padding: 4px 8px; flex: 1; min-width: 0;
-    transition: border-color .15s; -webkit-appearance: none; appearance: none;
-  }
-  select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px; }
-  select:focus, input:focus { outline: none; border-color: var(--accent-dim); }
-  select option { background: var(--panel); }
-  input[type="number"] { -moz-appearance: textfield; }
-  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+            select,
+            input[type="number"] {
+                font-family: var(--mono);
+                font-size: 12px;
+                background: var(--input-bg);
+                border: 1px solid var(--border);
+                color: var(--text);
+                padding: 4px 8px;
+                flex: 1;
+                min-width: 0;
+                transition: border-color 0.15s;
+                -webkit-appearance: none;
+                appearance: none;
+            }
+            select {
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");
+                background-repeat: no-repeat;
+                background-position: right 8px center;
+                padding-right: 24px;
+            }
+            select:focus,
+            input:focus {
+                outline: none;
+                border-color: var(--accent-dim);
+            }
+            select option {
+                background: var(--panel);
+            }
+            input[type="number"] {
+                -moz-appearance: textfield;
+            }
+            input[type="number"]::-webkit-inner-spin-button {
+                -webkit-appearance: none;
+            }
 
-  /* ── Toggles ── */
-  .toggle-row {
-    display: flex; align-items: center; gap: 9px;
-    margin-bottom: 8px; cursor: pointer; user-select: none;
-  }
-  .toggle-row:last-child { margin-bottom: 0; }
-  .toggle { position: relative; width: 32px; height: 18px; flex-shrink: 0; }
-  .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
-  .toggle-track { position: absolute; inset: 0; background: var(--border-hi); transition: background .2s; }
-  .toggle input:checked ~ .toggle-track { background: var(--accent); }
-  .toggle-thumb { position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; background: var(--bg); transition: transform .2s; }
-  .toggle input:checked ~ .toggle-thumb { transform: translateX(14px); }
-  .toggle-label { font-size: 11px; color: var(--text); }
+            /* ── Toggles ── */
+            .toggle-row {
+                display: flex;
+                align-items: center;
+                gap: 9px;
+                margin-bottom: 8px;
+                cursor: pointer;
+                user-select: none;
+            }
+            .toggle-row:last-child {
+                margin-bottom: 0;
+            }
+            .toggle {
+                position: relative;
+                width: 32px;
+                height: 18px;
+                flex-shrink: 0;
+            }
+            .toggle input {
+                opacity: 0;
+                width: 0;
+                height: 0;
+                position: absolute;
+            }
+            .toggle-track {
+                position: absolute;
+                inset: 0;
+                background: var(--border-hi);
+                transition: background 0.2s;
+            }
+            .toggle input:checked ~ .toggle-track {
+                background: var(--accent);
+            }
+            .toggle-thumb {
+                position: absolute;
+                top: 3px;
+                left: 3px;
+                width: 12px;
+                height: 12px;
+                background: var(--bg);
+                transition: transform 0.2s;
+            }
+            .toggle input:checked ~ .toggle-thumb {
+                transform: translateX(14px);
+            }
+            .toggle-label {
+                font-size: 11px;
+                color: var(--text);
+            }
 
-  .layer-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+            .layer-dot {
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
 
-  /* ── Buttons ── */
-  .btn-primary {
-    font-family: var(--mono); font-size: 12px; font-weight: 500;
-    letter-spacing: .08em; background: var(--accent); color: #0e0e0e;
-    border: none; padding: 10px 16px; width: 100%; cursor: pointer;
-    transition: background .15s; text-transform: uppercase;
-  }
-  .btn-primary:hover { background: #d8ff70; }
-  .btn-primary:disabled { opacity: .35; cursor: not-allowed; }
+            /* ── Buttons ── */
+            .btn-primary {
+                font-family: var(--mono);
+                font-size: 12px;
+                font-weight: 500;
+                letter-spacing: 0.08em;
+                background: var(--accent);
+                color: #0e0e0e;
+                border: none;
+                padding: 10px 16px;
+                width: 100%;
+                cursor: pointer;
+                transition: background 0.15s;
+                text-transform: uppercase;
+            }
+            .btn-primary:hover {
+                background: #d8ff70;
+            }
+            .btn-primary:disabled {
+                opacity: 0.35;
+                cursor: not-allowed;
+            }
 
-  .btn-ghost {
-    font-family: var(--mono); font-size: 10px; background: none;
-    border: 1px solid var(--border); color: var(--text-dim);
-    padding: 4px 10px; cursor: pointer; letter-spacing: .05em;
-    transition: color .15s, border-color .15s;
-  }
-  .btn-ghost:hover { color: var(--red); border-color: var(--red); }
+            .btn-ghost {
+                font-family: var(--mono);
+                font-size: 10px;
+                background: none;
+                border: 1px solid var(--border);
+                color: var(--text-dim);
+                padding: 4px 10px;
+                cursor: pointer;
+                letter-spacing: 0.05em;
+                transition:
+                    color 0.15s,
+                    border-color 0.15s;
+            }
+            .btn-ghost:hover {
+                color: var(--red);
+                border-color: var(--red);
+            }
 
-  .btn-outline {
-    font-family: var(--mono); font-size: 11px; background: none;
-    border: 1px solid var(--border-hi); color: var(--text-dim);
-    padding: 6px 10px; cursor: pointer; flex: 1;
-    transition: color .15s, border-color .15s; letter-spacing: .04em;
-  }
-  .btn-outline:hover { color: var(--text); border-color: var(--accent-dim); }
+            .btn-outline {
+                font-family: var(--mono);
+                font-size: 11px;
+                background: none;
+                border: 1px solid var(--border-hi);
+                color: var(--text-dim);
+                padding: 6px 10px;
+                cursor: pointer;
+                flex: 1;
+                transition:
+                    color 0.15s,
+                    border-color 0.15s;
+                letter-spacing: 0.04em;
+            }
+            .btn-outline:hover {
+                color: var(--text);
+                border-color: var(--accent-dim);
+            }
 
-  .actions { padding: 13px 15px; display: flex; flex-direction: column; gap: 7px; }
-  .actions-row { display: flex; gap: 7px; }
+            .actions {
+                padding: 13px 15px;
+                display: flex;
+                flex-direction: column;
+                gap: 7px;
+            }
+            .actions-row {
+                display: flex;
+                gap: 7px;
+            }
 
-  /* ── Canvas ── */
-  .canvas-wrap { display: flex; flex-direction: column; overflow: hidden; background: #090909; }
-  .canvas-area {
-    flex: 1; display: flex; align-items: center; justify-content: center;
-    overflow: hidden; position: relative;
-  }
+            /* ── Canvas ── */
+            .canvas-wrap {
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                background: #090909;
+            }
+            .canvas-area {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+                position: relative;
+            }
 
-  .preview-svg {
-    display: block;
-    filter: drop-shadow(0 12px 40px rgba(0,0,0,.9));
-    user-select: none;
-  }
+            .preview-svg {
+                display: block;
+                filter: drop-shadow(0 12px 40px rgba(0, 0, 0, 0.9));
+                user-select: none;
+            }
 
-  .canvas-footer {
-    font-size: 10px; color: var(--text-muted); text-align: center;
-    padding: 5px; border-top: 1px solid var(--border);
-    letter-spacing: .08em; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center; gap: 20px;
-  }
-  .canvas-footer span { display: flex; align-items: center; gap: 5px; }
-  .legend-dot { width: 6px; height: 6px; border-radius: 50%; }
+            .canvas-footer {
+                font-size: 10px;
+                color: var(--text-muted);
+                text-align: center;
+                padding: 5px;
+                border-top: 1px solid var(--border);
+                letter-spacing: 0.08em;
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 20px;
+            }
+            .canvas-footer span {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            }
+            .legend-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+            }
 
-  /* ── Hint text ── */
-  .hint {
-    font-size: 10px; color: var(--text-muted); line-height: 1.55;
-    margin-top: 6px;
-  }
+            /* ── Hint text ── */
+            .hint {
+                font-size: 10px;
+                color: var(--text-muted);
+                line-height: 1.55;
+                margin-top: 6px;
+            }
 
-  /* ── Empty state ── */
-  .empty-state {
-    pointer-events: none;
-  }
-</style>
-</head>
-<body>
+            /* ── Empty state ── */
+            .empty-state {
+                pointer-events: none;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <span class="logo">Plot<span class="logo-sep">·</span>Prep</span>
+            <span class="subtitle">SVG decorator for multi-layer plotting</span>
+            <div class="header-right">
+                <span class="badge">Saxi · AxiDraw</span>
+            </div>
+        </header>
 
-<header>
-  <span class="logo">Plot<span class="logo-sep">·</span>Prep</span>
-  <span class="subtitle">SVG decorator for pen plotting</span>
-  <div class="header-right">
-    <span class="badge">Saxi · AxiDraw</span>
-  </div>
-</header>
+        <div class="main">
+            <aside class="sidebar">
+                <div class="sidebar-scroll">
+                    <!-- Input SVG -->
+                    <div class="section">
+                        <div class="section-label">Input SVG</div>
+                        <div class="drop-zone" id="dropZone">
+                            <div class="drop-icon">⬡</div>
+                            <div class="drop-label">
+                                Drop .svg here or
+                                <em
+                                    onclick="
+                                        document
+                                            .getElementById('fileInput')
+                                            .click()
+                                    "
+                                    >browse</em
+                                >
+                            </div>
+                        </div>
+                        <div class="file-info" id="fileInfo">
+                            <div class="fi-row">
+                                <span class="fi-key">file</span>
+                                <span class="fi-val" id="infoName">—</span>
+                            </div>
+                            <div class="fi-row">
+                                <span class="fi-key">dimensions</span>
+                                <span class="fi-val" id="infoDims">—</span>
+                            </div>
+                            <div class="fi-row" style="margin-top: 2px">
+                                <button class="btn-ghost" onclick="clearSVG()">
+                                    ✕ clear
+                                </button>
+                            </div>
+                        </div>
+                    </div>
 
-<div class="main">
-  <aside class="sidebar">
-    <div class="sidebar-scroll">
+                    <!-- Output page -->
+                    <div class="section">
+                        <div class="section-label">Output Page</div>
+                        <div class="field-row">
+                            <label class="field-label">paper size</label>
+                            <select id="pageSize" onchange="onChange()">
+                                <option value="A4">A4 210 × 297 mm</option>
+                                <option value="A3" selected>
+                                    A3 297 × 420 mm
+                                </option>
+                                <option value="A2">A2 420 × 594 mm</option>
+                                <option value="A1">A1 594 × 841 mm</option>
+                                <option value="A0">A0 841 × 1189 mm</option>
+                                <option value="AxiV3">
+                                    AxiDraw V3 300 × 430 mm
+                                </option>
+                                <option value="AxiA1">
+                                    AxiDraw A1 864 × 594 mm
+                                </option>
+                            </select>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label">orientation</label>
+                            <select id="orient" onchange="onChange()">
+                                <option value="landscape" selected>
+                                    Landscape
+                                </option>
+                                <option value="portrait">Portrait</option>
+                            </select>
+                        </div>
+                    </div>
 
-      <!-- Input SVG -->
-      <div class="section">
-        <div class="section-label">Input SVG</div>
-        <div class="drop-zone" id="dropZone">
-          <div class="drop-icon">⬡</div>
-          <div class="drop-label">Drop .svg here or <em onclick="document.getElementById('fileInput').click()">browse</em></div>
+                    <!-- Layers -->
+                    <div class="section">
+                        <div class="section-label">Output Layers</div>
+                        <label class="toggle-row">
+                            <div class="toggle">
+                                <input
+                                    type="checkbox"
+                                    id="layPaper"
+                                    checked
+                                    onchange="onChange()"
+                                />
+                                <div class="toggle-track"></div>
+                                <div class="toggle-thumb"></div>
+                            </div>
+                            <div
+                                class="layer-dot"
+                                style="background: var(--blue)"
+                            ></div>
+                            <span class="toggle-label">Paper outline</span>
+                        </label>
+                        <label class="toggle-row">
+                            <div class="toggle">
+                                <input
+                                    type="checkbox"
+                                    id="layCalib"
+                                    checked
+                                    onchange="onChange()"
+                                />
+                                <div class="toggle-track"></div>
+                                <div class="toggle-thumb"></div>
+                            </div>
+                            <div
+                                class="layer-dot"
+                                style="background: var(--orange)"
+                            ></div>
+                            <span class="toggle-label"
+                                >Calibration markers</span
+                            >
+                        </label>
+                        <label class="toggle-row">
+                            <div class="toggle">
+                                <input
+                                    type="checkbox"
+                                    id="layPage"
+                                    checked
+                                    onchange="onChange()"
+                                />
+                                <div class="toggle-track"></div>
+                                <div class="toggle-thumb"></div>
+                            </div>
+                            <div
+                                class="layer-dot"
+                                style="background: var(--purple)"
+                            ></div>
+                            <span class="toggle-label">Page boundary</span>
+                        </label>
+                    </div>
+
+                    <!-- Paper outline settings -->
+                    <div class="section">
+                        <div class="section-label">Paper Outline</div>
+                        <div class="field-row">
+                            <label class="field-label">margin</label>
+                            <input
+                                type="number"
+                                id="paperMargin"
+                                value="5"
+                                min="1"
+                                max="50"
+                                step="0.5"
+                                onchange="onChange()"
+                            />
+                            <span class="field-unit">mm</span>
+                        </div>
+                    </div>
+
+                    <!-- Calibration -->
+                    <div class="section">
+                        <div class="section-label">Calibration</div>
+                        <div class="field-row">
+                            <label class="field-label">pens/layers</label>
+                            <input
+                                type="number"
+                                id="penCount"
+                                value="3"
+                                min="1"
+                                max="8"
+                                step="1"
+                                onchange="onChange()"
+                            />
+                        </div>
+                        <label class="toggle-row">
+                            <div class="toggle">
+                                <input
+                                    type="checkbox"
+                                    id="calibRotate"
+                                    onchange="onCalibRotate()"
+                                />
+                                <div class="toggle-track"></div>
+                                <div class="toggle-thumb"></div>
+                            </div>
+                            <span class="toggle-label">Rotate 90°</span>
+                        </label>
+                    </div>
+
+                    <!-- Position -->
+                    <div class="section">
+                        <div class="section-label">Artwork Position</div>
+                        <div class="field-row">
+                            <label class="field-label">offset X</label>
+                            <input
+                                type="number"
+                                id="offX"
+                                value="0"
+                                step="0.5"
+                                onchange="onOffsetInput()"
+                            />
+                            <span class="field-unit">mm</span>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label">offset Y</label>
+                            <input
+                                type="number"
+                                id="offY"
+                                value="0"
+                                step="0.5"
+                                onchange="onOffsetInput()"
+                            />
+                            <span class="field-unit">mm</span>
+                        </div>
+                        <div class="actions-row" style="margin-top: 8px">
+                            <button
+                                class="btn-outline"
+                                onclick="centerArtwork()"
+                            >
+                                ⊹ Center
+                            </button>
+                            <button class="btn-outline" onclick="resetOffset()">
+                                ↺ Reset
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- /scroll -->
+
+                <div class="actions">
+                    <button
+                        class="btn-primary"
+                        id="exportBtn"
+                        onclick="doExport()"
+                        disabled
+                    >
+                        ↓ Export SVG
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Canvas -->
+            <div class="canvas-wrap">
+                <div class="canvas-area" id="canvasArea">
+                    <svg id="previewSVG" class="preview-svg"></svg>
+                </div>
+                <div class="canvas-footer" id="canvasFooter">
+                    <span
+                        ><span
+                            class="legend-dot"
+                            style="background: var(--blue)"
+                        ></span
+                        >paper outline</span
+                    >
+                    <span
+                        ><span
+                            class="legend-dot"
+                            style="background: var(--orange)"
+                        ></span
+                        >calibration</span
+                    >
+                    <span
+                        ><span
+                            class="legend-dot"
+                            style="background: var(--purple)"
+                        ></span
+                        >page boundary</span
+                    >
+                    <span style="color: var(--text-muted); margin-left: 8px"
+                        >drag artwork or calibration block to reposition</span
+                    >
+                </div>
+            </div>
         </div>
-        <div class="file-info" id="fileInfo">
-          <div class="fi-row">
-            <span class="fi-key">file</span>
-            <span class="fi-val" id="infoName">—</span>
-          </div>
-          <div class="fi-row">
-            <span class="fi-key">dimensions</span>
-            <span class="fi-val" id="infoDims">—</span>
-          </div>
-          <div class="fi-row" style="margin-top:2px;">
-            <button class="btn-ghost" onclick="clearSVG()">✕ clear</button>
-          </div>
-        </div>
-      </div>
 
-      <!-- Output page -->
-      <div class="section">
-        <div class="section-label">Output Page</div>
-        <div class="field-row">
-          <label class="field-label">paper size</label>
-          <select id="pageSize" onchange="onChange()">
-            <option value="A4">A4  210 × 297 mm</option>
-            <option value="A3" selected>A3  297 × 420 mm</option>
-            <option value="A2">A2  420 × 594 mm</option>
-            <option value="A1">A1  594 × 841 mm</option>
-            <option value="A0">A0  841 × 1189 mm</option>
-            <option value="AxiV3">AxiDraw V3  300 × 430 mm</option>
-            <option value="AxiA1">AxiDraw A1  864 × 594 mm</option>
-          </select>
-        </div>
-        <div class="field-row">
-          <label class="field-label">orientation</label>
-          <select id="orient" onchange="onChange()">
-            <option value="landscape" selected>Landscape</option>
-            <option value="portrait">Portrait</option>
-          </select>
-        </div>
-      </div>
+        <input type="file" id="fileInput" accept=".svg" style="display: none" />
 
-      <!-- Layers -->
-      <div class="section">
-        <div class="section-label">Output Layers</div>
-        <label class="toggle-row">
-          <div class="toggle"><input type="checkbox" id="layPaper" checked onchange="onChange()"><div class="toggle-track"></div><div class="toggle-thumb"></div></div>
-          <div class="layer-dot" style="background:var(--blue)"></div>
-          <span class="toggle-label">Paper outline</span>
-        </label>
-        <label class="toggle-row">
-          <div class="toggle"><input type="checkbox" id="layCalib" checked onchange="onChange()"><div class="toggle-track"></div><div class="toggle-thumb"></div></div>
-          <div class="layer-dot" style="background:var(--orange)"></div>
-          <span class="toggle-label">Calibration markers</span>
-        </label>
-        <label class="toggle-row">
-          <div class="toggle"><input type="checkbox" id="layPage" checked onchange="onChange()"><div class="toggle-track"></div><div class="toggle-thumb"></div></div>
-          <div class="layer-dot" style="background:var(--purple)"></div>
-          <span class="toggle-label">Page boundary</span>
-        </label>
-      </div>
+        <script>
+            // ─────────────────────────────────────────────────────────────────────
+            // Page size definitions  [portrait-width, portrait-height]  mm
+            // ─────────────────────────────────────────────────────────────────────
+            const PAGES = {
+                A4: [210, 297],
+                A3: [297, 420],
+                A2: [420, 594],
+                A1: [594, 841],
+                A0: [841, 1189],
+                AxiV3: [300, 430],
+                AxiA1: [594, 864],
+            };
 
-      <!-- Paper outline settings -->
-      <div class="section">
-        <div class="section-label">Paper Outline</div>
-        <div class="field-row">
-          <label class="field-label">margin</label>
-          <input type="number" id="paperMargin" value="5" min="1" max="50" step="0.5" onchange="onChange()">
-          <span class="field-unit">mm</span>
-        </div>
-        <div class="hint">Rect drawn slightly larger than artwork — guides where to place paper on the platen.</div>
-      </div>
+            // ─────────────────────────────────────────────────────────────────────
+            // State
+            // ─────────────────────────────────────────────────────────────────────
+            const S = {
+                svgText: null,
+                filename: "",
+                wMm: 0,
+                hMm: 0,
+                viewBox: null,
+                inner: "",
+                ox: 0,
+                oy: 0, // artwork offset from page center, mm
+                calibX: null,
+                calibY: null, // calib block top-left; null = default (top-right corner)
+                calibRotated: false, // rotate entire calib block 90°
+            };
 
-      <!-- Calibration -->
-      <div class="section">
-        <div class="section-label">Calibration</div>
-        <div class="field-row">
-          <label class="field-label">pens/layers</label>
-          <input type="number" id="penCount" value="2" min="1" max="8" step="1" onchange="onChange()">
-        </div>
-        <div class="hint">
-          One nested crosshair per pen, each on its own sub-layer. Plot each sub-layer with its pen — measure XY offset from the shared ±20 mm ruler.
-        </div>
-      </div>
+            // ─────────────────────────────────────────────────────────────────────
+            // Helpers
+            // ─────────────────────────────────────────────────────────────────────
+            function getPage() {
+                const [pw, ph] =
+                    PAGES[document.getElementById("pageSize").value] ||
+                    PAGES.A3;
+                return document.getElementById("orient").value === "landscape"
+                    ? [ph, pw]
+                    : [pw, ph];
+            }
 
-      <!-- Position -->
-      <div class="section">
-        <div class="section-label">Artwork Position</div>
-        <div class="field-row">
-          <label class="field-label">offset X</label>
-          <input type="number" id="offX" value="0" step="0.5" onchange="onOffsetInput()">
-          <span class="field-unit">mm</span>
-        </div>
-        <div class="field-row">
-          <label class="field-label">offset Y</label>
-          <input type="number" id="offY" value="0" step="0.5" onchange="onOffsetInput()">
-          <span class="field-unit">mm</span>
-        </div>
-        <div class="actions-row" style="margin-top:8px;">
-          <button class="btn-outline" onclick="centerArtwork()">⊹ Center</button>
-          <button class="btn-outline" onclick="resetOffset()">↺ Reset</button>
-        </div>
-      </div>
+            function parseMm(str) {
+                if (!str) return null;
+                const m = String(str)
+                    .trim()
+                    .match(/^([0-9.e+\-]+)\s*(mm|cm|in|px|pt|pc)?$/i);
+                if (!m) return null;
+                const v = parseFloat(m[1]);
+                const u = (m[2] || "px").toLowerCase();
+                return (
+                    v *
+                    ({
+                        mm: 1,
+                        cm: 10,
+                        in: 25.4,
+                        px: 25.4 / 96,
+                        pt: 25.4 / 72,
+                        pc: 25.4 / 6,
+                    }[u] ?? 25.4 / 96)
+                );
+            }
 
-    </div><!-- /scroll -->
+            function numFmt(n, d = 2) {
+                return parseFloat(n.toFixed(d));
+            }
 
-    <div class="actions">
-      <button class="btn-primary" id="exportBtn" onclick="doExport()" disabled>↓ Export SVG</button>
-    </div>
-  </aside>
+            // ─────────────────────────────────────────────────────────────────────
+            // SVG parsing
+            // ─────────────────────────────────────────────────────────────────────
+            function parseSVG(text) {
+                const doc = new DOMParser().parseFromString(
+                    text,
+                    "image/svg+xml",
+                );
+                const root = doc.documentElement;
+                if (root.querySelector("parsererror")) {
+                    alert("Could not parse SVG.");
+                    return false;
+                }
 
-  <!-- Canvas -->
-  <div class="canvas-wrap">
-    <div class="canvas-area" id="canvasArea">
-      <svg id="previewSVG" class="preview-svg"></svg>
-    </div>
-    <div class="canvas-footer" id="canvasFooter">
-      <span><span class="legend-dot" style="background:var(--blue)"></span>paper outline</span>
-      <span><span class="legend-dot" style="background:var(--orange)"></span>calibration</span>
-      <span><span class="legend-dot" style="background:var(--purple)"></span>page boundary</span>
-      <span style="color:var(--text-muted);margin-left:8px;">drag artwork or calibration block to reposition</span>
-    </div>
-  </div>
-</div>
+                const vbStr = root.getAttribute("viewBox");
+                const wStr = root.getAttribute("width");
+                const hStr = root.getAttribute("height");
 
-<input type="file" id="fileInput" accept=".svg" style="display:none">
+                let vb, wMm, hMm;
 
-<script>
-// ─────────────────────────────────────────────────────────────────────
-// Page size definitions  [portrait-width, portrait-height]  mm
-// ─────────────────────────────────────────────────────────────────────
-const PAGES = {
-  A4:    [210, 297],
-  A3:    [297, 420],
-  A2:    [420, 594],
-  A1:    [594, 841],
-  A0:    [841, 1189],
-  AxiV3: [300, 430],
-  AxiA1: [594, 864],
-};
+                if (vbStr) {
+                    vb = vbStr
+                        .trim()
+                        .split(/[\s,]+/)
+                        .map(Number);
+                    wMm = wStr ? parseMm(wStr) : null;
+                    hMm = hStr ? parseMm(hStr) : null;
+                    if (!wMm && !hMm) {
+                        wMm = (vb[2] * 25.4) / 96;
+                        hMm = (vb[3] * 25.4) / 96;
+                    } else if (!wMm) {
+                        wMm = (hMm * vb[2]) / vb[3];
+                    } else if (!hMm) {
+                        hMm = (wMm * vb[3]) / vb[2];
+                    }
+                } else {
+                    wMm = parseMm(wStr) ?? 100;
+                    hMm = parseMm(hStr) ?? 100;
+                    vb = [0, 0, (wMm * 96) / 25.4, (hMm * 96) / 25.4];
+                }
 
-// ─────────────────────────────────────────────────────────────────────
-// State
-// ─────────────────────────────────────────────────────────────────────
-const S = {
-  svgText: null, filename: '',
-  wMm: 0, hMm: 0, viewBox: null,
-  inner: '',
-  ox: 0, oy: 0,       // artwork offset from page center, mm
-  calibX: null, calibY: null, // calib block top-left; null = default (top-right corner)
-};
+                S.wMm = wMm;
+                S.hMm = hMm;
+                S.viewBox = vb;
+                // Use innerHTML – preserves Inkscape layers, defs, everything
+                S.inner = root.innerHTML;
+                return true;
+            }
 
-// ─────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────
-function getPage() {
-  const [pw, ph] = PAGES[document.getElementById('pageSize').value] || PAGES.A3;
-  return document.getElementById('orient').value === 'landscape' ? [ph, pw] : [pw, ph];
-}
+            // ─────────────────────────────────────────────────────────────────────
+            // File loading
+            // ─────────────────────────────────────────────────────────────────────
+            document
+                .getElementById("fileInput")
+                .addEventListener("change", (e) => {
+                    const f = e.target.files[0];
+                    if (f) loadFile(f);
+                });
 
-function parseMm(str) {
-  if (!str) return null;
-  const m = String(str).trim().match(/^([0-9.e+\-]+)\s*(mm|cm|in|px|pt|pc)?$/i);
-  if (!m) return null;
-  const v = parseFloat(m[1]);
-  const u = (m[2] || 'px').toLowerCase();
-  return v * ({ mm:1, cm:10, in:25.4, px:25.4/96, pt:25.4/72, pc:25.4/6 }[u] ?? 25.4/96);
-}
+            const dz = document.getElementById("dropZone");
+            dz.addEventListener("click", () =>
+                document.getElementById("fileInput").click(),
+            );
+            dz.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                dz.classList.add("drag-over");
+            });
+            dz.addEventListener("dragleave", () =>
+                dz.classList.remove("drag-over"),
+            );
+            dz.addEventListener("drop", (e) => {
+                e.preventDefault();
+                dz.classList.remove("drag-over");
+                const f = e.dataTransfer.files[0];
+                if (f && f.name.toLowerCase().endsWith(".svg")) loadFile(f);
+            });
 
-function numFmt(n, d=2) { return parseFloat(n.toFixed(d)); }
+            function loadFile(file) {
+                const r = new FileReader();
+                r.onload = (e) => {
+                    if (!parseSVG(e.target.result)) return;
+                    S.svgText = e.target.result;
+                    S.filename = file.name;
+                    S.ox = 0;
+                    S.oy = 0;
+                    document.getElementById("infoName").textContent = file.name;
+                    document.getElementById("infoDims").textContent =
+                        `${numFmt(S.wMm, 1)} × ${numFmt(S.hMm, 1)} mm`;
+                    document.getElementById("fileInfo").classList.add("on");
+                    document.getElementById("exportBtn").disabled = false;
+                    document.getElementById("offX").value = "0";
+                    document.getElementById("offY").value = "0";
+                    redraw();
+                };
+                r.readAsText(file);
+            }
 
-// ─────────────────────────────────────────────────────────────────────
-// SVG parsing
-// ─────────────────────────────────────────────────────────────────────
-function parseSVG(text) {
-  const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
-  const root = doc.documentElement;
-  if (root.querySelector('parsererror')) { alert('Could not parse SVG.'); return false; }
+            function clearSVG() {
+                S.svgText = null;
+                S.filename = "";
+                S.ox = 0;
+                S.oy = 0;
+                document.getElementById("fileInfo").classList.remove("on");
+                document.getElementById("exportBtn").disabled = true;
+                document.getElementById("fileInput").value = "";
+                redraw();
+            }
 
-  const vbStr = root.getAttribute('viewBox');
-  const wStr  = root.getAttribute('width');
-  const hStr  = root.getAttribute('height');
+            // ─────────────────────────────────────────────────────────────────────
+            // Position helpers
+            // ─────────────────────────────────────────────────────────────────────
+            function centerArtwork() {
+                S.ox = 0;
+                S.oy = 0;
+                syncOffsetInputs();
+                redraw();
+            }
+            function resetOffset() {
+                centerArtwork();
+            }
+            function syncOffsetInputs() {
+                document.getElementById("offX").value = numFmt(S.ox);
+                document.getElementById("offY").value = numFmt(S.oy);
+            }
+            function onOffsetInput() {
+                S.ox = parseFloat(document.getElementById("offX").value) || 0;
+                S.oy = parseFloat(document.getElementById("offY").value) || 0;
+                redraw();
+            }
+            function onChange() {
+                redraw();
+            }
+            function onCalibRotate() {
+                S.calibRotated = document.getElementById("calibRotate").checked;
+                S.calibX = null;
+                S.calibY = null; // reset position — effective dims swap
+                redraw();
+            }
 
-  let vb, wMm, hMm;
+            // ─────────────────────────────────────────────────────────────────────
+            // Artwork transform helpers
+            // ─────────────────────────────────────────────────────────────────────
+            function artworkTransform(pageW, pageH) {
+                // Returns {tx, ty, sx, sy, ax, ay} in mm
+                const [vx, vy, vw, vh] = S.viewBox;
+                const sx = S.wMm / vw;
+                const sy = S.hMm / vh;
+                const ax = pageW / 2 + S.ox - S.wMm / 2; // artwork left in page-mm
+                const ay = pageH / 2 + S.oy - S.hMm / 2; // artwork top  in page-mm
+                const tx = ax - vx * sx;
+                const ty = ay - vy * sy;
+                return { tx, ty, sx, sy, ax, ay };
+            }
 
-  if (vbStr) {
-    vb  = vbStr.trim().split(/[\s,]+/).map(Number);
-    wMm = wStr ? parseMm(wStr) : null;
-    hMm = hStr ? parseMm(hStr) : null;
-    if (!wMm && !hMm) { wMm = vb[2]*25.4/96; hMm = vb[3]*25.4/96; }
-    else if (!wMm)    { wMm = hMm * vb[2]/vb[3]; }
-    else if (!hMm)    { hMm = wMm * vb[3]/vb[2]; }
-  } else {
-    wMm = parseMm(wStr) ?? 100;
-    hMm = parseMm(hStr) ?? 100;
-    vb  = [0, 0, wMm*96/25.4, hMm*96/25.4];
-  }
+            // ─────────────────────────────────────────────────────────────────────
+            // Calibration markers builder (shared preview / export)
+            // ─────────────────────────────────────────────────────────────────────
+            const PEN_COLS = [
+                "#ff6b6b",
+                "#ffd166",
+                "#06d6a0",
+                "#4fc3f7",
+                "#ce93d8",
+                "#ff8a65",
+                "#a5d6a7",
+                "#80cbc4",
+            ];
 
-  S.wMm    = wMm;
-  S.hMm    = hMm;
-  S.viewBox = vb;
-  // Use innerHTML – preserves Inkscape layers, defs, everything
-  S.inner  = root.innerHTML;
-  return true;
-}
+            // ─────────────────────────────────────────────────────────────────────
+            // Calibration block — clean non-overlapping layout
+            //
+            //  ┌─────────────────────────────┐
+            //  │ CALIBRATION · P1=ref        │
+            //  │                             │
+            //  │      [verify circle]        │  ← cal-circle layer (single, shared)
+            //  │      [    ø8mm     ]        │
+            //  │                             │
+            //  │         ΔY│                 │  ← cal-rulers layer
+            //  │    ── ── ─┤  ← H-lines     │  ← cal-pen-N layers (full)
+            //  │           │                 │
+            //  │    ΔX ────┼────── ← X-ruler │
+            //  │           │  │  │ ← V-lines │
+            //  │          P1 P2 P3           │
+            //  └─────────────────────────────┘
+            //  + cal-half layer: all markers at half length (closest to rulers)
+            //  + optional 90° rotation (swaps to wide horizontal rectangle)
+            //
+            // Returns { svg, bx, by, bw, bh } in page coords for the drag handle
+            // ─────────────────────────────────────────────────────────────────────
+            function buildCalib(pageW, pageH, penCount, forExport, rotated) {
+                // ── Constants ────────────────────────────────────────────────────
+                const rulerR = 10; // ruler ±10 mm
+                const penPitch = 3; // mm between adjacent pen lines
+                const lineLen = 5; // total cal line length (mm)
+                const circR = 4; // verification circle radius (diameter = 8mm)
+                const ipad = 3; // inner padding from bbox edge to content
+                const headerH = 5; // header text row height
+                const circGap = 6; // gap: circle bottom → Y-ruler top
+                const labelW = 7; // width for Y-ruler tick labels (left of ruler baseline)
+                const tickMaj = 2.2; // major tick protrusion
+                const tickMin = 0.9;
+                const lineGap = 2; // gap: ruler baseline → nearest end of cal line
+                const vGap = 7; // vert gap: Y-ruler bottom → X-ruler
 
-// ─────────────────────────────────────────────────────────────────────
-// File loading
-// ─────────────────────────────────────────────────────────────────────
-document.getElementById('fileInput').addEventListener('change', e => {
-  const f = e.target.files[0]; if (f) loadFile(f);
-});
+                const sw = (v) => (forExport ? v : v * 1.5);
+                const col = (p) =>
+                    forExport ? "black" : PEN_COLS[p % PEN_COLS.length];
+                const dim = forExport ? "black" : "#555";
+                const dim2 = forExport ? "black" : "#444";
+                const circCol = forExport ? "black" : "#80cbc4";
 
-const dz = document.getElementById('dropZone');
-dz.addEventListener('click', () => document.getElementById('fileInput').click());
-dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
-dz.addEventListener('dragleave', ()  => dz.classList.remove('drag-over'));
-dz.addEventListener('drop', e => {
-  e.preventDefault(); dz.classList.remove('drag-over');
-  const f = e.dataTransfer.files[0];
-  if (f && f.name.toLowerCase().endsWith('.svg')) loadFile(f);
-});
+                // ── Horizontal layout (local x) ──────────────────────────────────
+                // Y-ruler baseline: label area + tick protrusion from left
+                const yRulerX = ipad + labelW + tickMaj;
+                // H-lines: start right of Y-ruler + lineGap, length = lineLen
+                const hX1 = yRulerX + lineGap;
+                const hX2 = hX1 + lineLen;
+                const hXhalf = hX1 + lineLen * 0.5; // half-size end (closest to ruler)
+                // X-ruler zero aligns with Y-ruler
+                const xRulerX0 = yRulerX;
+                // Circle: centered on Y-ruler X
+                const circCX = yRulerX;
 
-function loadFile(file) {
-  const r = new FileReader();
-  r.onload = e => {
-    if (!parseSVG(e.target.result)) return;
-    S.svgText  = e.target.result;
-    S.filename = file.name;
-    S.ox = 0; S.oy = 0;
-    document.getElementById('infoName').textContent = file.name;
-    document.getElementById('infoDims').textContent = `${numFmt(S.wMm,1)} × ${numFmt(S.hMm,1)} mm`;
-    document.getElementById('fileInfo').classList.add('on');
-    document.getElementById('exportBtn').disabled = false;
-    document.getElementById('offX').value = '0';
-    document.getElementById('offY').value = '0';
-    redraw();
-  };
-  r.readAsText(file);
-}
+                // ── Vertical layout (local y) ─────────────────────────────────────
+                // Circle sits below header
+                const circCY = ipad + headerH + circR;
+                // Y-ruler top: below circle bottom + gap
+                const yRulerTop = circCY + circR + circGap;
+                // Y-ruler zero (center)
+                const hY0 = yRulerTop + rulerR;
+                // X-ruler: below Y-ruler bottom + vGap
+                const xRulerY = hY0 + rulerR + vGap;
+                // V-lines: below X-ruler + lineGap, length = lineLen
+                const vY1 = xRulerY + lineGap;
+                const vY2 = vY1 + lineLen;
+                const vYhalf = vY1 + lineLen * 0.5; // half-size end (closest to ruler)
 
-function clearSVG() {
-  S.svgText = null; S.filename = ''; S.ox = 0; S.oy = 0;
-  document.getElementById('fileInfo').classList.remove('on');
-  document.getElementById('exportBtn').disabled = true;
-  document.getElementById('fileInput').value = '';
-  redraw();
-}
+                // ── Pen line positions (symmetric around reference) ───────────────
+                const hY = (p) => hY0 + (p - (penCount - 1) / 2) * penPitch;
+                const vX = (p) =>
+                    xRulerX0 + (p - (penCount - 1) / 2) * penPitch;
 
-// ─────────────────────────────────────────────────────────────────────
-// Position helpers
-// ─────────────────────────────────────────────────────────────────────
-function centerArtwork() { S.ox = 0; S.oy = 0; syncOffsetInputs(); redraw(); }
-function resetOffset()   { centerArtwork(); }
-function syncOffsetInputs() {
-  document.getElementById('offX').value = numFmt(S.ox);
-  document.getElementById('offY').value = numFmt(S.oy);
-}
-function onOffsetInput() {
-  S.ox = parseFloat(document.getElementById('offX').value) || 0;
-  S.oy = parseFloat(document.getElementById('offY').value) || 0;
-  redraw();
-}
-function onChange() { redraw(); }
+                // ── Bounding box (local) ─────────────────────────────────────────
+                const bRight = Math.max(hX2 + 6, xRulerX0 + rulerR + 2);
+                const bBottom = vY2 + 4 + ipad;
+                const bw_loc = bRight;
+                const bh_loc = bBottom;
 
-// ─────────────────────────────────────────────────────────────────────
-// Artwork transform helpers
-// ─────────────────────────────────────────────────────────────────────
-function artworkTransform(pageW, pageH) {
-  // Returns {tx, ty, sx, sy, ax, ay} in mm
-  const [vx, vy, vw, vh] = S.viewBox;
-  const sx = S.wMm / vw;
-  const sy = S.hMm / vh;
-  const ax = pageW/2 + S.ox - S.wMm/2;  // artwork left in page-mm
-  const ay = pageH/2 + S.oy - S.hMm/2;  // artwork top  in page-mm
-  const tx = ax - vx * sx;
-  const ty = ay - vy * sy;
-  return { tx, ty, sx, sy, ax, ay };
-}
+                // ── Page-space placement ─────────────────────────────────────────
+                // When rotated 90° CW, effective dims swap: width=bh_loc, height=bw_loc
+                const effectW = rotated ? bh_loc : bw_loc;
+                const effectH = rotated ? bw_loc : bh_loc;
+                const M = 8;
+                const tx = S.calibX ?? pageW - M - effectW;
+                const ty = S.calibY ?? M;
 
-// ─────────────────────────────────────────────────────────────────────
-// Calibration markers builder (shared preview / export)
-// ─────────────────────────────────────────────────────────────────────
-const PEN_COLS = ['#ff6b6b','#ffd166','#06d6a0','#4fc3f7','#ce93d8','#ff8a65','#a5d6a7','#80cbc4'];
+                // Rotation: rotate(-90) around local origin, then translate(0, bw_loc)
+                // to keep content in the positive quadrant → effective bbox is effectW × effectH
+                const rotT = rotated
+                    ? ` translate(0,${bw_loc}) rotate(-90)`
+                    : "";
+                const T = `translate(${tx},${ty})${rotT}`;
 
-// ─────────────────────────────────────────────────────────────────────
-// Calibration block — clean non-overlapping layout
-//
-//  ┌──────────────────────────────────────────────────┐
-//  │ CALIBRATION · P1=ref                             │
-//  │                                                  │
-//  │  [verify  ]  ΔY│                                 │
-//  │  [circle  ]    ├── ── ── ← H-lines P1,P2… (right of ruler)
-//  │  [r=8mm   ]    │                                 │
-//  │                                                  │
-//  │         ΔX ────┼──────── ← X-ruler              │
-//  │                │  │  │  ← V-lines P1,P2… (below ruler)
-//  │               P1 P2 P3                          │
-//  └──────────────────────────────────────────────────┘
-//
-// • Y-ruler is vertical; H-lines sit entirely to its RIGHT with a gap
-// • X-ruler is horizontal; V-lines sit entirely BELOW it with a gap
-// • H-lines and V-lines are symmetric (centered) around their ruler zeros
-// • Circle is to the LEFT of everything, clear gap from Y-ruler
-// • Bounding box is the true extent of all content
-// Returns { svg, bx, by, bw, bh } in page coords for the drag handle
-// ─────────────────────────────────────────────────────────────────────
-function buildCalib(pageW, pageH, penCount, forExport) {
-  // ── Constants ────────────────────────────────────────────────────
-  const rulerR   = 10;    // ruler ±10 mm
-  const penPitch = 3;     // mm between adjacent pen lines
-  const lineLen  = 5;     // total cal line length (mm)
-  const circR    = 4;     // verification circle radius (diameter = 8mm)
-  const ipad     = 3;     // inner padding from bbox edge to content
-  const headerH  = 5;     // header text row height
-  const circGapR = 5;     // gap: circle right edge → Y-ruler label area
-  const labelW   = 7;     // width for Y-ruler tick labels (left of ruler baseline)
-  const tickMaj  = 2.2;   // major tick protrusion
-  const tickMin  = 0.9;
-  const lineGap  = 2;     // gap: ruler baseline → nearest end of cal line
-  const vGap     = 7;     // vert gap: Y-ruler bottom → X-ruler
+                let g = forExport
+                    ? `<g inkscape:label="calibration" inkscape:groupmode="layer" id="layer-calibration" transform="${T}">`
+                    : `<g id="prev-calib" transform="${T}">`;
 
-  const sw  = v => forExport ? v : v * 1.5;
-  const col = p => forExport ? 'black' : PEN_COLS[p % PEN_COLS.length];
-  const dim  = forExport ? 'black' : '#555';
-  const dim2 = forExport ? 'black' : '#444';
-
-  // ── Horizontal layout (local x) ──────────────────────────────────
-  // Circle: leftmost
-  const circCX  = ipad + circR;
-  // Y-ruler baseline: circle right edge + gap + label area + tick
-  const yRulerX = ipad + circR * 2 + circGapR + labelW + tickMaj;
-  // H-lines: start right of Y-ruler + lineGap, length = lineLen
-  const hX1     = yRulerX + lineGap;
-  const hX2     = hX1 + lineLen;
-  // X-ruler zero aligns with Y-ruler (same x column)
-  const xRulerX0 = yRulerX;
-
-  // ── Vertical layout (local y) ─────────────────────────────────────
-  // Y-ruler center (pen reference zero): must have rulerR above it
-  const hY0     = ipad + headerH + rulerR;
-  // Circle vertically centered on Y-ruler zero
-  const circCY  = hY0;
-  // X-ruler: below Y-ruler bottom + vGap
-  const xRulerY = hY0 + rulerR + vGap;
-  // V-lines: below X-ruler + lineGap, length = lineLen
-  const vY1     = xRulerY + lineGap;
-  const vY2     = vY1 + lineLen;
-
-  // ── Pen line positions (symmetric around reference) ───────────────
-  // H-lines: each pen offset vertically, symmetric around hY0
-  const hY = p => hY0 + (p - (penCount - 1) / 2) * penPitch;
-  // V-lines: each pen offset horizontally, symmetric around xRulerX0
-  const vX = p => xRulerX0 + (p - (penCount - 1) / 2) * penPitch;
-
-  // ── Bounding box (local) ─────────────────────────────────────────
-  const bLeft   = 0;
-  const bTop    = 0;
-  // Right: max of H-line end+label or X-ruler right end
-  const bRight  = Math.max(
-    hX2 + 6,                          // H-line label "P8" ≈ 5mm
-    xRulerX0 + rulerR + 2             // X-ruler right end
-  );
-  // Bottom: V-line labels + padding
-  const bBottom = vY2 + 4 + ipad;
-  const bw_loc  = bRight;
-  const bh_loc  = bBottom;
-
-  // ── Page-space placement ─────────────────────────────────────────
-  const M  = 8;
-  const tx = S.calibX ?? (pageW - M - bw_loc);
-  const ty = S.calibY ?? M;
-
-  const T = `translate(${tx},${ty})`;
-
-  let g = forExport
-    ? `<g inkscape:label="calibration" inkscape:groupmode="layer" id="layer-calibration" transform="${T}">`
-    : `<g id="prev-calib" transform="${T}">`;
-
-  // ── Bounding box outline (preview only) ──────────────────────────
-  if (!forExport) {
-    g += `<rect x="0" y="0" width="${bw_loc}" height="${bh_loc}"
+                // ── Bounding box outline (preview only) ──────────────────────────
+                if (!forExport) {
+                    g += `<rect x="0" y="0" width="${bw_loc}" height="${bh_loc}"
       fill="rgba(200,240,96,0.03)" stroke="#404040" stroke-width="0.4" stroke-dasharray="2 1.5"/>`;
-  }
+                }
 
-  // ── Header ───────────────────────────────────────────────────────
-  g += `<text x="${ipad}" y="${ipad + 3}" font-size="2" font-family="monospace"
+                // ── Header ───────────────────────────────────────────────────────
+                g += `<text x="${ipad}" y="${ipad + 3}" font-size="2" font-family="monospace"
     fill="${dim}" opacity="0.5">CALIBRATION · P1=ref</text>`;
 
-  // ── Rulers (shared reference, plot on every pen swap) ────────────
-  g += forExport
-    ? `<g inkscape:label="cal-rulers" inkscape:groupmode="layer" id="cal-rulers">`
-    : `<g>`;
+                // ── Circle layer (single shared verify circle, above rulers) ─────
+                g += forExport
+                    ? `<g inkscape:label="cal-circle" inkscape:groupmode="layer" id="cal-circle">`
+                    : `<g>`;
 
-  // Y-ruler: vertical line; ticks LEFT; labels LEFT
-  g += `<line x1="${yRulerX}" y1="${hY0 - rulerR}" x2="${yRulerX}" y2="${hY0 + rulerR}"
+                const circLw = sw(0.35);
+                const cch = sw(1.0);
+                g += `<circle cx="${circCX}" cy="${circCY}" r="${circR}"
+    fill="none" stroke="${circCol}" stroke-width="${circLw}"/>`;
+                g += `<line x1="${circCX - cch}" y1="${circCY}" x2="${circCX + cch}" y2="${circCY}"
+    stroke="${circCol}" stroke-width="${sw(0.18)}"/>`;
+                g += `<line x1="${circCX}" y1="${circCY - cch}" x2="${circCX}" y2="${circCY + cch}"
+    stroke="${circCol}" stroke-width="${sw(0.18)}"/>`;
+                g += `<text x="${circCX}" y="${circCY - circR - 1.5}" font-size="1.6"
+    text-anchor="middle" font-family="monospace" fill="${dim}" opacity="0.4">verify</text>`;
+                g += `<text x="${circCX}" y="${circCY + circR + 2.8}" font-size="1.6"
+    text-anchor="middle" font-family="monospace" fill="${dim}" opacity="0.4">ø${circR * 2}mm</text>`;
+
+                g += `</g>`; // end circle layer
+
+                // ── Rulers layer (shared reference, plot on every pen swap) ──────
+                g += forExport
+                    ? `<g inkscape:label="cal-rulers" inkscape:groupmode="layer" id="cal-rulers">`
+                    : `<g>`;
+
+                // Y-ruler: vertical line; ticks LEFT; labels LEFT
+                g += `<line x1="${yRulerX}" y1="${hY0 - rulerR}" x2="${yRulerX}" y2="${hY0 + rulerR}"
     stroke="${dim}" stroke-width="${sw(0.18)}"/>`;
-  for (let i = -rulerR; i <= rulerR; i++) {
-    const maj = i % 5 === 0;
-    const tl  = maj ? tickMaj : tickMin;
-    const tc  = maj ? dim : dim2;
-    g += `<line x1="${yRulerX - tl}" y1="${hY0 + i}" x2="${yRulerX}" y2="${hY0 + i}"
+                for (let i = -rulerR; i <= rulerR; i++) {
+                    const maj = i % 5 === 0;
+                    const tl = maj ? tickMaj : tickMin;
+                    const tc = maj ? dim : dim2;
+                    g += `<line x1="${yRulerX - tl}" y1="${hY0 + i}" x2="${yRulerX}" y2="${hY0 + i}"
       stroke="${tc}" stroke-width="${sw(maj ? 0.18 : 0.1)}"/>`;
-    if (maj) {
-      const lbl = i === 0 ? '0' : (i > 0 ? `+${i}` : `${i}`);
-      g += `<text x="${yRulerX - tl - 0.8}" y="${hY0 + i + 0.65}" font-size="1.8"
+                    if (maj) {
+                        const lbl = i === 0 ? "0" : i > 0 ? `+${i}` : `${i}`;
+                        g += `<text x="${yRulerX - tl - 0.8}" y="${hY0 + i + 0.65}" font-size="1.8"
         text-anchor="end" font-family="monospace" fill="${tc}">${lbl}</text>`;
-    }
-  }
-  g += `<text x="${yRulerX}" y="${hY0 - rulerR - 1.5}" font-size="1.6"
+                    }
+                }
+                g += `<text x="${yRulerX}" y="${hY0 - rulerR - 1.5}" font-size="1.6"
     text-anchor="middle" font-family="monospace" fill="${dim}" opacity="0.5">ΔY</text>`;
 
-  // X-ruler: horizontal line; ticks UP; labels ABOVE
-  g += `<line x1="${xRulerX0 - rulerR}" y1="${xRulerY}" x2="${xRulerX0 + rulerR}" y2="${xRulerY}"
+                // X-ruler: horizontal line; ticks UP; labels ABOVE
+                g += `<line x1="${xRulerX0 - rulerR}" y1="${xRulerY}" x2="${xRulerX0 + rulerR}" y2="${xRulerY}"
     stroke="${dim}" stroke-width="${sw(0.18)}"/>`;
-  for (let i = -rulerR; i <= rulerR; i++) {
-    const maj = i % 5 === 0;
-    const tl  = maj ? tickMaj : tickMin;
-    const tc  = maj ? dim : dim2;
-    g += `<line x1="${xRulerX0 + i}" y1="${xRulerY - tl}" x2="${xRulerX0 + i}" y2="${xRulerY}"
+                for (let i = -rulerR; i <= rulerR; i++) {
+                    const maj = i % 5 === 0;
+                    const tl = maj ? tickMaj : tickMin;
+                    const tc = maj ? dim : dim2;
+                    g += `<line x1="${xRulerX0 + i}" y1="${xRulerY - tl}" x2="${xRulerX0 + i}" y2="${xRulerY}"
       stroke="${tc}" stroke-width="${sw(maj ? 0.18 : 0.1)}"/>`;
-    if (maj) {
-      const lbl = i === 0 ? '0' : (i > 0 ? `+${i}` : `${i}`);
-      g += `<text x="${xRulerX0 + i}" y="${xRulerY - tl - 0.7}" font-size="1.8"
+                    if (maj) {
+                        const lbl = i === 0 ? "0" : i > 0 ? `+${i}` : `${i}`;
+                        g += `<text x="${xRulerX0 + i}" y="${xRulerY - tl - 0.7}" font-size="1.8"
         text-anchor="middle" font-family="monospace" fill="${tc}">${lbl}</text>`;
-    }
-  }
-  g += `<text x="${xRulerX0 - rulerR - 1}" y="${xRulerY - 0.4}" font-size="1.6"
+                    }
+                }
+                g += `<text x="${xRulerX0 - rulerR - 1}" y="${xRulerY - 0.4}" font-size="1.6"
     text-anchor="end" font-family="monospace" fill="${dim}" opacity="0.5">ΔX</text>`;
 
-  g += `</g>`; // end rulers
+                g += `</g>`; // end rulers
 
-  // ── Per-pen layers ───────────────────────────────────────────────
-  for (let p = 0; p < penCount; p++) {
-    const c  = col(p);
-    const lw = sw(0.35);
+                // ── Per-pen layers (full-length markers) ─────────────────────────
+                for (let p = 0; p < penCount; p++) {
+                    const c = col(p);
+                    const lw = sw(0.35);
 
-    g += forExport
-      ? `<g inkscape:label="cal-pen-${p+1}" inkscape:groupmode="layer" id="cal-pen-${p+1}">`
-      : `<g>`;
+                    g += forExport
+                        ? `<g inkscape:label="cal-pen-${p + 1}" inkscape:groupmode="layer" id="cal-pen-${p + 1}">`
+                        : `<g>`;
 
-    // H-line: entirely to the RIGHT of Y-ruler, Y-position symmetric around hY0
-    const hy = hY(p);
-    g += `<line x1="${hX1}" y1="${hy}" x2="${hX2}" y2="${hy}"
+                    // H-line: entirely to the RIGHT of Y-ruler
+                    const hy = hY(p);
+                    g += `<line x1="${hX1}" y1="${hy}" x2="${hX2}" y2="${hy}"
       stroke="${c}" stroke-width="${lw}"/>`;
-    g += `<text x="${hX2 + 1.2}" y="${hy + 0.65}" font-size="1.9"
-      font-family="monospace" fill="${c}">P${p+1}</text>`;
+                    g += `<text x="${hX2 + 1.2}" y="${hy + 0.65}" font-size="1.9"
+      font-family="monospace" fill="${c}">P${p + 1}</text>`;
 
-    // V-line: entirely BELOW X-ruler, X-position symmetric around xRulerX0
-    const vx = vX(p);
-    g += `<line x1="${vx}" y1="${vY1}" x2="${vx}" y2="${vY2}"
+                    // V-line: entirely BELOW X-ruler
+                    const vx = vX(p);
+                    g += `<line x1="${vx}" y1="${vY1}" x2="${vx}" y2="${vY2}"
       stroke="${c}" stroke-width="${lw}"/>`;
-    g += `<text x="${vx}" y="${vY2 + 3.2}" font-size="1.9"
-      text-anchor="middle" font-family="monospace" fill="${c}">P${p+1}</text>`;
+                    g += `<text x="${vx}" y="${vY2 + 3.2}" font-size="1.9"
+      text-anchor="middle" font-family="monospace" fill="${c}">P${p + 1}</text>`;
 
-    // Verification circle — same center/radius for ALL pens
-    g += `<circle cx="${circCX}" cy="${circCY}" r="${circR}"
-      fill="none" stroke="${c}" stroke-width="${lw}"/>`;
-    const ch = sw(1.0);
-    g += `<line x1="${circCX - ch}" y1="${circCY}" x2="${circCX + ch}" y2="${circCY}"
-      stroke="${c}" stroke-width="${sw(0.18)}"/>`;
-    g += `<line x1="${circCX}" y1="${circCY - ch}" x2="${circCX}" y2="${circCY + ch}"
-      stroke="${c}" stroke-width="${sw(0.18)}"/>`;
+                    g += `</g>`;
+                }
 
-    g += `</g>`;
-  }
+                // ── Half-size markers layer (all pens, half length from ruler end) ─
+                // Useful as a quick single-pen alignment sweep before full calibration.
+                g += forExport
+                    ? `<g inkscape:label="cal-half" inkscape:groupmode="layer" id="cal-half">`
+                    : `<g opacity="0.5">`;
 
-  // Circle annotations (shared, outside per-pen layers)
-  g += `<text x="${circCX}" y="${circCY - circR - 1.5}" font-size="1.6"
-    text-anchor="middle" font-family="monospace" fill="${dim}" opacity="0.4">verify</text>`;
-  g += `<text x="${circCX}" y="${circCY + circR + 3}" font-size="1.6"
-    text-anchor="middle" font-family="monospace" fill="${dim}" opacity="0.4">ø${circR*2}mm</text>`;
+                for (let p = 0; p < penCount; p++) {
+                    const c = col(p);
+                    const lw = sw(0.35);
+                    const hy = hY(p);
+                    const vx = vX(p);
+                    g += `<line x1="${hX1}" y1="${hy}" x2="${hXhalf}" y2="${hy}"
+      stroke="${c}" stroke-width="${lw}"/>`;
+                    g += `<line x1="${vx}" y1="${vY1}" x2="${vx}" y2="${vYhalf}"
+      stroke="${c}" stroke-width="${lw}"/>`;
+                }
 
-  g += `</g>`; // end calibration
-  return { svg: g, bx: tx, by: ty, bw: bw_loc, bh: bh_loc };
-}
+                g += `</g>`; // end half-size layer
 
-// ─────────────────────────────────────────────────────────────────────
-// Preview rendering
-// ─────────────────────────────────────────────────────────────────────
-const previewSVG = document.getElementById('previewSVG');
-const canvasArea  = document.getElementById('canvasArea');
+                g += `</g>`; // end calibration
+                return { svg: g, bx: tx, by: ty, bw: effectW, bh: effectH };
+            }
 
-function redraw() {
-  const [pageW, pageH] = getPage();
-  const pad = 15; // mm of breathing room around page
+            // ─────────────────────────────────────────────────────────────────────
+            // Preview rendering
+            // ─────────────────────────────────────────────────────────────────────
+            const previewSVG = document.getElementById("previewSVG");
+            const canvasArea = document.getElementById("canvasArea");
 
-  const vpW = pageW + pad*2;
-  const vpH = pageH + pad*2;
+            function redraw() {
+                const [pageW, pageH] = getPage();
+                const pad = 15; // mm of breathing room around page
 
-  const rect  = canvasArea.getBoundingClientRect();
-  const cw    = rect.width  || 900;
-  const ch    = rect.height || 600;
-  const scale = Math.min((cw-32)/vpW, (ch-32)/vpH);
+                const vpW = pageW + pad * 2;
+                const vpH = pageH + pad * 2;
 
-  previewSVG.setAttribute('viewBox', `${-pad} ${-pad} ${vpW} ${vpH}`);
-  previewSVG.style.width  = (vpW * scale) + 'px';
-  previewSVG.style.height = (vpH * scale) + 'px';
-  previewSVG._scale = scale;
-  previewSVG._vpLeft = -pad;
-  previewSVG._vpTop  = -pad;
+                const rect = canvasArea.getBoundingClientRect();
+                const cw = rect.width || 900;
+                const ch = rect.height || 600;
+                const scale = Math.min((cw - 32) / vpW, (ch - 32) / vpH);
 
-  const pm     = parseFloat(document.getElementById('paperMargin').value) || 5;
-  const pens   = Math.max(1, Math.min(8, parseInt(document.getElementById('penCount').value) || 2));
-  const hasSVG = !!S.svgText;
+                previewSVG.setAttribute(
+                    "viewBox",
+                    `${-pad} ${-pad} ${vpW} ${vpH}`,
+                );
+                previewSVG.style.width = vpW * scale + "px";
+                previewSVG.style.height = vpH * scale + "px";
+                previewSVG._scale = scale;
+                previewSVG._vpLeft = -pad;
+                previewSVG._vpTop = -pad;
 
-  let html = '';
+                const pm =
+                    parseFloat(document.getElementById("paperMargin").value) ||
+                    5;
+                const pens = Math.max(
+                    1,
+                    Math.min(
+                        8,
+                        parseInt(document.getElementById("penCount").value) ||
+                            2,
+                    ),
+                );
+                const hasSVG = !!S.svgText;
 
-  // ── Page shadow + background ──
-  html += `<rect x="2" y="2" width="${pageW}" height="${pageH}" fill="#000" opacity=".45"/>`;
-  html += `<rect x="0" y="0" width="${pageW}" height="${pageH}" fill="white"/>`;
+                let html = "";
 
-  // ── Faint 10mm grid ──
-  html += `<g stroke="#e8e8e8" stroke-width="0.2" opacity="0.6">`;
-  for (let x=10; x<pageW; x+=10) html += `<line x1="${x}" y1="0" x2="${x}" y2="${pageH}"/>`;
-  for (let y=10; y<pageH; y+=10) html += `<line x1="0" y1="${y}" x2="${pageW}" y2="${y}"/>`;
-  html += `</g>`;
-  // Faint 50mm accent
-  html += `<g stroke="#d0d0d0" stroke-width="0.4" opacity="0.5">`;
-  for (let x=50; x<pageW; x+=50) html += `<line x1="${x}" y1="0" x2="${x}" y2="${pageH}"/>`;
-  for (let y=50; y<pageH; y+=50) html += `<line x1="0" y1="${y}" x2="${pageW}" y2="${y}"/>`;
-  html += `</g>`;
+                // ── Page shadow + background ──
+                html += `<rect x="2" y="2" width="${pageW}" height="${pageH}" fill="#000" opacity=".45"/>`;
+                html += `<rect x="0" y="0" width="${pageW}" height="${pageH}" fill="white"/>`;
 
-  // ── Artwork ──
-  if (hasSVG) {
-    const t = artworkTransform(pageW, pageH);
-    const [vx, vy, vw, vh] = S.viewBox;
-    html += `<svg x="${t.ax}" y="${t.ay}" width="${S.wMm}" height="${S.hMm}"
+                // ── Faint 10mm grid ──
+                html += `<g stroke="#e8e8e8" stroke-width="0.2" opacity="0.6">`;
+                for (let x = 10; x < pageW; x += 10)
+                    html += `<line x1="${x}" y1="0" x2="${x}" y2="${pageH}"/>`;
+                for (let y = 10; y < pageH; y += 10)
+                    html += `<line x1="0" y1="${y}" x2="${pageW}" y2="${y}"/>`;
+                html += `</g>`;
+                // Faint 50mm accent
+                html += `<g stroke="#d0d0d0" stroke-width="0.4" opacity="0.5">`;
+                for (let x = 50; x < pageW; x += 50)
+                    html += `<line x1="${x}" y1="0" x2="${x}" y2="${pageH}"/>`;
+                for (let y = 50; y < pageH; y += 50)
+                    html += `<line x1="0" y1="${y}" x2="${pageW}" y2="${y}"/>`;
+                html += `</g>`;
+
+                // ── Artwork ──
+                if (hasSVG) {
+                    const t = artworkTransform(pageW, pageH);
+                    const [vx, vy, vw, vh] = S.viewBox;
+                    html += `<svg x="${t.ax}" y="${t.ay}" width="${S.wMm}" height="${S.hMm}"
       viewBox="${vx} ${vy} ${vw} ${vh}" overflow="hidden" opacity="0.88">${S.inner}</svg>`;
-    // Artwork bounding box (dashed)
-    html += `<rect x="${t.ax}" y="${t.ay}" width="${S.wMm}" height="${S.hMm}"
+                    // Artwork bounding box (dashed)
+                    html += `<rect x="${t.ax}" y="${t.ay}" width="${S.wMm}" height="${S.hMm}"
       fill="none" stroke="#aaa" stroke-width="0.35" stroke-dasharray="2 1.5"/>`;
-  }
+                }
 
-  // ── Paper outline layer ──
-  if (document.getElementById('layPaper').checked && hasSVG) {
-    const t = artworkTransform(pageW, pageH);
-    html += `<rect x="${t.ax - pm}" y="${t.ay - pm}" width="${S.wMm + pm*2}" height="${S.hMm + pm*2}"
-      fill="none" stroke="${PEN_COLS[0].replace('ff6b6b','4fc3f7') || '#4fc3f7'}" stroke-width="0.55"
+                // ── Paper outline layer ──
+                if (document.getElementById("layPaper").checked && hasSVG) {
+                    const t = artworkTransform(pageW, pageH);
+                    html += `<rect x="${t.ax - pm}" y="${t.ay - pm}" width="${S.wMm + pm * 2}" height="${S.hMm + pm * 2}"
+      fill="none" stroke="${PEN_COLS[0].replace("ff6b6b", "4fc3f7") || "#4fc3f7"}" stroke-width="0.55"
       stroke="var(--blue)" stroke-dasharray="3 2"
       style="stroke:#4fc3f7"/>`;
-  }
+                }
 
-  // ── Calibration ──
-  if (document.getElementById('layCalib').checked) {
-    const calib = buildCalib(pageW, pageH, pens, false);
-    html += calib.svg;
-    // Drag handle over calib block
-    html += `<rect id="calib-drag-handle" x="${calib.bx}" y="${calib.by}" width="${calib.bw}" height="${calib.bh}"
+                // ── Calibration ──
+                if (document.getElementById("layCalib").checked) {
+                    const calib = buildCalib(
+                        pageW,
+                        pageH,
+                        pens,
+                        false,
+                        S.calibRotated,
+                    );
+                    html += calib.svg;
+                    // Drag handle over calib block
+                    html += `<rect id="calib-drag-handle" x="${calib.bx}" y="${calib.by}" width="${calib.bw}" height="${calib.bh}"
       fill="transparent" stroke="#555" stroke-width="0.3" stroke-dasharray="1.5 1.5"
       style="cursor:move" data-drag="calib"/>`;
-  }
+                }
 
-  // ── Page boundary ──
-  if (document.getElementById('layPage').checked) {
-    html += `<rect x="0" y="0" width="${pageW}" height="${pageH}"
-      fill="none" stroke="${'#ce93d8'}" stroke-width="0.6" style="stroke:#ce93d8"/>`;
-  }
+                // ── Page boundary ──
+                if (document.getElementById("layPage").checked) {
+                    html += `<rect x="0" y="0" width="${pageW}" height="${pageH}"
+      fill="none" stroke="${"#ce93d8"}" stroke-width="0.6" style="stroke:#ce93d8"/>`;
+                }
 
-  // ── Dimension labels ──
-  html += `<text x="${pageW/2}" y="${-pad+4}" font-size="3" text-anchor="middle"
-    font-family="monospace" fill="#888">${numFmt(pageW,0)} mm</text>`;
-  html += `<text x="${-pad+3.5}" y="${pageH/2}" font-size="3" text-anchor="middle"
-    font-family="monospace" fill="#888" transform="rotate(-90,${-pad+3.5},${pageH/2})">${numFmt(pageH,0)} mm</text>`;
+                // ── Dimension labels ──
+                html += `<text x="${pageW / 2}" y="${-pad + 4}" font-size="3" text-anchor="middle"
+    font-family="monospace" fill="#888">${numFmt(pageW, 0)} mm</text>`;
+                html += `<text x="${-pad + 3.5}" y="${pageH / 2}" font-size="3" text-anchor="middle"
+    font-family="monospace" fill="#888" transform="rotate(-90,${-pad + 3.5},${pageH / 2})">${numFmt(pageH, 0)} mm</text>`;
 
-  // ── Empty state text ──
-  if (!hasSVG) {
-    html += `<text x="${pageW/2}" y="${pageH/2 - 4}" font-size="5" text-anchor="middle"
+                // ── Empty state text ──
+                if (!hasSVG) {
+                    html += `<text x="${pageW / 2}" y="${pageH / 2 - 4}" font-size="5" text-anchor="middle"
       font-family="monospace" fill="#ccc" opacity="0.25">drop SVG to begin</text>`;
-    html += `<text x="${pageW/2}" y="${pageH/2 + 4}" font-size="3" text-anchor="middle"
+                    html += `<text x="${pageW / 2}" y="${pageH / 2 + 4}" font-size="3" text-anchor="middle"
       font-family="monospace" fill="#ccc" opacity="0.18">A3 landscape · 420 × 297 mm</text>`;
-  }
+                }
 
-  // ── Drag handle (transparent, on top of artwork) ──
-  if (hasSVG) {
-    const t = artworkTransform(pageW, pageH);
-    html += `<rect id="drag-handle" x="${t.ax}" y="${t.ay}" width="${S.wMm}" height="${S.hMm}"
+                // ── Drag handle (transparent, on top of artwork) ──
+                if (hasSVG) {
+                    const t = artworkTransform(pageW, pageH);
+                    html += `<rect id="drag-handle" x="${t.ax}" y="${t.ay}" width="${S.wMm}" height="${S.hMm}"
       fill="transparent" stroke="none" style="cursor:move" data-drag="1"/>`;
-  }
+                }
 
-  previewSVG.innerHTML = html;
-  setupDrag();
-}
+                previewSVG.innerHTML = html;
+                setupDrag();
+            }
 
-// ─────────────────────────────────────────────────────────────────────
-// Drag to reposition (artwork + calibration block)
-// ─────────────────────────────────────────────────────────────────────
-let drag = null;
+            // ─────────────────────────────────────────────────────────────────────
+            // Drag to reposition (artwork + calibration block)
+            // ─────────────────────────────────────────────────────────────────────
+            let drag = null;
 
-function svgPt(e) {
-  const bb  = previewSVG.getBoundingClientRect();
-  const vb  = previewSVG.getAttribute('viewBox').split(' ').map(Number);
-  const sw  = parseFloat(previewSVG.style.width);
-  const sh  = parseFloat(previewSVG.style.height);
-  return {
-    x: (e.clientX - bb.left) * (vb[2]/sw) + vb[0],
-    y: (e.clientY - bb.top)  * (vb[3]/sh) + vb[1],
-  };
-}
+            function svgPt(e) {
+                const bb = previewSVG.getBoundingClientRect();
+                const vb = previewSVG
+                    .getAttribute("viewBox")
+                    .split(" ")
+                    .map(Number);
+                const sw = parseFloat(previewSVG.style.width);
+                const sh = parseFloat(previewSVG.style.height);
+                return {
+                    x: (e.clientX - bb.left) * (vb[2] / sw) + vb[0],
+                    y: (e.clientY - bb.top) * (vb[3] / sh) + vb[1],
+                };
+            }
 
-function setupDrag() {
-  // Artwork handle
-  const ah = previewSVG.querySelector('#drag-handle');
-  if (ah) {
-    ah.addEventListener('mousedown', e => startDrag(e, 'artwork'));
-  }
-  // Calib handle
-  const ch = previewSVG.querySelector('#calib-drag-handle');
-  if (ch) {
-    ch.addEventListener('mousedown', e => startDrag(e, 'calib'));
-  }
-}
+            function setupDrag() {
+                // Artwork handle
+                const ah = previewSVG.querySelector("#drag-handle");
+                if (ah) {
+                    ah.addEventListener("mousedown", (e) =>
+                        startDrag(e, "artwork"),
+                    );
+                }
+                // Calib handle
+                const ch = previewSVG.querySelector("#calib-drag-handle");
+                if (ch) {
+                    ch.addEventListener("mousedown", (e) =>
+                        startDrag(e, "calib"),
+                    );
+                }
+            }
 
-function startDrag(e, target) {
-  e.preventDefault();
-  e.stopPropagation();
-  const [pageW, pageH] = getPage();
-  const pens = Math.max(1, Math.min(8, parseInt(document.getElementById('penCount').value) || 2));
+            function startDrag(e, target) {
+                e.preventDefault();
+                e.stopPropagation();
+                const [pageW, pageH] = getPage();
+                const pens = Math.max(
+                    1,
+                    Math.min(
+                        8,
+                        parseInt(document.getElementById("penCount").value) ||
+                            2,
+                    ),
+                );
 
-  // Snapshot current calib translate (resolve default if not yet dragged)
-  let cx0, cy0;
-  if (S.calibX !== null) {
-    cx0 = S.calibX; cy0 = S.calibY;
-  } else {
-    // Mirror default placement from buildCalib
-    const rulerR=10, circR=4, ipad=3, circGapR=5, labelW=7, tickMaj=2.2, lineLen=5, lineGap=2, vGap=7, headerH=5, M=8;
-    const yRulerX = ipad + circR*2 + circGapR + labelW + tickMaj;
-    const hX2     = yRulerX + lineGap + lineLen;
-    const hY0     = ipad + headerH + rulerR;
-    const xRulerY = hY0 + rulerR + vGap;
-    const vY2     = xRulerY + lineGap + lineLen;
-    const bw_loc  = Math.max(hX2 + 6, yRulerX + rulerR + 2);
-    const bh_loc  = vY2 + 4 + ipad;
-    cx0 = pageW - M - bw_loc;
-    cy0 = M;
-  }
+                // Snapshot current calib translate (resolve default if not yet dragged)
+                let cx0, cy0;
+                if (S.calibX !== null) {
+                    cx0 = S.calibX;
+                    cy0 = S.calibY;
+                } else {
+                    // Mirror default placement from buildCalib (must stay in sync with constants there)
+                    const rulerR = 10,
+                        ipad = 3,
+                        labelW = 7,
+                        tickMaj = 2.2,
+                        lineLen = 5,
+                        lineGap = 2,
+                        vGap = 7,
+                        headerH = 5,
+                        circR = 4,
+                        circGap = 6,
+                        M = 8;
+                    const yRulerX = ipad + labelW + tickMaj;
+                    const hX2 = yRulerX + lineGap + lineLen;
+                    const xRulerX0 = yRulerX;
+                    const circCY = ipad + headerH + circR;
+                    const hY0 = circCY + circR + circGap + rulerR;
+                    const xRulerY = hY0 + rulerR + vGap;
+                    const vY2 = xRulerY + lineGap + lineLen;
+                    const bw_loc = Math.max(hX2 + 6, xRulerX0 + rulerR + 2);
+                    const bh_loc = vY2 + 4 + ipad;
+                    const effectW = S.calibRotated ? bh_loc : bw_loc;
+                    cx0 = pageW - M - effectW;
+                    cy0 = M;
+                }
 
-  drag = { target, pt: svgPt(e), ox0: S.ox, oy0: S.oy, cx0, cy0 };
-  previewSVG.style.cursor = 'grabbing';
-  document.addEventListener('mousemove', onDragMove);
-  document.addEventListener('mouseup',   onDragEnd);
-}
+                drag = { target, pt: svgPt(e), ox0: S.ox, oy0: S.oy, cx0, cy0 };
+                previewSVG.style.cursor = "grabbing";
+                document.addEventListener("mousemove", onDragMove);
+                document.addEventListener("mouseup", onDragEnd);
+            }
 
-function onDragMove(e) {
-  if (!drag) return;
-  const pt = svgPt(e);
-  const dx = pt.x - drag.pt.x;
-  const dy = pt.y - drag.pt.y;
-  if (drag.target === 'artwork') {
-    S.ox = numFmt(drag.ox0 + dx);
-    S.oy = numFmt(drag.oy0 + dy);
-    syncOffsetInputs();
-  } else if (drag.target === 'calib') {
-    S.calibX = numFmt(drag.cx0 + dx);
-    S.calibY = numFmt(drag.cy0 + dy);
-  }
-  redraw();
-}
+            function onDragMove(e) {
+                if (!drag) return;
+                const pt = svgPt(e);
+                const dx = pt.x - drag.pt.x;
+                const dy = pt.y - drag.pt.y;
+                if (drag.target === "artwork") {
+                    S.ox = numFmt(drag.ox0 + dx);
+                    S.oy = numFmt(drag.oy0 + dy);
+                    syncOffsetInputs();
+                } else if (drag.target === "calib") {
+                    S.calibX = numFmt(drag.cx0 + dx);
+                    S.calibY = numFmt(drag.cy0 + dy);
+                }
+                redraw();
+            }
 
-function onDragEnd() {
-  drag = null;
-  previewSVG.style.cursor = '';
-  document.removeEventListener('mousemove', onDragMove);
-  document.removeEventListener('mouseup',   onDragEnd);
-}
+            function onDragEnd() {
+                drag = null;
+                previewSVG.style.cursor = "";
+                document.removeEventListener("mousemove", onDragMove);
+                document.removeEventListener("mouseup", onDragEnd);
+            }
 
-// ─────────────────────────────────────────────────────────────────────
-// SVG Export
-// ─────────────────────────────────────────────────────────────────────
-function doExport() {
-  if (!S.svgText) return;
+            // ─────────────────────────────────────────────────────────────────────
+            // SVG Export
+            // ─────────────────────────────────────────────────────────────────────
+            function doExport() {
+                if (!S.svgText) return;
 
-  const [pageW, pageH] = getPage();
-  const pm   = parseFloat(document.getElementById('paperMargin').value) || 5;
-  const pens = Math.max(1, Math.min(8, parseInt(document.getElementById('penCount').value) || 2));
-  const t    = artworkTransform(pageW, pageH);
+                const [pageW, pageH] = getPage();
+                const pm =
+                    parseFloat(document.getElementById("paperMargin").value) ||
+                    5;
+                const pens = Math.max(
+                    1,
+                    Math.min(
+                        8,
+                        parseInt(document.getElementById("penCount").value) ||
+                            2,
+                    ),
+                );
+                const t = artworkTransform(pageW, pageH);
 
-  let out = `<?xml version="1.0" encoding="UTF-8"?>
+                let out = `<?xml version="1.0" encoding="UTF-8"?>
 <!-- Generated by Plot·Prep -->
 <svg xmlns="http://www.w3.org/2000/svg"
      xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
@@ -921,8 +1452,8 @@ function doExport() {
 
 `;
 
-  // ── Artwork layer ──
-  out += `  <!-- ═══ Artwork (original SVG, layers preserved) ═══ -->
+                // ── Artwork layer ──
+                out += `  <!-- ═══ Artwork (original SVG, layers preserved) ═══ -->
   <g inkscape:label="artwork" inkscape:groupmode="layer" id="layer-artwork"
      transform="translate(${t.tx.toFixed(6)},${t.ty.toFixed(6)}) scale(${t.sx.toFixed(8)},${t.sy.toFixed(8)})">
 ${S.inner}
@@ -930,59 +1461,60 @@ ${S.inner}
 
 `;
 
-  // ── Paper outline layer ──
-  if (document.getElementById('layPaper').checked) {
-    out += `  <!-- ═══ Paper outline: place paper within this rectangle ═══ -->
+                // ── Paper outline layer ──
+                if (document.getElementById("layPaper").checked) {
+                    out += `  <!-- ═══ Paper outline: place paper within this rectangle ═══ -->
   <g inkscape:label="paper-outline" inkscape:groupmode="layer" id="layer-paper-outline">
     <rect x="${(t.ax - pm).toFixed(4)}" y="${(t.ay - pm).toFixed(4)}"
-          width="${(S.wMm + pm*2).toFixed(4)}" height="${(S.hMm + pm*2).toFixed(4)}"
+          width="${(S.wMm + pm * 2).toFixed(4)}" height="${(S.hMm + pm * 2).toFixed(4)}"
           fill="none" stroke="black" stroke-width="0.5"/>
   </g>
 
 `;
-  }
+                }
 
-  // ── Calibration ──
-  if (document.getElementById('layCalib').checked) {
-    out += `  <!-- ═══ Calibration markers ═══ -->
-  ${buildCalib(pageW, pageH, pens, true).svg}
+                // ── Calibration ──
+                if (document.getElementById("layCalib").checked) {
+                    out += `  <!-- ═══ Calibration markers ═══ -->
+  ${buildCalib(pageW, pageH, pens, true, S.calibRotated).svg}
 
 `;
-  }
+                }
 
-  // ── Page boundary ──
-  if (document.getElementById('layPage').checked) {
-    out += `  <!-- ═══ Page boundary ═══ -->
+                // ── Page boundary ──
+                if (document.getElementById("layPage").checked) {
+                    out += `  <!-- ═══ Page boundary ═══ -->
   <g inkscape:label="page-boundary" inkscape:groupmode="layer" id="layer-page-boundary">
     <rect x="0" y="0" width="${pageW}" height="${pageH}"
           fill="none" stroke="black" stroke-width="0.5"/>
   </g>
 
 `;
-  }
+                }
 
-  out += `</svg>`;
+                out += `</svg>`;
 
-  const blob = new Blob([out], { type: 'image/svg+xml' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = S.filename.replace(/\.svg$/i, '') + '_plotprep.svg';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
+                const blob = new Blob([out], { type: "image/svg+xml" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download =
+                    S.filename.replace(/\.svg$/i, "") + "_plotprep.svg";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
 
-// ─────────────────────────────────────────────────────────────────────
-// Resize
-// ─────────────────────────────────────────────────────────────────────
-new ResizeObserver(() => redraw()).observe(canvasArea);
+            // ─────────────────────────────────────────────────────────────────────
+            // Resize
+            // ─────────────────────────────────────────────────────────────────────
+            new ResizeObserver(() => redraw()).observe(canvasArea);
 
-// ─────────────────────────────────────────────────────────────────────
-// Init
-// ─────────────────────────────────────────────────────────────────────
-redraw();
-</script>
-</body>
+            // ─────────────────────────────────────────────────────────────────────
+            // Init
+            // ─────────────────────────────────────────────────────────────────────
+            redraw();
+        </script>
+    </body>
 </html>
