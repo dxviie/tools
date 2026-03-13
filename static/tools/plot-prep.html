@@ -423,6 +423,37 @@
                 display: block;
                 user-select: none;
             }
+            /* ── Loading overlay ── */
+            .loading-overlay {
+                display: none;
+                position: absolute;
+                inset: 0;
+                z-index: 10;
+                align-items: center;
+                justify-content: center;
+                flex-direction: column;
+                gap: 10px;
+                background: rgba(9, 9, 9, 0.72);
+                backdrop-filter: blur(2px);
+                color: var(--text-muted);
+                font-family: monospace;
+                font-size: 11px;
+                letter-spacing: 0.08em;
+                pointer-events: none;
+            }
+            .loading-overlay.visible {
+                display: flex;
+            }
+            .loading-spinner {
+                width: 22px;
+                height: 22px;
+                border: 2px solid #333;
+                border-top-color: #c8f060;
+                border-radius: 50%;
+                animation: spin 0.7s linear infinite;
+            }
+            @keyframes spin { to { transform: rotate(360deg); } }
+
             /* HTML <img> overlay for artwork — rasterised once by the browser into
                a GPU texture and never re-rasterised on hover/paint, unlike SVG <image>.
                Keeps complex artwork (thousands of lines, mix-blend-mode, filters)
@@ -704,6 +735,10 @@
             <!-- Canvas -->
             <div class="canvas-wrap">
                 <div class="canvas-area" id="canvasArea">
+                    <div id="loadingOverlay" class="loading-overlay">
+                        <div class="loading-spinner"></div>
+                        <span id="loadingMsg">processing…</span>
+                    </div>
                     <div class="preview-svg-wrap">
                         <svg id="previewSVG" class="preview-svg"></svg>
                         <img id="artworkImg" class="artwork-img" style="display:none" alt=""/>
@@ -896,24 +931,43 @@
                 if (f && f.name.toLowerCase().endsWith(".svg")) loadFile(f);
             });
 
+            const loadingOverlay = document.getElementById("loadingOverlay");
+            const loadingMsg = document.getElementById("loadingMsg");
+
+            function setBusy(msg) {
+                loadingMsg.textContent = msg;
+                loadingOverlay.classList.add("visible");
+            }
+            function clearBusy() {
+                loadingOverlay.classList.remove("visible");
+            }
+
             function loadFile(file) {
+                const sizeMb = (file.size / 1048576).toFixed(1);
+                setBusy(`reading ${sizeMb} MB…`);
                 const r = new FileReader();
                 r.onload = (e) => {
-                    if (!parseSVG(e.target.result)) return;
-                    S.svgText = e.target.result;
-                    S.filename = file.name;
-                    S.ox = 0;
-                    S.oy = 0;
-                    S.artRotation = 0;
-                    updateArtBlobUrl();
-                    document.getElementById("infoName").textContent = file.name;
-                    document.getElementById("infoDims").textContent =
-                        `${numFmt(S.wMm, 1)} × ${numFmt(S.hMm, 1)} mm`;
-                    document.getElementById("fileInfo").classList.add("on");
-                    document.getElementById("exportBtn").disabled = false;
-                    document.getElementById("offX").value = "0";
-                    document.getElementById("offY").value = "0";
-                    redraw("loadFile");
+                    const text = e.target.result;
+                    // Yield so the browser paints the overlay before the heavy work
+                    setBusy(`processing ${sizeMb} MB…`);
+                    setTimeout(() => {
+                        if (!parseSVG(text)) { clearBusy(); return; }
+                        S.svgText = text;
+                        S.filename = file.name;
+                        S.ox = 0;
+                        S.oy = 0;
+                        S.artRotation = 0;
+                        updateArtBlobUrl();
+                        document.getElementById("infoName").textContent = file.name;
+                        document.getElementById("infoDims").textContent =
+                            `${numFmt(S.wMm, 1)} × ${numFmt(S.hMm, 1)} mm`;
+                        document.getElementById("fileInfo").classList.add("on");
+                        document.getElementById("exportBtn").disabled = false;
+                        document.getElementById("offX").value = "0";
+                        document.getElementById("offY").value = "0";
+                        redraw("loadFile");
+                        clearBusy();
+                    }, 0);
                 };
                 r.readAsText(file);
             }
