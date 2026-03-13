@@ -397,6 +397,10 @@
                 flex-direction: column;
                 overflow: hidden;
                 background: #090909;
+                /* contain:paint creates a paint boundary — sidebar hover/repaint events
+                   cannot bleed into this subtree, which prevents the browser from
+                   re-rasterizing the preview on every button :hover transition. */
+                contain: paint;
             }
             .canvas-area {
                 flex: 1;
@@ -407,10 +411,28 @@
                 position: relative;
             }
 
+            /* Wrapper carries the shadow so the SVG itself has no CSS filter.
+               CSS filter on an SVG with a large <image> forces full re-rasterization
+               on every composite frame, making sidebar hover effects visibly slow. */
+            .preview-svg-wrap {
+                position: relative; /* anchor for .artwork-img */
+                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.85);
+                line-height: 0; /* collapse inline whitespace */
+            }
             .preview-svg {
                 display: block;
-                filter: drop-shadow(0 12px 40px rgba(0, 0, 0, 0.9));
                 user-select: none;
+            }
+            /* HTML <img> overlay for artwork — rasterised once by the browser into
+               a GPU texture and never re-rasterised on hover/paint, unlike SVG <image>.
+               Keeps complex artwork (thousands of lines, mix-blend-mode, filters)
+               completely isolated from the SVG compositing layer. */
+            .artwork-img {
+                position: absolute;
+                top: 0;
+                left: 0;
+                pointer-events: none;
+                opacity: 0.88;
             }
 
             .canvas-footer {
@@ -470,14 +492,7 @@
                             <div class="drop-icon">⬡</div>
                             <div class="drop-label">
                                 Drop .svg here or
-                                <em
-                                    onclick="
-                                        document
-                                            .getElementById('fileInput')
-                                            .click()
-                                    "
-                                    >browse</em
-                                >
+                                <em>browse</em>
                             </div>
                         </div>
                         <div class="file-info" id="fileInfo">
@@ -689,7 +704,10 @@
             <!-- Canvas -->
             <div class="canvas-wrap">
                 <div class="canvas-area" id="canvasArea">
-                    <svg id="previewSVG" class="preview-svg"></svg>
+                    <div class="preview-svg-wrap">
+                        <svg id="previewSVG" class="preview-svg"></svg>
+                        <img id="artworkImg" class="artwork-img" style="display:none" alt=""/>
+                    </div>
                 </div>
                 <div class="canvas-footer" id="canvasFooter">
                     <span
@@ -752,6 +770,7 @@
                 calibY: null, // calib block top-left; null = default (top-right corner)
                 calibRotated: false, // rotate entire calib block 90°
                 artRotation: 0, // 0/1/2/3 × 90° CW
+                artBlobUrl: null, // blob URL of artwork for preview <image> element
             };
 
             // ─────────────────────────────────────────────────────────────────────
@@ -795,10 +814,12 @@
             // SVG parsing
             // ─────────────────────────────────────────────────────────────────────
             function parseSVG(text) {
+                const _t0 = performance.now();
                 const doc = new DOMParser().parseFromString(
                     text,
                     "image/svg+xml",
                 );
+                const _t1 = performance.now();
                 const root = doc.documentElement;
                 if (root.querySelector("parsererror")) {
                     alert("Could not parse SVG.");
@@ -836,7 +857,10 @@
                 S.hMm = hMm;
                 S.viewBox = vb;
                 // Use innerHTML – preserves Inkscape layers, defs, everything
+                const _t2 = performance.now();
                 S.inner = root.innerHTML;
+                const _t3 = performance.now();
+                console.log(`[plot-prep] parseSVG — DOMParser: ${(_t1-_t0).toFixed(1)}ms  innerHTML read: ${(_t3-_t2).toFixed(1)}ms  total: ${(_t3-_t0).toFixed(1)}ms  (input: ${(text.length/1024).toFixed(0)} KB)`);
                 return true;
             }
 
@@ -851,9 +875,13 @@
                 });
 
             const dz = document.getElementById("dropZone");
-            dz.addEventListener("click", () =>
-                document.getElementById("fileInput").click(),
-            );
+            let _pickerOpen = false;
+            dz.addEventListener("click", () => {
+                if (_pickerOpen) return;
+                _pickerOpen = true;
+                document.getElementById("fileInput").click();
+            });
+            window.addEventListener("focus", () => { _pickerOpen = false; });
             dz.addEventListener("dragover", (e) => {
                 e.preventDefault();
                 dz.classList.add("drag-over");
@@ -877,6 +905,7 @@
                     S.ox = 0;
                     S.oy = 0;
                     S.artRotation = 0;
+                    updateArtBlobUrl();
                     document.getElementById("infoName").textContent = file.name;
                     document.getElementById("infoDims").textContent =
                         `${numFmt(S.wMm, 1)} × ${numFmt(S.hMm, 1)} mm`;
@@ -884,7 +913,7 @@
                     document.getElementById("exportBtn").disabled = false;
                     document.getElementById("offX").value = "0";
                     document.getElementById("offY").value = "0";
-                    redraw();
+                    redraw("loadFile");
                 };
                 r.readAsText(file);
             }
@@ -895,10 +924,11 @@
                 S.ox = 0;
                 S.oy = 0;
                 S.artRotation = 0;
+                if (S.artBlobUrl) { URL.revokeObjectURL(S.artBlobUrl); S.artBlobUrl = null; }
                 document.getElementById("fileInfo").classList.remove("on");
                 document.getElementById("exportBtn").disabled = true;
                 document.getElementById("fileInput").value = "";
-                redraw();
+                redraw("clearSVG");
             }
 
             // ─────────────────────────────────────────────────────────────────────
@@ -908,7 +938,7 @@
                 S.ox = 0;
                 S.oy = 0;
                 syncOffsetInputs();
-                redraw();
+                redraw("centerArtwork");
             }
             function resetOffset() {
                 centerArtwork();
@@ -920,16 +950,16 @@
             function onOffsetInput() {
                 S.ox = parseFloat(document.getElementById("offX").value) || 0;
                 S.oy = parseFloat(document.getElementById("offY").value) || 0;
-                redraw();
+                redraw("offsetInput");
             }
             function onChange() {
-                redraw();
+                redraw("onChange");
             }
             function onCalibRotate() {
                 S.calibRotated = document.getElementById("calibRotate").checked;
                 S.calibX = null;
                 S.calibY = null; // reset position — effective dims swap
-                redraw();
+                redraw("calibRotate");
             }
 
             // ─────────────────────────────────────────────────────────────────────
@@ -955,6 +985,30 @@
                 const cx = vx + vw / 2;
                 const cy = vy + vh / 2;
                 return `<g transform="rotate(${S.artRotation * 90},${cx},${cy})">${S.inner}</g>`;
+            }
+
+            // Rebuild the artwork blob URL (call after load or rotation change).
+            // Builds a blob URL for the artwork SVG and updates the <img> src.
+            // Using an HTML <img> (not SVG <image>) means the browser rasterises the
+            // artwork once into a GPU texture — completely isolated from the SVG
+            // compositing layer, so hover/repaint cycles never touch it.
+            function updateArtBlobUrl() {
+                if (S.artBlobUrl) { URL.revokeObjectURL(S.artBlobUrl); S.artBlobUrl = null; }
+                artworkImg.src = "";
+                artworkImg.style.display = "none";
+                if (!S.svgText) return;
+                const t0 = performance.now();
+                const [effW, effH, rotVb] = artEffDims();
+                const [nvx, nvy, nvw, nvh] = rotVb;
+                const svgStr = `<svg xmlns="http://www.w3.org/2000/svg"
+                  xmlns:xlink="http://www.w3.org/1999/xlink"
+                  width="${effW}mm" height="${effH}mm"
+                  viewBox="${nvx} ${nvy} ${nvw} ${nvh}">${artInner()}</svg>`;
+                const t1 = performance.now();
+                S.artBlobUrl = URL.createObjectURL(new Blob([svgStr], { type: "image/svg+xml" }));
+                artworkImg.src = S.artBlobUrl;
+                const t2 = performance.now();
+                console.log(`[plot-prep] updateArtBlobUrl — svgStr build: ${(t1-t0).toFixed(1)}ms  blob+URL: ${(t2-t1).toFixed(1)}ms  total: ${(t2-t0).toFixed(1)}ms`);
             }
 
             // ─────────────────────────────────────────────────────────────────────
@@ -1212,9 +1266,13 @@
             // Preview rendering
             // ─────────────────────────────────────────────────────────────────────
             const previewSVG = document.getElementById("previewSVG");
+            const artworkImg = document.getElementById("artworkImg");
             const canvasArea = document.getElementById("canvasArea");
 
-            function redraw() {
+            let _redrawCount = 0;
+            function redraw(_src = "?") {
+                const _n = ++_redrawCount;
+                const _t0 = performance.now();
                 const [pageW, pageH] = getPage();
                 const pad = 15; // mm of breathing room around page
 
@@ -1249,6 +1307,7 @@
                 );
                 const hasSVG = !!S.svgText;
 
+                const _t1 = performance.now(); // end of setup, start of HTML build
                 let html = "";
 
                 // ── Page shadow + background ──
@@ -1271,17 +1330,27 @@
                 html += `</g>`;
 
                 // ── Artwork ──
+                // The artwork is rendered as an HTML <img> overlay (not SVG <image>),
+                // positioned via CSS. This isolates its rasterisation completely from
+                // the SVG layer — the browser decodes it once to a GPU texture and
+                // never re-rasterises on hover, layout, or nearby style changes.
                 if (hasSVG) {
                     const t = artworkTransform(pageW, pageH);
-                    const [nvx, nvy, nvw, nvh] = t.rotVb;
-                    if (!isDragging) {
-                        html += `<svg x="${t.ax}" y="${t.ay}" width="${t.effW}" height="${t.effH}"
-      viewBox="${nvx} ${nvy} ${nvw} ${nvh}" overflow="hidden" opacity="0.88">${artInner()}</svg>`;
+                    if (!isDragging && S.artBlobUrl) {
+                        artworkImg.style.display = "block";
+                        artworkImg.style.left   = (t.ax + pad) * scale + "px";
+                        artworkImg.style.top    = (t.ay + pad) * scale + "px";
+                        artworkImg.style.width  = t.effW * scale + "px";
+                        artworkImg.style.height = t.effH * scale + "px";
+                    } else {
+                        artworkImg.style.display = "none";
                     }
                     // Bounding box outline — stays visible during drag
                     html += `<rect x="${t.ax}" y="${t.ay}" width="${t.effW}" height="${t.effH}"
       fill="${isDragging ? "rgba(200,240,96,0.04)" : "none"}" stroke="#aaa"
       stroke-width="${isDragging ? "0.5" : "0.35"}" stroke-dasharray="2 1.5"/>`;
+                } else {
+                    artworkImg.style.display = "none";
                 }
 
                 // ── Paper outline layer ──
@@ -1345,8 +1414,14 @@
     </g>`;
                 }
 
+                const _t2 = performance.now(); // end of HTML build
                 previewSVG.innerHTML = html;
+                const _t3 = performance.now(); // end of innerHTML
                 setupDrag();
+                const _t4 = performance.now(); // end of setupDrag
+                console.log(
+                    `[plot-prep] redraw #${_n} (${_src}) — setup: ${(_t1-_t0).toFixed(1)}ms  htmlBuild: ${(_t2-_t1).toFixed(1)}ms  innerHTML: ${(_t3-_t2).toFixed(1)}ms  setupDrag: ${(_t4-_t3).toFixed(1)}ms  TOTAL: ${(_t4-_t0).toFixed(1)}ms  htmlLen: ${(html.length/1024).toFixed(0)}KB`
+                );
             }
 
             // ─────────────────────────────────────────────────────────────────────
@@ -1354,13 +1429,15 @@
             // ─────────────────────────────────────────────────────────────────────
             let drag = null;
             let isDragging = false; // true while dragging artwork — skips full render
+            let _dragRafId = null;  // pending rAF for drag redraws
 
             function rotateArtworkCW() {
                 S.artRotation = (S.artRotation + 1) % 4;
                 S.ox = 0;
                 S.oy = 0;
                 syncOffsetInputs();
-                redraw();
+                updateArtBlobUrl();
+                redraw("rotateArtworkCW");
             }
 
             function svgPt(e) {
@@ -1477,7 +1554,12 @@
                     S.calibX = numFmt(drag.cx0 + dx);
                     S.calibY = numFmt(drag.cy0 + dy);
                 }
-                redraw();
+                if (!_dragRafId) {
+                    _dragRafId = requestAnimationFrame(() => {
+                        _dragRafId = null;
+                        redraw("drag");
+                    });
+                }
             }
 
             function onDragEnd() {
@@ -1487,7 +1569,7 @@
                 previewSVG.style.cursor = "";
                 document.removeEventListener("mousemove", onDragMove);
                 document.removeEventListener("mouseup", onDragEnd);
-                if (wasArtworkDrag) redraw(); // restore full artwork render
+                if (wasArtworkDrag) redraw("dragEnd"); // restore full artwork render
             }
 
             // ─────────────────────────────────────────────────────────────────────
@@ -1581,12 +1663,12 @@ ${artInner()}
             // ─────────────────────────────────────────────────────────────────────
             // Resize
             // ─────────────────────────────────────────────────────────────────────
-            new ResizeObserver(() => redraw()).observe(canvasArea);
+            new ResizeObserver(() => redraw("resizeObserver")).observe(canvasArea);
 
             // ─────────────────────────────────────────────────────────────────────
             // Init
             // ─────────────────────────────────────────────────────────────────────
-            redraw();
+            redraw("init");
         </script>
     </body>
 </html>
