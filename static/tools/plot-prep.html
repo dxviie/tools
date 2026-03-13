@@ -637,7 +637,21 @@
                     <div class="section">
                         <div class="section-label">Paper Outline</div>
                         <div class="field-row">
-                            <label class="field-label">margin</label>
+                            <label class="field-label">size</label>
+                            <select id="paperOutlineSize" onchange="onPaperOutlineSizeChange()">
+                                <option value="artwork">artwork</option>
+                                <option value="A4">A4</option>
+                                <option value="A3">A3</option>
+                                <option value="A2">A2</option>
+                                <option value="A1">A1</option>
+                                <option value="A0">A0</option>
+                                <option value="AxiV3">AxiDraw V3</option>
+                                <option value="AxiA1">AxiDraw A1</option>
+                                <option value="custom">custom…</option>
+                            </select>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label">+ margin</label>
                             <input
                                 type="number"
                                 id="paperMargin"
@@ -648,6 +662,39 @@
                                 onchange="onChange()"
                             />
                             <span class="field-unit">mm</span>
+                        </div>
+                        <div class="field-row" id="paperOutlineOrientRow" style="display:none">
+                            <label class="field-label">orient</label>
+                            <select id="paperOutlineOrient" onchange="onChange()">
+                                <option value="landscape">Landscape</option>
+                                <option value="portrait">Portrait</option>
+                            </select>
+                        </div>
+                        <div id="paperOutlineCustomRows" style="display:none">
+                            <div class="field-row">
+                                <label class="field-label">width</label>
+                                <input
+                                    type="number"
+                                    id="paperOutlineW"
+                                    value="210"
+                                    min="1"
+                                    step="1"
+                                    onchange="onChange()"
+                                />
+                                <span class="field-unit">mm</span>
+                            </div>
+                            <div class="field-row">
+                                <label class="field-label">height</label>
+                                <input
+                                    type="number"
+                                    id="paperOutlineH"
+                                    value="297"
+                                    min="1"
+                                    step="1"
+                                    onchange="onChange()"
+                                />
+                                <span class="field-unit">mm</span>
+                            </div>
                         </div>
                     </div>
 
@@ -1009,6 +1056,45 @@
             function onChange() {
                 redraw("onChange");
             }
+
+            function onPaperOutlineSizeChange() {
+                const v = document.getElementById("paperOutlineSize").value;
+                document.getElementById("paperOutlineOrientRow").style.display =
+                    (v !== "artwork" && v !== "custom") ? "" : "none";
+                document.getElementById("paperOutlineCustomRows").style.display =
+                    v === "custom" ? "" : "none";
+                onChange();
+            }
+
+            // Returns {x, y, w, h} in mm for the paper outline rect, or null if
+            // artwork mode is selected but no artwork is loaded yet.
+            function getPaperOutlineRect(pageW, pageH) {
+                const mode = document.getElementById("paperOutlineSize").value;
+                const pm = parseFloat(document.getElementById("paperMargin").value) || 5;
+                if (mode === "artwork") {
+                    if (!S.svgText) return null;
+                    const t = artworkTransform(pageW, pageH);
+                    return { x: t.ax - pm, y: t.ay - pm, w: t.effW + pm * 2, h: t.effH + pm * 2 };
+                }
+                let pw, ph;
+                if (mode === "custom") {
+                    pw = parseFloat(document.getElementById("paperOutlineW").value) || 210;
+                    ph = parseFloat(document.getElementById("paperOutlineH").value) || 297;
+                } else {
+                    [pw, ph] = PAGES[mode];
+                    const orient = document.getElementById("paperOutlineOrient").value;
+                    if (orient === "landscape") [pw, ph] = [Math.max(pw, ph), Math.min(pw, ph)];
+                    else [pw, ph] = [Math.min(pw, ph), Math.max(pw, ph)];
+                }
+                // Center on output page, then expand by margin
+                return {
+                    x: (pageW - pw) / 2 - pm,
+                    y: (pageH - ph) / 2 - pm,
+                    w: pw + pm * 2,
+                    h: ph + pm * 2,
+                };
+            }
+
             function onCalibRotate() {
                 S.calibRotated = document.getElementById("calibRotate").checked;
                 S.calibX = null;
@@ -1408,10 +1494,12 @@
                 }
 
                 // ── Paper outline layer ──
-                if (document.getElementById("layPaper").checked && hasSVG) {
-                    const t = artworkTransform(pageW, pageH);
-                    html += `<rect x="${t.ax - pm}" y="${t.ay - pm}" width="${t.effW + pm * 2}" height="${t.effH + pm * 2}"
+                if (document.getElementById("layPaper").checked) {
+                    const pr = getPaperOutlineRect(pageW, pageH);
+                    if (pr) {
+                        html += `<rect x="${pr.x}" y="${pr.y}" width="${pr.w}" height="${pr.h}"
       fill="none" stroke="#4fc3f7" stroke-width="0.55" stroke-dasharray="3 2"/>`;
+                    }
                 }
 
                 // ── Calibration ──
@@ -1671,14 +1759,17 @@ ${artInner()}
 
                 // ── Paper outline layer ──
                 if (document.getElementById("layPaper").checked) {
-                    out += `  <!-- ═══ Paper outline: place paper within this rectangle ═══ -->
+                    const pr = getPaperOutlineRect(pageW, pageH);
+                    if (pr) {
+                        out += `  <!-- ═══ Paper outline: place paper within this rectangle ═══ -->
   <g inkscape:label="paper-outline" inkscape:groupmode="layer" id="layer-paper-outline">
-    <rect x="${(t.ax - pm).toFixed(4)}" y="${(t.ay - pm).toFixed(4)}"
-          width="${(t.effW + pm * 2).toFixed(4)}" height="${(t.effH + pm * 2).toFixed(4)}"
+    <rect x="${pr.x.toFixed(4)}" y="${pr.y.toFixed(4)}"
+          width="${pr.w.toFixed(4)}" height="${pr.h.toFixed(4)}"
           fill="none" stroke="black" stroke-width="0.5"/>
   </g>
 
 `;
+                    }
                 }
 
                 // ── Calibration ──
