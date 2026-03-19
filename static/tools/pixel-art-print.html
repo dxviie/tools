@@ -172,7 +172,7 @@
         <span class="range-val" id="gapRatioVal">8%</span>
       </label>
       <div style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.45;">
-        Rows follow paper aspect. Gap is a fraction of cell size (preview matches export proportions).
+        Rows follow paper aspect. Gap is a fraction of cell size. The preview bumps sub-pixel gaps so lines stay visible on screen; PNG export keeps exact fractional spacing.
       </div>
     </div>
 
@@ -523,26 +523,31 @@
 
     const cellW = pw / cols;
     const cellH = ph / rows;
-    const gapX = cellW * (gapRatio / 100) * 0.5;
-    const gapY = cellH * (gapRatio / 100) * 0.5;
-    const pixW = Math.max(0.5, cellW - 2 * gapX);
-    const pixH = Math.max(0.5, cellH - 2 * gapY);
-    const offX = gapX;
-    const offY = gapY;
+    const gFrac = gapRatio / 100;
+    let halfGapPxX = cellW * gFrac * 0.5;
+    let halfGapPxY = cellH * gFrac * 0.5;
+    if (gFrac > 0 && !forExport) {
+      const maxHX = Math.max(0, cellW * 0.5 - 1e-6);
+      const maxHY = Math.max(0, cellH * 0.5 - 1e-6);
+      if (halfGapPxX > 0 && halfGapPxX < 1 && maxHX >= 0.5) halfGapPxX = Math.min(1, maxHX);
+      if (halfGapPxY > 0 && halfGapPxY < 1 && maxHY >= 0.5) halfGapPxY = Math.min(1, maxHY);
+    }
 
     const imgData = ctx.createImageData(pw, ph);
     const out = imgData.data;
 
     for (let j = 0; j < rows; j++) {
       for (let i = 0; i < cols; i++) {
-        let cellR = base.r, cellG = base.g, cellB = base.b;
+        let baseCellR = base.r, baseCellG = base.g, baseCellB = base.b;
         if (noiseS > 0) {
           const n = noise2(i, j, noiseSc, noiseSd) - 0.5;
           const amp = noiseS * 55;
-          cellR = Math.max(0, Math.min(255, Math.round(cellR + n * amp)));
-          cellG = Math.max(0, Math.min(255, Math.round(cellG + n * amp * 0.97)));
-          cellB = Math.max(0, Math.min(255, Math.round(cellB + n * amp * 1.03)));
+          baseCellR = Math.max(0, Math.min(255, Math.round(baseCellR + n * amp)));
+          baseCellG = Math.max(0, Math.min(255, Math.round(baseCellG + n * amp * 0.97)));
+          baseCellB = Math.max(0, Math.min(255, Math.round(baseCellB + n * amp * 1.03)));
         }
+
+        let cellR = baseCellR, cellG = baseCellG, cellB = baseCellB;
 
         for (const L of layers) {
           const { u, v, inside } = cellToImageUv(L, i + 0.5, j + 0.5, cols, rows);
@@ -586,16 +591,29 @@
           }
         }
 
-        const x0 = Math.floor(i * cellW + offX);
-        const y0 = Math.floor(j * cellH + offY);
-        const x1 = Math.ceil(i * cellW + offX + pixW);
-        const y1 = Math.ceil(j * cellH + offY + pixH);
-        for (let y = Math.max(0, y0); y < Math.min(ph, y1); y++) {
-          for (let x = Math.max(0, x0); x < Math.min(pw, x1); x++) {
+        const xA = i * cellW, xB = (i + 1) * cellW;
+        const yA = j * cellH, yB = (j + 1) * cellH;
+        const xStart = Math.max(0, Math.ceil(xA - 1e-9));
+        const xEnd = Math.min(pw, Math.floor(xB - 1e-9) + 1);
+        const yStart = Math.max(0, Math.ceil(yA - 1e-9));
+        const yEnd = Math.min(ph, Math.floor(yB - 1e-9) + 1);
+
+        for (let y = yStart; y < yEnd; y++) {
+          const cy = y + 0.5;
+          const inGapY = gFrac > 0 && (cy - yA < halfGapPxY || yB - cy < halfGapPxY);
+          for (let x = xStart; x < xEnd; x++) {
+            const cx = x + 0.5;
+            const inGapX = gFrac > 0 && (cx - xA < halfGapPxX || xB - cx < halfGapPxX);
             const p = (y * pw + x) * 4;
-            out[p] = cellR;
-            out[p + 1] = cellG;
-            out[p + 2] = cellB;
+            if (inGapX || inGapY) {
+              out[p] = baseCellR;
+              out[p + 1] = baseCellG;
+              out[p + 2] = baseCellB;
+            } else {
+              out[p] = cellR;
+              out[p + 1] = cellG;
+              out[p + 2] = cellB;
+            }
             out[p + 3] = 255;
           }
         }
@@ -712,7 +730,7 @@
 
     vctx.fillStyle = '#0a0a0c';
     vctx.fillRect(0, 0, viewW, viewH);
-    vctx.imageSmoothingEnabled = s < s0 * 1.02;
+    vctx.imageSmoothingEnabled = false;
     vctx.drawImage(workCanvas, cx, cy, contentW, contentH);
 
     const hov = hoverLayerId != null ? layerById(hoverLayerId) : null;
