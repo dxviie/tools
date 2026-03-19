@@ -259,22 +259,24 @@
           <span class="param-label">Pixel color (T)</span>
           <input type="color" id="layPixCol" value="#c8f060">
         </div>
-        <span class="param-label" style="display:block;margin-top:8px;margin-bottom:4px;">Colour equation</span>
-        <select id="layColorRecipe" style="margin-bottom:6px;width:100%;">
-          <option value="tint_noise">O ignored — T → noise style</option>
-          <option value="orig_noise">T ignored — O → noise style</option>
-          <option value="blend_noise">Blend — (1−k)·O + k·T → noise</option>
-          <option value="noise_mix">Noise lerp — (1−N)·O + N·T → noise</option>
-          <option value="mul_noise">Multiply — O×T/255 → noise</option>
-          <option value="screen_noise">Screen — 1−(1−O)(1−T) → noise</option>
-          <option value="overlay_noise">Overlay(O,T) → noise</option>
-        </select>
-        <label class="row" id="layColorMixRow" style="flex-wrap:wrap;display:none;">
-          <span class="param-label" style="flex:1 0 100%;">Tint weight k in blend</span>
-          <input type="range" id="layColorMix" min="0" max="100" value="50" style="flex:1;">
-          <span class="range-val" id="layColorMixVal">50%</span>
-        </label>
-        <p id="layColorRecipeHelp" class="muted" style="font-size:10px;line-height:1.45;margin:0 0 8px;color:var(--text-muted);">O = image sample, T = pixel colour, N = field (0…1). Then layer noise style + strength refines that RGB.</p>
+        <div id="layColorEquationFields">
+          <span class="param-label" style="display:block;margin-top:8px;margin-bottom:4px;">Colour equation</span>
+          <select id="layColorRecipe" style="margin-bottom:6px;width:100%;">
+            <option value="tint_noise">O ignored — T → noise style</option>
+            <option value="orig_noise">T ignored — O → noise style</option>
+            <option value="blend_noise">Blend — (1−k)·O + k·T → noise</option>
+            <option value="noise_mix">Noise lerp — (1−N)·O + N·T → noise</option>
+            <option value="mul_noise">Multiply — O×T/255 → noise</option>
+            <option value="screen_noise">Screen — 1−(1−O)(1−T) → noise</option>
+            <option value="overlay_noise">Overlay(O,T) → noise</option>
+          </select>
+          <label class="row" id="layColorMixRow" style="flex-wrap:wrap;display:none;">
+            <span class="param-label" style="flex:1 0 100%;">Tint weight k in blend</span>
+            <input type="range" id="layColorMix" min="0" max="100" value="50" style="flex:1;">
+            <span class="range-val" id="layColorMixVal">50%</span>
+          </label>
+          <p id="layColorRecipeHelp" class="muted" style="font-size:10px;line-height:1.45;margin:0 0 8px;color:var(--text-muted);">O = image sample, T = pixel colour, N = field (0…1). Then layer noise style + strength refines that RGB.</p>
+        </div>
         <span class="param-label" style="display:block;margin-bottom:4px;">Layer noise tint</span>
         <select id="layNoiseStyle" style="margin-bottom:6px;width:100%;">
           <option value="offset">Offset — push RGB (follows field mode)</option>
@@ -338,7 +340,7 @@
 
   /**
    * @typedef {{kind:'image',id:number,name:string,el:HTMLImageElement,blobUrl?:string,x:number,y:number,scale:number,invert:boolean,threshold:number,opacity:number,noPixel:boolean,pixelHex:string,colorRecipe:string,colorMix:number,noiseInfluence:number,noiseTintStyle:string,_c?:HTMLCanvasElement|null,_d?:Uint8ClampedArray|null}} ImageLayer
-   * @typedef {{kind:'text',id:number,name:string,text:string,fontCss:string,x:number,y:number,scale:number,invert:boolean,threshold:number,opacity:number,noPixel:boolean,pixelHex:string,colorRecipe:string,colorMix:number,noiseInfluence:number,noiseTintStyle:string,_tw?:number,_th?:number,_c?:HTMLCanvasElement|null,_d?:Uint8ClampedArray|null,_rasterSig?:string}} TextLayer
+   * @typedef {{kind:'text',id:number,name:string,text:string,fontCss:string,x:number,y:number,scale:number,invert:boolean,threshold:number,opacity:number,noPixel:boolean,pixelHex:string,noiseInfluence:number,noiseTintStyle:string,_tw?:number,_th?:number,_c?:HTMLCanvasElement|null,_d?:Uint8ClampedArray|null,_rasterSig?:string}} TextLayer
    * @typedef {ImageLayer|TextLayer} SceneLayer
    */
   /** @type {SceneLayer[]} */
@@ -774,8 +776,10 @@
       textFields.style.display = 'flex';
       ta.value = L.text;
       fontSel.value = L.fontCss;
+      $('layColorEquationFields').style.display = 'none';
     } else {
       textFields.style.display = 'none';
+      $('layColorEquationFields').style.display = 'block';
     }
     $('layInvert').checked = L.invert;
     $('layThresh').value = String(L.threshold);
@@ -793,14 +797,16 @@
     const styleSel = $('layNoiseStyle');
     if ([...styleSel.options].some(o => o.value === nts)) styleSel.value = nts;
     else styleSel.value = 'offset';
-    const cr = L.colorRecipe || 'tint_noise';
-    const recSel = $('layColorRecipe');
-    if ([...recSel.options].some(o => o.value === cr)) recSel.value = cr;
-    else recSel.value = 'tint_noise';
-    const cm = L.colorMix ?? 50;
-    $('layColorMix').value = String(Math.round(cm));
-    $('layColorMixVal').textContent = Math.round(cm) + '%';
-    updateLayColorRecipeUi();
+    if (L.kind !== 'text') {
+      const cr = L.colorRecipe || 'tint_noise';
+      const recSel = $('layColorRecipe');
+      if ([...recSel.options].some(o => o.value === cr)) recSel.value = cr;
+      else recSel.value = 'tint_noise';
+      const cm = L.colorMix ?? 50;
+      $('layColorMix').value = String(Math.round(cm));
+      $('layColorMixVal').textContent = Math.round(cm) + '%';
+      updateLayColorRecipeUi();
+    }
   }
 
   function swapLayers(a, b) {
@@ -913,9 +919,7 @@
       noPixel: false,
       pixelHex: px,
       noiseInfluence: 0,
-      noiseTintStyle: 'offset',
-      colorRecipe: 'tint_noise',
-      colorMix: 50
+      noiseTintStyle: 'offset'
     });
     selId = layers[0].id;
     renderLayerList();
@@ -940,9 +944,7 @@
       noPixel: false,
       pixelHex: px,
       noiseInfluence: 0,
-      noiseTintStyle: 'offset',
-      colorRecipe: 'tint_noise',
-      colorMix: 50
+      noiseTintStyle: 'offset'
     });
     selId = layers[layers.length - 1].id;
     renderLayerList();
@@ -1210,6 +1212,8 @@
           const { bw, bh } = layerNormSize(L);
           const infl = Math.max(0, Math.min(1, (L.noiseInfluence ?? 0) / 100));
           const ntStyle = L.noiseTintStyle || 'offset';
+          const colorRecipe = L.kind === 'text' ? 'noise_mix' : (L.colorRecipe || 'tint_noise');
+          const colorMix = (L.colorMix ?? 50) / 100;
 
           if (L.noPixel) {
             const du = 0.5 / cols / bw;
@@ -1223,8 +1227,8 @@
               const baseRgb = layerBaseFromRecipe(
                 origRgb,
                 pc,
-                L.colorRecipe || 'tint_noise',
-                (L.colorMix ?? 50) / 100,
+                colorRecipe,
+                colorMix,
                 i,
                 j,
                 noiseSc,
@@ -1249,8 +1253,8 @@
               const baseRgb = layerBaseFromRecipe(
                 origRgb,
                 pc,
-                L.colorRecipe || 'tint_noise',
-                (L.colorMix ?? 50) / 100,
+                colorRecipe,
+                colorMix,
                 i,
                 j,
                 noiseSc,
@@ -1658,15 +1662,15 @@
   });
   $('layColorRecipe').addEventListener('change', () => {
     const L = selectedLayer();
-    if (L) {
+    if (L && L.kind !== 'text') {
       L.colorRecipe = $('layColorRecipe').value;
       updateLayColorRecipeUi();
       scheduleDraw();
-    } else updateLayColorRecipeUi();
+    } else if (!L) updateLayColorRecipeUi();
   });
   $('layColorMix').addEventListener('input', () => {
     const L = selectedLayer();
-    if (L) {
+    if (L && L.kind !== 'text') {
       L.colorMix = parseInt($('layColorMix').value, 10);
       $('layColorMixVal').textContent = L.colorMix + '%';
       scheduleDraw();
