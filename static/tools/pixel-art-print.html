@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- tool-meta: {"name":"Pixel Art Print","slug":"pixel-art-print","description":"Print-sized pixel grids — A6/A5/A4 or custom, threshold-based image dithering onto cells, per-layer controls, and optional noise on the base.","tags":["pixel","print","dither","grid"]} -->
+<!-- tool-meta: {"name":"Pixel Art Print","slug":"pixel-art-print","description":"Print-sized pixel grids — A6/A5/A4 or custom, image and text layers rasterized to the grid with threshold dithering, IBM Plex Mono text, and noise tints.","tags":["pixel","print","dither","grid","text"]} -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pixel Art Print</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,500&display=swap');
 
   :root {
     --bg:#0e0e0e; --panel:#161616; --border:#2a2a2a; --border-hi:#404040;
@@ -67,18 +67,25 @@
   .drop:hover,.drop.drag{border-color:var(--accent);background:rgba(200,240,96,.04);}
   .drop em{color:var(--accent);font-style:normal;}
 
-  .img-list{display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto;}
-  .img-item{
+  .layer-list{display:flex;flex-direction:column;gap:5px;max-height:220px;overflow-y:auto;}
+  .layer-item{
     display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--border);cursor:pointer;
     background:var(--input-bg);transition:border-color .12s;}
-  .img-item:hover{border-color:var(--border-hi);}
-  .img-item.sel{border-color:var(--accent-dim);box-shadow:0 0 0 1px rgba(200,240,96,.15);}
-  .img-item .thumb{width:36px;height:36px;object-fit:cover;border:1px solid var(--border);flex-shrink:0;background:#111;}
-  .img-item .meta{flex:1;min-width:0;}
-  .img-item .name{font-size:10px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .img-item .z{font-size:9px;color:var(--text-muted);}
-  .img-item .rm{padding:2px 6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:10px;}
-  .img-item .rm:hover{color:#e05050;border-color:#e05050;}
+  .layer-item:hover{border-color:var(--border-hi);}
+  .layer-item.sel{border-color:var(--accent-dim);box-shadow:0 0 0 1px rgba(200,240,96,.15);}
+  .layer-item .thumb{width:36px;height:36px;object-fit:cover;border:1px solid var(--border);flex-shrink:0;background:#111;}
+  .layer-item .thumb-txt{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--accent-dim);letter-spacing:.06em;}
+  .layer-item .meta{flex:1;min-width:0;}
+  .layer-item .name{font-size:10px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .layer-item .z{font-size:9px;color:var(--text-muted);}
+  .layer-item .rm{padding:2px 6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:10px;}
+  .layer-item .rm:hover{color:#e05050;border-color:#e05050;}
+  textarea.layer-ta{
+    width:100%;min-height:72px;resize:vertical;background:var(--input-bg);border:1px solid var(--border);color:var(--text);
+    font-family:var(--mono);font-size:11px;line-height:1.45;padding:7px 9px;outline:none;}
+  textarea.layer-ta:focus{border-color:var(--border-hi);}
+  .layer-add-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
+  .layer-add-row button{flex:1;min-width:100px;}
 
   .img-controls{display:flex;flex-direction:column;gap:7px;}
   .img-controls .muted{font-size:10px;color:var(--text-muted);line-height:1.4;}
@@ -149,14 +156,10 @@
         <input type="color" id="colBase" value="#1a1a24">
         <span class="param-label">Accent</span>
         <input type="color" id="colAccent" value="#c8f060">
-        <span class="param-label">Text</span>
-        <input type="color" id="colText" value="#8a8a9a">
+        <span class="param-label">Text default</span>
+        <input type="color" id="colText" value="#c8f060">
       </div>
-      <label class="row" style="margin-top:8px;">
-        <input type="checkbox" id="showTitle">
-        <span>Show title on export</span>
-      </label>
-      <input type="text" id="titleText" placeholder="Title (uses text color)" style="margin-top:4px;">
+      <p class="muted" style="margin-top:6px;font-size:10px;line-height:1.45;">New text layers use “text default” as their pixel color (editable per layer).</p>
     </div>
 
     <div class="section">
@@ -199,16 +202,33 @@
     </div>
 
     <div class="section">
-      <div class="section-label">Images</div>
-      <div class="drop" id="dropZone">Drop files or <em>browse</em></div>
+      <div class="section-label">Layers</div>
+      <div class="layer-add-row">
+        <button type="button" class="ghost" id="btnAddText">+ Text</button>
+      </div>
+      <div class="drop" id="dropZone">Drop images or <em>browse</em></div>
       <input type="file" id="fileIn" accept="image/*" multiple style="display:none">
-      <div class="img-list" id="imgList"></div>
+      <div class="layer-list" id="layerList"></div>
     </div>
 
     <div class="section img-controls" id="layerPanel">
       <div class="section-label">Selected layer</div>
-      <p class="muted" id="noLayer">Select an image in the list or add one.</p>
+      <p class="muted" id="noLayer">Select a layer or add an image / text.</p>
       <div id="layerFields" style="display:none;">
+        <div id="textOnlyFields" style="display:none;flex-direction:column;gap:8px;margin-bottom:8px;">
+          <span class="param-label">Content</span>
+          <textarea class="layer-ta" id="layerTextArea" placeholder="Line one&#10;Line two"></textarea>
+          <span class="param-label">Font</span>
+          <select id="layerFontSel">
+            <option value="300">IBM Plex Mono · 300</option>
+            <option value="400">IBM Plex Mono · 400</option>
+            <option value="500" selected>IBM Plex Mono · 500</option>
+            <option value="600">IBM Plex Mono · 600</option>
+            <option value="700">IBM Plex Mono · 700</option>
+            <option value="italic 400">IBM Plex Mono · 400 italic</option>
+            <option value="italic 500">IBM Plex Mono · 500 italic</option>
+          </select>
+        </div>
         <label class="check"><input type="checkbox" id="layInvert"> Invert threshold</label>
         <label class="row" style="flex-wrap:wrap;">
           <span class="param-label" style="flex:1 0 100%;">Threshold</span>
@@ -260,7 +280,7 @@
   <div class="preview-bar">
     <span>Preview</span>
     <span class="hint" id="dimHint">—</span>
-    <span class="hint" style="margin-left:0">Hover layer = box · wheel on layer scales it · else wheel zooms · drag empty = pan</span>
+    <span class="hint" style="margin-left:0">Hover = box · wheel on layer scales · else zoom · drag empty = pan · text layers same as images</span>
   </div>
   <div class="canvas-outer" id="canvasOuter">
     <canvas id="viewCanvas" width="400" height="600"></canvas>
@@ -275,10 +295,18 @@
 
   const MM = { a6:[105,148], a5:[148,210], a4:[210,297] };
 
-  /** @type {{id:number, name:string, el:HTMLImageElement, blobUrl?:string, x:number, y:number, scale:number, invert:boolean, threshold:number, opacity:number, noPixel:boolean, pixelHex:string, noiseInfluence:number}[]} */
+  const FONT_FAMILY = '"IBM Plex Mono", monospace';
+
+  /**
+   * @typedef {{kind:'image',id:number,name:string,el:HTMLImageElement,blobUrl?:string,x:number,y:number,scale:number,invert:boolean,threshold:number,opacity:number,noPixel:boolean,pixelHex:string,noiseInfluence:number,_c?:HTMLCanvasElement|null,_d?:Uint8ClampedArray|null}} ImageLayer
+   * @typedef {{kind:'text',id:number,name:string,text:string,fontCss:string,x:number,y:number,scale:number,invert:boolean,threshold:number,opacity:number,noPixel:boolean,pixelHex:string,noiseInfluence:number,_tw?:number,_th?:number,_c?:HTMLCanvasElement|null,_d?:Uint8ClampedArray|null,_rasterSig?:string}} TextLayer
+   * @typedef {ImageLayer|TextLayer} SceneLayer
+   */
+  /** @type {SceneLayer[]} */
   let layers = [];
   let selId = null;
   let nextId = 1;
+  let textLayerSeq = 0;
   let paperPreset = 'a4';
   let orientation = 'portrait';
   /** @type {{id:number, sx:number, sy:number, nx:number, ny:number}|null} */
@@ -373,9 +401,19 @@
 
   function syncLayerPanel() {
     const L = selectedLayer();
+    const textFields = $('textOnlyFields');
+    const ta = $('layerTextArea');
+    const fontSel = $('layerFontSel');
     $('noLayer').style.display = L ? 'none' : 'block';
     $('layerFields').style.display = L ? 'flex' : 'none';
     if (!L) return;
+    if (L.kind === 'text') {
+      textFields.style.display = 'flex';
+      ta.value = L.text;
+      fontSel.value = L.fontCss;
+    } else {
+      textFields.style.display = 'none';
+    }
     $('layInvert').checked = L.invert;
     $('layThresh').value = String(L.threshold);
     $('layThreshVal').textContent = String(L.threshold);
@@ -390,32 +428,36 @@
     $('layNoiseInflVal').textContent = Math.round(ni) + '%';
   }
 
-  function renderImgList() {
-    const el = $('imgList');
+  function renderLayerList() {
+    const el = $('layerList');
     el.innerHTML = '';
     layers.forEach((L, i) => {
       const row = document.createElement('div');
-      row.className = 'img-item' + (L.id === selId ? ' sel' : '');
+      row.className = 'layer-item' + (L.id === selId ? ' sel' : '');
+      const thumbHtml = L.kind === 'text'
+        ? '<div class="thumb thumb-txt" aria-hidden="true">Aa</div>'
+        : '<img class="thumb" alt="">';
       row.innerHTML =
-        '<img class="thumb" alt="">' +
+        thumbHtml +
         '<div class="meta"><div class="name"></div><div class="z"></div></div>' +
         '<button type="button" class="rm" title="Remove">×</button>';
       row.querySelector('.name').textContent = L.name;
-      row.querySelector('.z').textContent = 'z-index ' + (i + 1) + ' · bottom→top';
-      row.querySelector('.thumb').src = L.el.src;
+      row.querySelector('.z').textContent =
+        (L.kind === 'text' ? 'text' : 'image') + ' · z ' + (i + 1) + ' · bottom→top';
+      if (L.kind === 'image') row.querySelector('.thumb').src = L.el.src;
       row.addEventListener('click', e => {
         if (e.target.classList.contains('rm')) {
           e.stopPropagation();
-          if (L.blobUrl) try { URL.revokeObjectURL(L.blobUrl); } catch (_) {}
+          if (L.kind === 'image' && L.blobUrl) try { URL.revokeObjectURL(L.blobUrl); } catch (_) {}
           layers = layers.filter(x => x.id !== L.id);
           if (selId === L.id) selId = layers.length ? layers[layers.length - 1].id : null;
-          renderImgList();
+          renderLayerList();
           syncLayerPanel();
           scheduleDraw();
           return;
         }
         selId = L.id;
-        renderImgList();
+        renderLayerList();
         syncLayerPanel();
       });
       el.appendChild(row);
@@ -428,6 +470,7 @@
     img.onload = () => {
       const accent = $('colAccent').value;
       layers.push({
+        kind: 'image',
         id: nextId++,
         name: file.name.replace(/\.[^.]+$/, ''),
         el: img,
@@ -439,10 +482,11 @@
         threshold: 128,
         opacity: 0.9,
         noPixel: false,
-        pixelHex: accent
+        pixelHex: accent,
+        noiseInfluence: 0
       });
       selId = layers[layers.length - 1].id;
-      renderImgList();
+      renderLayerList();
       syncLayerPanel();
       scheduleDraw();
     };
@@ -450,7 +494,103 @@
     img.src = url;
   }
 
-  function sampleImage(L, u, v) {
+  function addTextLayer() {
+    textLayerSeq++;
+    const px = $('colText').value;
+    layers.push({
+      kind: 'text',
+      id: nextId++,
+      name: 'Text ' + textLayerSeq,
+      text: 'Your text\nSecond line',
+      fontCss: '500',
+      x: 0.5,
+      y: 0.42,
+      scale: 0.5,
+      invert: false,
+      threshold: 128,
+      opacity: 1,
+      noPixel: false,
+      pixelHex: px,
+      noiseInfluence: 0
+    });
+    selId = layers[layers.length - 1].id;
+    renderLayerList();
+    syncLayerPanel();
+    scheduleDraw();
+  }
+
+  function rasterizeTextLayer(L) {
+    const lines = L.text.split('\n');
+    const probe = document.createElement('canvas').getContext('2d');
+    const MAX_DIM = 2048;
+    const pad = 20;
+    const lineGap = 1.28;
+
+    let lo = 6, hi = 720, best = 6;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      probe.font = `${L.fontCss} ${mid}px ${FONT_FAMILY}`;
+      let maxW = 0;
+      let totalH = pad;
+      for (const line of lines) {
+        const w = probe.measureText(line || ' ').width;
+        maxW = Math.max(maxW, w);
+        totalH += mid * lineGap;
+      }
+      totalH += pad;
+      const W = maxW + pad * 2;
+      if (W <= MAX_DIM && totalH <= MAX_DIM) {
+        best = mid;
+        lo = mid + 1;
+      } else hi = mid - 1;
+    }
+
+    const fs = Math.max(6, best);
+    probe.font = `${L.fontCss} ${fs}px ${FONT_FAMILY}`;
+    let maxW = 0;
+    let totalH = pad;
+    /** @type {{line:string,lh:number}[]} */
+    const lineInfo = [];
+    for (const line of lines) {
+      const w = probe.measureText(line || ' ').width;
+      maxW = Math.max(maxW, w);
+      const lh = fs * lineGap;
+      lineInfo.push({ line, lh });
+      totalH += lh;
+    }
+    totalH += pad;
+
+    const cw = Math.max(4, Math.ceil(maxW + pad * 2));
+    const ch = Math.max(4, Math.ceil(totalH));
+    const c = document.createElement('canvas');
+    c.width = cw;
+    c.height = ch;
+    const x = c.getContext('2d');
+    x.fillStyle = '#000000';
+    x.fillRect(0, 0, cw, ch);
+    x.fillStyle = '#ffffff';
+    x.textBaseline = 'top';
+    x.font = `${L.fontCss} ${fs}px ${FONT_FAMILY}`;
+    let y = pad;
+    for (const { line, lh } of lineInfo) {
+      x.fillText(line || ' ', pad, y);
+      y += lh;
+    }
+    L._c = c;
+    L._tw = cw;
+    L._th = ch;
+    L._d = x.getImageData(0, 0, cw, ch).data;
+  }
+
+  function ensureTextRaster(L) {
+    if (L.kind !== 'text') return;
+    const sig = L.text + '\0' + L.fontCss;
+    if (L._rasterSig === sig && L._tw && L._th && L._d) return;
+    L._rasterSig = sig;
+    rasterizeTextLayer(L);
+  }
+
+  function sampleImageLayer(L, u, v) {
     const img = L.el;
     if (!img.complete || !img.naturalWidth) return { r: 0, g: 0, b: 0, a: 0 };
     const iw = img.naturalWidth, ih = img.naturalHeight;
@@ -469,16 +609,35 @@
     return { r: d[idx], g: d[idx + 1], b: d[idx + 2], a: d[idx + 3] / 255 };
   }
 
-  function sampleImageAvg(L, u0, v0, u1, v1, samples) {
-    const img = L.el;
-    if (!img.complete || !img.naturalWidth) return { r: 0, g: 0, b: 0, a: 0 };
-    const iw = img.naturalWidth, ih = img.naturalHeight;
+  function sampleLayerPixel(L, u, v) {
+    if (L.kind === 'text') {
+      ensureTextRaster(L);
+      const iw = L._tw || 1, ih = L._th || 1;
+      if (!L._d) return { r: 0, g: 0, b: 0, a: 0 };
+      const x = Math.max(0, Math.min(iw - 1, u * iw));
+      const y = Math.max(0, Math.min(ih - 1, v * ih));
+      const xi = Math.floor(x), yi = Math.floor(y);
+      const idx = (yi * iw + xi) * 4;
+      const d = L._d;
+      return { r: d[idx], g: d[idx + 1], b: d[idx + 2], a: d[idx + 3] / 255 };
+    }
+    return sampleImageLayer(L, u, v);
+  }
+
+  function sampleLayerAvg(L, u0, v0, u1, v1, samples) {
+    if (L.kind === 'image') {
+      const img = L.el;
+      if (!img.complete || !img.naturalWidth) return { r: 0, g: 0, b: 0, a: 0 };
+    } else {
+      ensureTextRaster(L);
+      if (!L._d || !L._tw) return { r: 0, g: 0, b: 0, a: 0 };
+    }
     let r = 0, g = 0, b = 0, a = 0, n = 0;
     const su = (u1 - u0) / (samples - 1), sv = (v1 - v0) / (samples - 1);
-    for (let j = 0; j < samples; j++) {
-      for (let i = 0; i < samples; i++) {
-        const u = u0 + i * su, v = v0 + j * sv;
-        const p = sampleImage(L, u, v);
+    for (let jj = 0; jj < samples; jj++) {
+      for (let ii = 0; ii < samples; ii++) {
+        const u = u0 + ii * su, v = v0 + jj * sv;
+        const p = sampleLayerPixel(L, u, v);
         r += p.r; g += p.g; b += p.b; a += p.a; n++;
       }
     }
@@ -487,12 +646,28 @@
   }
 
   function invalidateLayerCache(L) {
-    L._c = null;
-    L._d = null;
+    if (L.kind === 'text') {
+      L._c = null;
+      L._d = null;
+      L._tw = 0;
+      L._th = 0;
+      L._rasterSig = '';
+    } else {
+      L._c = null;
+      L._d = null;
+    }
   }
 
   function layerNormSize(L) {
-    const iw = L.el.naturalWidth, ih = L.el.naturalHeight;
+    let iw, ih;
+    if (L.kind === 'text') {
+      ensureTextRaster(L);
+      iw = L._tw || 4;
+      ih = L._th || 4;
+    } else {
+      iw = L.el.naturalWidth;
+      ih = L.el.naturalHeight;
+    }
     if (!iw || !ih) return { bw: L.scale, bh: L.scale };
     const ar = iw / ih;
     let bw, bh;
@@ -562,7 +737,7 @@
             const dv = 0.5 / rows / bh;
             const u0 = Math.max(0, u - du), u1 = Math.min(1, u + du);
             const v0 = Math.max(0, v - dv), v1 = Math.min(1, v + dv);
-            const avg = sampleImageAvg(L, u0, v0, u1, v1, 3);
+            const avg = sampleLayerAvg(L, u0, v0, u1, v1, 3);
             const a = avg.a * op;
             if (a > 0) {
               const tinted = noiseTintRgb(avg.r, avg.g, avg.b, i, j, noiseSc, noiseSd, infl);
@@ -574,7 +749,7 @@
               cellR = blended.r; cellG = blended.g; cellB = blended.b;
             }
           } else {
-            const samp = sampleImage(L, u, v);
+            const samp = sampleLayerPixel(L, u, v);
             let lum = luminance(samp.r, samp.g, samp.b);
             if (L.invert) lum = 255 - lum;
             const on = lum >= L.threshold;
@@ -621,20 +796,6 @@
     }
 
     ctx.putImageData(imgData, 0, 0);
-
-    if (forExport && $('showTitle').checked) {
-      const title = ($('titleText').value || '').trim();
-      if (title) {
-        const tc = parseHex($('colText').value);
-        ctx.save();
-        ctx.fillStyle = `rgb(${tc.r},${tc.g},${tc.b})`;
-        const fs = Math.max(10, Math.round(ph * 0.018));
-        ctx.font = `500 ${fs}px ui-monospace, "Cascadia Code", monospace`;
-        ctx.textBaseline = 'top';
-        ctx.fillText(title, Math.round(pw * 0.04), Math.round(ph * 0.025));
-        ctx.restore();
-      }
-    }
   }
 
   function layerNormRect(L) {
@@ -824,7 +985,7 @@
     const L = hitTestLayerAtView(vx, vy);
     if (L) {
       selId = L.id;
-      renderImgList();
+      renderLayerList();
       syncLayerPanel();
       const p = contentPointFromView(vx, vy);
       const grabNx = p.lx / vp.pw, grabNy = p.ly / vp.ph;
@@ -935,8 +1096,24 @@
   bindRange('exportDpi', v => String(v));
 
   ['colBase', 'colAccent', 'colText'].forEach(id => $(id).addEventListener('input', () => scheduleDraw()));
-  $('showTitle').addEventListener('change', () => scheduleDraw());
-  $('titleText').addEventListener('input', () => scheduleDraw());
+
+  $('btnAddText').addEventListener('click', addTextLayer);
+  $('layerTextArea').addEventListener('input', () => {
+    const L = selectedLayer();
+    if (L && L.kind === 'text') {
+      L.text = $('layerTextArea').value;
+      invalidateLayerCache(L);
+      scheduleDraw();
+    }
+  });
+  $('layerFontSel').addEventListener('change', () => {
+    const L = selectedLayer();
+    if (L && L.kind === 'text') {
+      L.fontCss = $('layerFontSel').value;
+      invalidateLayerCache(L);
+      scheduleDraw();
+    }
+  });
 
   $('layInvert').addEventListener('change', () => {
     const L = selectedLayer();
@@ -983,8 +1160,8 @@
     }
   });
 
-  $('customW').addEventListener('input', scheduleDraw);
-  $('customH').addEventListener('input', scheduleDraw);
+  $('customW').addEventListener('input', () => scheduleDraw());
+  $('customH').addEventListener('input', () => scheduleDraw());
 
   const dz = $('dropZone'), fi = $('fileIn');
   dz.addEventListener('click', () => fi.click());
@@ -1014,6 +1191,9 @@
   }
 
   paintView({ rebuild: true });
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => scheduleDraw());
+  }
 })();
 </script>
 </body>
