@@ -1387,8 +1387,8 @@
     c.width = pw;
     c.height = ph;
     const x = c.getContext('2d', { alpha: false });
-    const gapRatio = parseFloat($('gapRatio').value) || 0;
-    drawToContext(x, pw, ph, cols, rows, gapRatio, true);
+    const gapPx = parseInt($('gapPx').value, 10) || 0;
+    drawToContext(x, pw, ph, cols, rows, gapPx);
     c.toBlob(blob => {
       const a = Object.assign(document.createElement('a'), {
         href: URL.createObjectURL(blob),
