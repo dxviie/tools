@@ -88,9 +88,12 @@
   .preview-bar{display:flex;align-items:center;gap:10px;padding:6px 14px;border-bottom:1px solid var(--border);flex-shrink:0;}
   .preview-bar span{font-size:10px;letter-spacing:.14em;color:var(--text-dim);text-transform:uppercase;}
   .hint{margin-left:auto;font-size:10px;color:var(--text-muted);}
-  .canvas-outer{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:16px;min-height:0;}
-  #viewCanvas{max-width:100%;max-height:100%;box-shadow:0 8px 40px rgba(0,0,0,.45);cursor:grab;touch-action:none;}
-  #viewCanvas:active{cursor:grabbing;}
+  .canvas-outer{flex:1;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:16px;min-height:0;position:relative;}
+  #viewCanvas{display:block;box-shadow:0 8px 40px rgba(0,0,0,.45);touch-action:none;max-width:100%;max-height:100%;}
+  #viewCanvas.cursor-pan{cursor:grab;}
+  #viewCanvas.cursor-pan:active{cursor:grabbing;}
+  #viewCanvas.cursor-layer{cursor:grab;}
+  #viewCanvas.cursor-layer:active{cursor:grabbing;}
   .status-bar{padding:4px 14px;border-top:1px solid var(--border);font-size:10px;color:var(--text-muted);flex-shrink:0;}
 
   .check{display:flex;align-items:center;gap:7px;cursor:pointer;font-size:11px;color:var(--text-dim);}
@@ -176,9 +179,9 @@
     <div class="section">
       <div class="section-label">Noise field</div>
       <label class="row" style="flex-wrap:wrap;">
-        <span class="param-label" style="flex:1 0 100%;">Strength</span>
+        <span class="param-label" style="flex:1 0 100%;">Base strength</span>
         <input type="range" id="noiseStr" min="0" max="100" value="0" style="flex:1;">
-        <span class="range-val" id="noiseStrVal">0</span>
+        <span class="range-val" id="noiseStrVal">0%</span>
       </label>
       <label class="row" style="flex-wrap:wrap;">
         <span class="param-label" style="flex:1 0 100%;">Scale</span>
@@ -191,7 +194,7 @@
         <span class="range-val" id="noiseSeedVal">42</span>
       </label>
       <p class="muted" style="margin-top:6px;font-size:10px;color:var(--text-muted);line-height:1.45;">
-        Perturbs each cell’s base tone before layers are drawn (0 = off). Visible mainly on large flat areas.
+        Base strength only perturbs the empty grid before layers. Scale and seed apply to the whole field; layer noise tint uses the same pattern with its own intensity.
       </p>
     </div>
 
@@ -217,6 +220,12 @@
           <input type="range" id="layOp" min="0" max="100" value="90" style="flex:1;">
           <span class="range-val" id="layOpVal">90%</span>
         </label>
+        <label class="row" style="flex-wrap:wrap;">
+          <span class="param-label" style="flex:1 0 100%;">Layer noise tint</span>
+          <input type="range" id="layNoiseInfl" min="0" max="100" value="0" style="flex:1;">
+          <span class="range-val" id="layNoiseInflVal">0%</span>
+        </label>
+        <p class="muted" style="font-size:10px;line-height:1.4;">After threshold / averaging, tints this layer’s drawn RGB using the field (scale·seed). Intensity is independent of base strength. 0 = off.</p>
         <label class="check"><input type="checkbox" id="layNoPix"> Disable pixelation (avg. color / cell)</label>
         <div class="row2" style="margin-top:4px;">
           <span class="param-label">Pixel color</span>
@@ -251,9 +260,9 @@
   <div class="preview-bar">
     <span>Preview</span>
     <span class="hint" id="dimHint">—</span>
-    <span class="hint" style="margin-left:0">Drag layer · wheel scales selection</span>
+    <span class="hint" style="margin-left:0">Hover layer = box · wheel on layer scales it · else wheel zooms · drag empty = pan</span>
   </div>
-  <div class="canvas-outer">
+  <div class="canvas-outer" id="canvasOuter">
     <canvas id="viewCanvas" width="400" height="600"></canvas>
   </div>
   <div class="status-bar" id="statusBar">Ready</div>
@@ -266,16 +275,32 @@
 
   const MM = { a6:[105,148], a5:[148,210], a4:[210,297] };
 
-  /** @type {{id:number, name:string, el:HTMLImageElement, x:number, y:number, scale:number, invert:boolean, threshold:number, opacity:number, noPixel:boolean, pixelHex:string}[]} */
+  /** @type {{id:number, name:string, el:HTMLImageElement, blobUrl?:string, x:number, y:number, scale:number, invert:boolean, threshold:number, opacity:number, noPixel:boolean, pixelHex:string, noiseInfluence:number}[]} */
   let layers = [];
   let selId = null;
   let nextId = 1;
   let paperPreset = 'a4';
   let orientation = 'portrait';
-  let drag = null;
+  /** @type {{id:number, sx:number, sy:number, nx:number, ny:number}|null} */
+  let layerDrag = null;
+  /** @type {{panX:number, panY:number, mx:number, my:number}|null} */
+  let viewDrag = null;
+
+  let viewZoom = 1;
+  let viewPanX = 0;
+  let viewPanY = 0;
+  let hoverLayerId = null;
+  let hoverRaf = 0;
+
+  const workCanvas = document.createElement('canvas');
+  const workCtx = workCanvas.getContext('2d', { alpha: false });
+
+  /** @type {{pw:number, ph:number, cols:number, rows:number, viewW:number, viewH:number, s0:number, s:number, cx:number, cy:number}} */
+  let vp = { pw: 0, ph: 0, cols: 0, rows: 0, viewW: 0, viewH: 0, s0: 1, s: 1, cx: 0, cy: 0 };
 
   const $ = id => document.getElementById(id);
   const viewCanvas = $('viewCanvas');
+  const canvasOuter = $('canvasOuter');
   const vctx = viewCanvas.getContext('2d', { alpha: false });
 
   function paperMm() {
@@ -325,6 +350,19 @@
     };
   }
 
+  /** Tint RGB using noise field (after rendering decision). Layer intensity only — not gated by base strength. */
+  function noiseTintRgb(r, g, b, i, j, noiseSc, noiseSd, layerIntensity) {
+    const t = Math.max(0, Math.min(1, layerIntensity));
+    if (t <= 0) return { r, g, b };
+    const n = noise2(i, j, noiseSc, noiseSd) - 0.5;
+    const amp = t * 92;
+    return {
+      r: Math.max(0, Math.min(255, Math.round(r + n * amp))),
+      g: Math.max(0, Math.min(255, Math.round(g + n * amp * 0.97))),
+      b: Math.max(0, Math.min(255, Math.round(b + n * amp * 1.04)))
+    };
+  }
+
   function layerById(id) {
     return layers.find(L => L.id === id);
   }
@@ -347,6 +385,9 @@
     $('layPixCol').value = L.pixelHex;
     $('layScale').value = String(Math.round(L.scale * 100));
     $('layScaleVal').textContent = Math.round(L.scale * 100) + '%';
+    const ni = L.noiseInfluence ?? 0;
+    $('layNoiseInfl').value = String(Math.round(ni));
+    $('layNoiseInflVal').textContent = Math.round(ni) + '%';
   }
 
   function renderImgList() {
@@ -509,6 +550,7 @@
           const pc = parseHex(L.pixelHex);
           const op = L.opacity;
           const { bw, bh } = layerNormSize(L);
+          const infl = Math.max(0, Math.min(1, (L.noiseInfluence ?? 0) / 100));
 
           if (L.noPixel) {
             const du = 0.5 / cols / bw;
@@ -518,9 +560,10 @@
             const avg = sampleImageAvg(L, u0, v0, u1, v1, 3);
             const a = avg.a * op;
             if (a > 0) {
+              const tinted = noiseTintRgb(avg.r, avg.g, avg.b, i, j, noiseSc, noiseSd, infl);
               const blended = blendOver(
                 { r: cellR, g: cellG, b: cellB },
-                { r: avg.r, g: avg.g, b: avg.b },
+                { r: tinted.r, g: tinted.g, b: tinted.b },
                 a
               );
               cellR = blended.r; cellG = blended.g; cellB = blended.b;
@@ -532,9 +575,10 @@
             const on = lum >= L.threshold;
             if (on && samp.a * op > 0) {
               const a = samp.a * op;
+              const tinted = noiseTintRgb(pc.r, pc.g, pc.b, i, j, noiseSc, noiseSd, infl);
               const blended = blendOver(
                 { r: cellR, g: cellG, b: cellB },
-                pc,
+                { r: tinted.r, g: tinted.g, b: tinted.b },
                 a
               );
               cellR = blended.r; cellG = blended.g; cellB = blended.b;
@@ -575,17 +619,65 @@
     }
   }
 
-  let drawPending = false;
-  function scheduleDraw() {
-    if (drawPending) return;
-    drawPending = true;
-    requestAnimationFrame(() => {
-      drawPending = false;
-      draw();
-    });
+  function layerNormRect(L) {
+    const { bw, bh } = layerNormSize(L);
+    return { nx0: L.x - bw / 2, ny0: L.y - bh / 2, bw, bh };
   }
 
-  function draw() {
+  function contentPointFromView(vx, vy) {
+    const { pw, ph, s, cx, cy } = vp;
+    if (s <= 0) return { lx: 0, ly: 0, ok: false };
+    const lx = (vx - cx) / s;
+    const ly = (vy - cy) / s;
+    return {
+      lx, ly,
+      ok: lx >= 0 && lx <= pw && ly >= 0 && ly <= ph
+    };
+  }
+
+  function hitTestLayerAtView(vx, vy) {
+    const p = contentPointFromView(vx, vy);
+    if (!p.ok) return null;
+    const cols = vp.cols;
+    const rows = vp.rows;
+    const nx = p.lx / vp.pw;
+    const ny = p.ly / vp.ph;
+    const cx = nx * cols;
+    const cy = ny * rows;
+    for (let li = layers.length - 1; li >= 0; li--) {
+      const L = layers[li];
+      const { inside } = cellToImageUv(L, cx, cy, cols, rows);
+      if (inside) return L;
+    }
+    return null;
+  }
+
+  function drawLayerHoverBox(L) {
+    if (!L) return;
+    const { nx0, ny0, bw, bh } = layerNormRect(L);
+    const x = vp.cx + nx0 * vp.pw * vp.s;
+    const y = vp.cy + ny0 * vp.ph * vp.s;
+    const w = bw * vp.pw * vp.s;
+    const h = bh * vp.ph * vp.s;
+    vctx.save();
+    vctx.strokeStyle = 'rgba(200,240,96,.95)';
+    vctx.lineWidth = Math.max(1, 2 / (vp.s / vp.s0));
+    vctx.setLineDash([6, 4]);
+    vctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, w - 1), Math.max(0, h - 1));
+    vctx.restore();
+  }
+
+  function rebuildWork(pw, ph, cols, rows, gapRatio) {
+    workCanvas.width = pw;
+    workCanvas.height = ph;
+    drawToContext(workCtx, pw, ph, cols, rows, gapRatio, false);
+  }
+
+  /**
+   * @param {{ rebuild?: boolean }} [opt]
+   */
+  function paintView(opt) {
+    const rebuild = opt?.rebuild !== false;
     const { w: mmW, h: mmH } = paperMm();
     const cols = parseInt($('gridCols').value, 10) || 48;
     const aspect = mmH / mmW;
@@ -598,14 +690,88 @@
       pw = Math.round(maxPrev / aspect);
     }
 
-    viewCanvas.width = pw;
-    viewCanvas.height = ph;
     const gapRatio = parseFloat($('gapRatio').value) || 0;
+    if (rebuild || workCanvas.width !== pw || workCanvas.height !== ph) {
+      rebuildWork(pw, ph, cols, rows, gapRatio);
+    }
 
-    drawToContext(vctx, pw, ph, cols, rows, gapRatio, false);
+    const rect = canvasOuter.getBoundingClientRect();
+    const viewW = Math.max(240, Math.floor(rect.width - 4));
+    const viewH = Math.max(180, Math.floor(rect.height - 4));
+    viewCanvas.width = viewW;
+    viewCanvas.height = viewH;
+
+    const s0 = Math.min(viewW / pw, viewH / ph);
+    const s = s0 * viewZoom;
+    const contentW = pw * s;
+    const contentH = ph * s;
+    const cx = (viewW - contentW) / 2 + viewPanX;
+    const cy = (viewH - contentH) / 2 + viewPanY;
+
+    vp = { pw, ph, cols, rows, viewW, viewH, s0, s, cx, cy };
+
+    vctx.fillStyle = '#0a0a0c';
+    vctx.fillRect(0, 0, viewW, viewH);
+    vctx.imageSmoothingEnabled = s < s0 * 1.02;
+    vctx.drawImage(workCanvas, cx, cy, contentW, contentH);
+
+    const hov = hoverLayerId != null ? layerById(hoverLayerId) : null;
+    if (hov) drawLayerHoverBox(hov);
 
     $('dimHint').textContent = mmW.toFixed(0) + '×' + mmH.toFixed(0) + ' mm · grid ' + cols + '×' + rows;
-    $('statusBar').textContent = 'Grid ' + cols + '×' + rows + ' · ' + layers.length + ' layer(s)';
+    let st = 'Grid ' + cols + '×' + rows + ' · ' + layers.length + ' layer(s) · view ' + Math.round(viewZoom * 100) + '%';
+    if (hoverLayerId != null) st += ' · hover layer';
+    $('statusBar').textContent = st;
+
+    updateViewCursor();
+  }
+
+  function updateViewCursor() {
+    if (layerDrag) {
+      viewCanvas.className = 'cursor-layer';
+      return;
+    }
+    if (viewDrag) {
+      viewCanvas.className = 'cursor-pan';
+      return;
+    }
+    viewCanvas.className = hoverLayerId != null ? 'cursor-layer' : 'cursor-pan';
+  }
+
+  function zoomViewToward(vx, vy, deltaY) {
+    const { pw, ph, viewW, viewH, s, cx, cy, s0 } = vp;
+    const factor = deltaY > 0 ? 0.9 : 1.11;
+    const lx = (vx - cx) / s;
+    const ly = (vy - cy) / s;
+    viewZoom = Math.max(0.12, Math.min(16, viewZoom * factor));
+    const s2 = s0 * viewZoom;
+    const cx2 = vx - lx * s2;
+    const cy2 = vy - ly * s2;
+    viewPanX = cx2 - (viewW - pw * s2) / 2;
+    viewPanY = cy2 - (viewH - ph * s2) / 2;
+  }
+
+  let drawPending = false;
+  let pendingRebuild = false;
+  /** @param {boolean} [rebuildWorkPixels] default true */
+  function scheduleDraw(rebuildWorkPixels = true) {
+    pendingRebuild ||= rebuildWorkPixels;
+    if (drawPending) return;
+    drawPending = true;
+    requestAnimationFrame(() => {
+      drawPending = false;
+      const rb = pendingRebuild;
+      pendingRebuild = false;
+      paintView({ rebuild: rb });
+    });
+  }
+
+  function scheduleHoverPaint() {
+    if (hoverRaf) return;
+    hoverRaf = requestAnimationFrame(() => {
+      hoverRaf = 0;
+      paintView({ rebuild: false });
+    });
   }
 
   function exportPng() {
@@ -634,71 +800,90 @@
     }, 'image/png');
   }
 
-  function hitTest(mx, my) {
-    const rect = viewCanvas.getBoundingClientRect();
-    const x = (mx - rect.left) / rect.width;
-    const y = (my - rect.top) / rect.height;
-    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
-    const cols = parseInt($('gridCols').value, 10) || 48;
-    const { w: mmW, h: mmH } = paperMm();
-    const aspect = mmH / mmW;
-    const rows = Math.max(1, Math.round(cols * aspect));
-    const cx = x * cols, cy = y * rows;
-    for (let li = layers.length - 1; li >= 0; li--) {
-      const L = layers[li];
-      const { inside } = cellToImageUv(L, cx, cy, cols, rows);
-      if (inside) return L;
-    }
-    return null;
-  }
-
-  function canvasToNorm(e) {
-    const rect = viewCanvas.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) / rect.width,
-      y: (e.clientY - rect.top) / rect.height
-    };
-  }
-
   viewCanvas.addEventListener('pointerdown', e => {
-    if (!layers.length) return;
     viewCanvas.setPointerCapture(e.pointerId);
-    const L = hitTest(e.clientX, e.clientY);
-    if (!L) return;
-    selId = L.id;
-    renderImgList();
-    syncLayerPanel();
-    const n = canvasToNorm(e);
-    drag = { id: L.id, sx: L.x, sy: L.y, nx: n.x, ny: n.y };
+    const vx = e.offsetX, vy = e.offsetY;
+    const L = hitTestLayerAtView(vx, vy);
+    if (L) {
+      selId = L.id;
+      renderImgList();
+      syncLayerPanel();
+      const p = contentPointFromView(vx, vy);
+      const grabNx = p.lx / vp.pw, grabNy = p.ly / vp.ph;
+      layerDrag = { id: L.id, startLx: L.x, startLy: L.y, grabNx, grabNy };
+      hoverLayerId = L.id;
+    } else {
+      viewDrag = {
+        startPanX: viewPanX,
+        startPanY: viewPanY,
+        startMx: e.clientX,
+        startMy: e.clientY
+      };
+    }
+    updateViewCursor();
     e.preventDefault();
   });
 
   viewCanvas.addEventListener('pointermove', e => {
-    if (!drag) return;
-    const L = layerById(drag.id);
-    if (!L) return;
-    const n = canvasToNorm(e);
-    const dx = n.x - drag.nx, dy = n.y - drag.ny;
-    L.x = Math.max(0, Math.min(1, drag.sx + dx));
-    L.y = Math.max(0, Math.min(1, drag.sy + dy));
-    scheduleDraw();
+    const vx = e.offsetX, vy = e.offsetY;
+    if (layerDrag) {
+      const L = layerById(layerDrag.id);
+      if (L) {
+        const p = contentPointFromView(vx, vy);
+        if (p.ok) {
+          const curNx = p.lx / vp.pw, curNy = p.ly / vp.ph;
+          L.x = Math.max(0, Math.min(1, layerDrag.startLx + (curNx - layerDrag.grabNx)));
+          L.y = Math.max(0, Math.min(1, layerDrag.startLy + (curNy - layerDrag.grabNy)));
+        }
+        scheduleDraw();
+      }
+      return;
+    }
+    if (viewDrag) {
+      viewPanX = viewDrag.startPanX + (e.clientX - viewDrag.startMx);
+      viewPanY = viewDrag.startPanY + (e.clientY - viewDrag.startMy);
+      scheduleDraw(false);
+      return;
+    }
+    const Lh = hitTestLayerAtView(vx, vy);
+    const hid = Lh ? Lh.id : null;
+    if (hid !== hoverLayerId) {
+      hoverLayerId = hid;
+      scheduleHoverPaint();
+    }
   });
 
   function endDrag() {
-    drag = null;
+    layerDrag = null;
+    viewDrag = null;
+    updateViewCursor();
+    scheduleHoverPaint();
   }
   viewCanvas.addEventListener('pointerup', endDrag);
   viewCanvas.addEventListener('pointercancel', endDrag);
+  viewCanvas.addEventListener('pointerleave', () => {
+    if (!layerDrag && !viewDrag && hoverLayerId != null) {
+      hoverLayerId = null;
+      scheduleHoverPaint();
+    }
+  });
 
   viewCanvas.addEventListener('wheel', e => {
-    const L = selectedLayer();
-    if (!L) return;
     e.preventDefault();
-    const d = e.deltaY > 0 ? -0.04 : 0.04;
-    L.scale = Math.max(0.05, Math.min(2, L.scale + d));
-    $('layScale').value = String(Math.round(L.scale * 100));
-    $('layScaleVal').textContent = Math.round(L.scale * 100) + '%';
-    scheduleDraw();
+    const vx = e.offsetX, vy = e.offsetY;
+    const L = hitTestLayerAtView(vx, vy);
+    if (L) {
+      const d = e.deltaY > 0 ? -0.04 : 0.04;
+      L.scale = Math.max(0.05, Math.min(2, L.scale + d));
+      if (selId === L.id) {
+        $('layScale').value = String(Math.round(L.scale * 100));
+        $('layScaleVal').textContent = Math.round(L.scale * 100) + '%';
+      }
+      scheduleDraw();
+    } else {
+      zoomViewToward(vx, vy, e.deltaY);
+      scheduleDraw(false);
+    }
   }, { passive: false });
 
   $('paperSeg').addEventListener('click', e => {
@@ -726,14 +911,14 @@
   }
   bindRange('gridCols', v => String(v));
   bindRange('gapRatio', v => v + '%');
-  bindRange('noiseStr', v => v + '%');
+  bindRange('noiseStr', v => String(v) + '%');
   bindRange('noiseScale', v => String(v));
   bindRange('noiseSeed', v => String(v));
   bindRange('exportDpi', v => String(v));
 
-  ['colBase', 'colAccent', 'colText'].forEach(id => $(id).addEventListener('input', scheduleDraw));
-  $('showTitle').addEventListener('change', scheduleDraw);
-  $('titleText').addEventListener('input', scheduleDraw);
+  ['colBase', 'colAccent', 'colText'].forEach(id => $(id).addEventListener('input', () => scheduleDraw()));
+  $('showTitle').addEventListener('change', () => scheduleDraw());
+  $('titleText').addEventListener('input', () => scheduleDraw());
 
   $('layInvert').addEventListener('change', () => {
     const L = selectedLayer();
@@ -771,6 +956,14 @@
       scheduleDraw();
     }
   });
+  $('layNoiseInfl').addEventListener('input', () => {
+    const L = selectedLayer();
+    if (L) {
+      L.noiseInfluence = parseInt($('layNoiseInfl').value, 10);
+      $('layNoiseInflVal').textContent = L.noiseInfluence + '%';
+      scheduleDraw();
+    }
+  });
 
   $('customW').addEventListener('input', scheduleDraw);
   $('customH').addEventListener('input', scheduleDraw);
@@ -790,11 +983,19 @@
   });
 
   $('btnPng').addEventListener('click', exportPng);
-  $('btnFit').addEventListener('click', () => scheduleDraw());
+  $('btnFit').addEventListener('click', () => {
+    viewZoom = 1;
+    viewPanX = 0;
+    viewPanY = 0;
+    scheduleDraw(false);
+  });
 
-  window.addEventListener('resize', scheduleDraw);
+  window.addEventListener('resize', () => scheduleDraw(false));
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => scheduleDraw(false)).observe(canvasOuter);
+  }
 
-  draw();
+  paintView({ rebuild: true });
 })();
 </script>
 </body>
