@@ -78,6 +78,12 @@
   .layer-item .meta{flex:1;min-width:0;}
   .layer-item .name{font-size:10px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .layer-item .z{font-size:9px;color:var(--text-muted);}
+  .layer-moves{display:flex;flex-direction:column;gap:1px;flex-shrink:0;}
+  .layer-item .move{
+    padding:0 5px;border:1px solid var(--border);background:transparent;color:var(--text-muted);
+    cursor:pointer;font-size:9px;line-height:1.15;font-family:var(--mono);}
+  .layer-item .move:disabled{opacity:.32;cursor:default;}
+  .layer-item .move:not(:disabled):hover{border-color:var(--border-hi);color:var(--text);}
   .layer-item .rm{padding:2px 6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:10px;}
   .layer-item .rm:hover{color:#e05050;border-color:#e05050;}
   textarea.layer-ta{
@@ -791,6 +797,13 @@
     updateLayColorRecipeUi();
   }
 
+  function swapLayers(a, b) {
+    if (a === b || a < 0 || b < 0 || a >= layers.length || b >= layers.length) return;
+    const t = layers[a];
+    layers[a] = layers[b];
+    layers[b] = t;
+  }
+
   function renderLayerList() {
     const el = $('layerList');
     el.innerHTML = '';
@@ -802,14 +815,30 @@
         : '<img class="thumb" alt="">';
       row.innerHTML =
         thumbHtml +
+        '<div class="layer-moves">' +
+          '<button type="button" class="move" data-dir="up" title="Move up (draw earlier / behind)">↑</button>' +
+          '<button type="button" class="move" data-dir="down" title="Move down (draw later / in front)">↓</button>' +
+        '</div>' +
         '<div class="meta"><div class="name"></div><div class="z"></div></div>' +
         '<button type="button" class="rm" title="Remove">×</button>';
       row.querySelector('.name').textContent = L.name;
       row.querySelector('.z').textContent =
         (L.kind === 'text' ? 'text' : 'image') + ' · z ' + (i + 1) + ' · bottom→top';
       if (L.kind === 'image') row.querySelector('.thumb').src = L.el.src;
+      row.querySelector('[data-dir="up"]').disabled = i === 0;
+      row.querySelector('[data-dir="down"]').disabled = i === layers.length - 1;
       row.addEventListener('click', e => {
-        if (e.target.classList.contains('rm')) {
+        const t = e.target;
+        if (t.classList.contains('move') && !t.disabled) {
+          e.stopPropagation();
+          if (t.dataset.dir === 'up') swapLayers(i, i - 1);
+          else swapLayers(i, i + 1);
+          renderLayerList();
+          syncLayerPanel();
+          scheduleDraw();
+          return;
+        }
+        if (t.classList.contains('rm')) {
           e.stopPropagation();
           if (L.kind === 'image' && L.blobUrl) try { URL.revokeObjectURL(L.blobUrl); } catch (_) {}
           layers = layers.filter(x => x.id !== L.id);
