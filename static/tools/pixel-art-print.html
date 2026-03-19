@@ -171,11 +171,11 @@
       </label>
       <label class="row" style="flex-wrap:wrap;margin-top:4px;">
         <span class="param-label" style="flex:1 0 100%;">Pixel gap</span>
-        <input type="range" id="gapRatio" min="0" max="45" value="8" style="flex:1;">
-        <span class="range-val" id="gapRatioVal">8%</span>
+        <input type="range" id="gapPx" min="0" max="20" value="2" style="flex:1;">
+        <span class="range-val" id="gapPxVal">2 px</span>
       </label>
       <div style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.45;">
-        Rows follow paper aspect. Gap is a fraction of cell size. The preview bumps sub-pixel gaps so lines stay visible on screen; PNG export keeps exact fractional spacing.
+        Rows follow paper aspect. Gap is the width in <strong>pixels</strong> of lines between cells (preview and export match). Column/row widths are split evenly so every cell gets the same size ±1 px.
       </div>
     </div>
 
@@ -1050,6 +1050,40 @@
     return { bw, bh };
   }
 
+  /**
+   * Splits `total` px across `n` cells with `n−1` gaps of `g` px (caller ensures `total − (n−1)*g ≥ n`).
+   * @returns {{ starts:number[], ends:number[] }}
+   */
+  function axisCellLayoutWithG(total, n, g) {
+    const nGaps = Math.max(0, n - 1);
+    const avail = total - nGaps * g;
+    const base = Math.floor(avail / n);
+    const rem = avail % n;
+    const w = [];
+    for (let i = 0; i < n; i++) w.push(base + (i < rem ? 1 : 0));
+    const starts = [];
+    const ends = [];
+    let pos = 0;
+    for (let i = 0; i < n; i++) {
+      starts.push(pos);
+      pos += w[i];
+      ends.push(pos);
+      if (i < n - 1) pos += g;
+    }
+    return { starts, ends };
+  }
+
+  /** Same pixel gap on X and Y; reduced if the grid would leave under 1 px per cell. */
+  function buildGridLayout(pw, ph, cols, rows, gapReq) {
+    let g = Math.max(0, Math.floor(gapReq));
+    const cx = Math.max(0, cols - 1);
+    const ry = Math.max(0, rows - 1);
+    while (g > 0 && (pw - cx * g < cols || ph - ry * g < rows)) g--;
+    const x = axisCellLayoutWithG(pw, cols, g);
+    const y = axisCellLayoutWithG(ph, rows, g);
+    return { xs: x.starts, xe: x.ends, ys: y.starts, ye: y.ends, gapUsed: g };
+  }
+
   function cellToImageUv(L, cx, cy, cols, rows) {
     const { bw, bh } = layerNormSize(L);
     const nx0 = L.x - bw / 2, ny0 = L.y - bh / 2;
@@ -1059,7 +1093,7 @@
     return { u, v, inside: u >= -eps && u <= 1 + eps && v >= -eps && v <= 1 + eps };
   }
 
-  function drawToContext(ctx, pw, ph, cols, rows, gapRatio, forExport) {
+  function drawToContext(ctx, pw, ph, cols, rows, gapPxReq) {
     const base = parseHex($('colBase').value);
     const accentCol = parseHex($('colAccent').value);
     const noiseS = parseInt($('noiseStr').value, 10) / 100;
@@ -1067,20 +1101,18 @@
     const noiseSd = parseFloat($('noiseSeed').value) || 0;
     const noiseMode = $('noiseMode').value;
 
-    const cellW = pw / cols;
-    const cellH = ph / rows;
-    const gFrac = gapRatio / 100;
-    let halfGapPxX = cellW * gFrac * 0.5;
-    let halfGapPxY = cellH * gFrac * 0.5;
-    if (gFrac > 0 && !forExport) {
-      const maxHX = Math.max(0, cellW * 0.5 - 1e-6);
-      const maxHY = Math.max(0, cellH * 0.5 - 1e-6);
-      if (halfGapPxX > 0 && halfGapPxX < 1 && maxHX >= 0.5) halfGapPxX = Math.min(1, maxHX);
-      if (halfGapPxY > 0 && halfGapPxY < 1 && maxHY >= 0.5) halfGapPxY = Math.min(1, maxHY);
-    }
+    const gapPx = Math.max(0, Math.floor(gapPxReq));
+    const grid = buildGridLayout(pw, ph, cols, rows, gapPx);
+    const { xs, xe, ys, ye } = grid;
 
     const imgData = ctx.createImageData(pw, ph);
     const out = imgData.data;
+    for (let q = 0; q < out.length; q += 4) {
+      out[q] = base.r;
+      out[q + 1] = base.g;
+      out[q + 2] = base.b;
+      out[q + 3] = 255;
+    }
 
     for (let j = 0; j < rows; j++) {
       for (let i = 0; i < cols; i++) {
@@ -1167,29 +1199,17 @@
           }
         }
 
-        const xA = i * cellW, xB = (i + 1) * cellW;
-        const yA = j * cellH, yB = (j + 1) * cellH;
-        const xStart = Math.max(0, Math.ceil(xA - 1e-9));
-        const xEnd = Math.min(pw, Math.floor(xB - 1e-9) + 1);
-        const yStart = Math.max(0, Math.ceil(yA - 1e-9));
-        const yEnd = Math.min(ph, Math.floor(yB - 1e-9) + 1);
+        const xStart = xs[i];
+        const xEnd = xe[i];
+        const yStart = ys[j];
+        const yEnd = ye[j];
 
         for (let y = yStart; y < yEnd; y++) {
-          const cy = y + 0.5;
-          const inGapY = gFrac > 0 && (cy - yA < halfGapPxY || yB - cy < halfGapPxY);
           for (let x = xStart; x < xEnd; x++) {
-            const cx = x + 0.5;
-            const inGapX = gFrac > 0 && (cx - xA < halfGapPxX || xB - cx < halfGapPxX);
             const p = (y * pw + x) * 4;
-            if (inGapX || inGapY) {
-              out[p] = baseCellR;
-              out[p + 1] = baseCellG;
-              out[p + 2] = baseCellB;
-            } else {
-              out[p] = cellR;
-              out[p + 1] = cellG;
-              out[p + 2] = cellB;
-            }
+            out[p] = cellR;
+            out[p + 1] = cellG;
+            out[p + 2] = cellB;
             out[p + 3] = 255;
           }
         }
@@ -1247,10 +1267,10 @@
     vctx.restore();
   }
 
-  function rebuildWork(pw, ph, cols, rows, gapRatio) {
+  function rebuildWork(pw, ph, cols, rows, gapPx) {
     workCanvas.width = pw;
     workCanvas.height = ph;
-    drawToContext(workCtx, pw, ph, cols, rows, gapRatio, false);
+    drawToContext(workCtx, pw, ph, cols, rows, gapPx);
   }
 
   /**
@@ -1270,9 +1290,9 @@
       pw = Math.round(maxPrev / aspect);
     }
 
-    const gapRatio = parseFloat($('gapRatio').value) || 0;
+    const gapPx = parseInt($('gapPx').value, 10) || 0;
     if (rebuild || workCanvas.width !== pw || workCanvas.height !== ph) {
-      rebuildWork(pw, ph, cols, rows, gapRatio);
+      rebuildWork(pw, ph, cols, rows, gapPx);
     }
 
     const rect = canvasOuter.getBoundingClientRect();
@@ -1490,7 +1510,7 @@
     el.addEventListener('input', upd);
   }
   bindRange('gridCols', v => String(v));
-  bindRange('gapRatio', v => v + '%');
+  bindRange('gapPx', v => v + ' px');
   bindRange('noiseStr', v => String(v) + '%');
   bindRange('noiseScale', v => String(v));
   bindRange('noiseSeed', v => String(v));
