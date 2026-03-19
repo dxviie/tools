@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- tool-meta: {"name":"Pixel Art Print","slug":"pixel-art-print","description":"Print-sized pixel grids — A6/A5/A4 or custom, image and text layers rasterized to the grid with threshold dithering, IBM Plex Mono text, and noise tints.","tags":["pixel","print","dither","grid","text"]} -->
+<!-- tool-meta: {"name":"Pixel Art Print","slug":"pixel-art-print","description":"Print-sized pixel grids — A6/A5/A4 or custom, image and text layers rasterized to the grid with threshold dithering, IBM Plex Mono text, noise tints, step or sine wave animation, fast preview, and GIF / MP4 or WebM export.","tags":["pixel","print","dither","grid","text","gif","video"]} -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pixel Art Print</title>
@@ -123,7 +123,7 @@
   <div class="subtitle">print grid · threshold layers</div>
   <div class="header-right">
     <span class="badge">A6 — A4</span>
-    <span class="badge">PNG export</span>
+    <span class="badge">PNG · GIF · video</span>
   </div>
 </header>
 
@@ -309,10 +309,87 @@
       </label>
     </div>
 
+    <div class="section">
+      <div class="section-label">Grid animation</div>
+      <span class="param-label" style="display:block;margin-bottom:5px;">Mode</span>
+      <select id="animMode" style="margin-bottom:8px;">
+        <option value="none" selected>Off — static grid</option>
+        <option value="wave_col">Wave — columns</option>
+        <option value="wave_row">Wave — rows</option>
+        <option value="translate">Translate — whole grid (torus wrap)</option>
+      </select>
+      <div id="animWaveShapeWrap" style="display:none;margin-bottom:8px;">
+        <span class="param-label" style="display:block;margin-bottom:5px;">Wave shape</span>
+        <select id="animWaveStyle" style="width:100%;">
+          <option value="step" selected>Step sweep — one line, pauses</option>
+          <option value="sine">Sine — smooth ripple</option>
+        </select>
+      </div>
+      <div id="animStepWaveBlock" style="display:none;">
+        <label class="row" style="flex-wrap:wrap;">
+          <span class="param-label" style="flex:1 0 100%;">Pause (frames)</span>
+          <input type="range" id="animPause" min="0" max="24" value="8" style="flex:1;">
+          <span class="range-val" id="animPauseVal">8</span>
+        </label>
+        <label class="row" style="flex-wrap:wrap;">
+          <span class="param-label" style="flex:1 0 100%;">Shift (cells)</span>
+          <input type="range" id="animShiftCells" min="1" max="4" value="1" style="flex:1;">
+          <span class="range-val" id="animShiftCellsVal">1</span>
+        </label>
+      </div>
+      <div id="animSineBlock" style="display:none;">
+        <label class="row" style="flex-wrap:wrap;">
+          <span class="param-label" style="flex:1 0 100%;">Amplitude (cells)</span>
+          <input type="range" id="animSinAmp" min="3" max="60" value="15" style="flex:1;">
+          <span class="range-val" id="animSinAmpVal">1.5</span>
+        </label>
+        <label class="row" style="flex-wrap:wrap;">
+          <span class="param-label" style="flex:1 0 100%;">Wavelength (grid units)</span>
+          <input type="range" id="animSinWavelength" min="3" max="72" value="14" style="flex:1;">
+          <span class="range-val" id="animSinWavelengthVal">14</span>
+        </label>
+        <label class="row" style="flex-wrap:wrap;">
+          <span class="param-label" style="flex:1 0 100%;">Frames / cycle</span>
+          <input type="range" id="animSinFrames" min="8" max="96" value="24" style="flex:1;">
+          <span class="range-val" id="animSinFramesVal">24</span>
+        </label>
+        <label class="check" style="margin-top:4px;"><input type="checkbox" id="animSinReverse"> Reverse wave travel</label>
+        <p class="muted" style="margin-top:6px;font-size:10px;line-height:1.45;color:var(--text-muted);">
+          Column wave: displacement along <strong>rows</strong> (vertical). Row wave: along <strong>columns</strong> (horizontal). Wavelength counts units along that axis. <strong>Frames / cycle</strong> is one full time sweep of the ripple.
+        </p>
+      </div>
+      <label class="row" style="flex-wrap:wrap;">
+        <span class="param-label" style="flex:1 0 100%;">FPS</span>
+        <input type="range" id="animFps" min="4" max="30" value="12" style="flex:1;">
+        <span class="range-val" id="animFpsVal">12</span>
+      </label>
+      <label class="row" style="flex-wrap:wrap;">
+        <span class="param-label" style="flex:1 0 100%;">Loops</span>
+        <input type="range" id="animLoops" min="1" max="6" value="2" style="flex:1;">
+        <span class="range-val" id="animLoopsVal">2</span>
+      </label>
+      <label class="row" style="flex-wrap:wrap;display:none;" id="animTranslateRow">
+        <span class="param-label" style="flex:1 0 100%;">Cells per loop</span>
+        <input type="range" id="animTranslateCells" min="2" max="64" value="12" style="flex:1;">
+        <span class="range-val" id="animTranslateCellsVal">12</span>
+      </label>
+      <label class="row" style="flex-wrap:wrap;">
+        <span class="param-label" style="flex:1 0 100%;">Anim export scale</span>
+        <input type="range" id="animExportScale" min="25" max="100" value="50" step="5" style="flex:1;">
+        <span class="range-val" id="animExportScaleVal">50%</span>
+      </label>
+      <p class="muted" style="margin-top:6px;font-size:10px;line-height:1.45;color:var(--text-muted);">
+        <strong>▶ Preview</strong> plays one cycle as fast as the browser can (ignores FPS &amp; loops). Export still uses FPS/loops. Step sweep = discrete line + pauses; sine = smooth displacement. Video: <code>MediaRecorder</code>. GIF: quantized.
+      </p>
+    </div>
+
   </div>
 
   <div class="actions">
     <button type="button" class="primary" id="btnPng">↓ Download PNG</button>
+    <button type="button" class="ghost" id="btnGif">↓ GIF</button>
+    <button type="button" class="ghost" id="btnVideo">↓ Video</button>
+    <button type="button" class="ghost" id="btnAnimPreview">▶ Preview once</button>
     <button type="button" class="ghost" id="btnFit">Fit preview</button>
   </div>
 </div>
@@ -1163,7 +1240,24 @@
     return { u, v, inside: u >= -eps && u <= 1 + eps && v >= -eps && v <= 1 + eps };
   }
 
-  function drawToContext(ctx, pw, ph, cols, rows, gapPxReq) {
+  /** @param {number} n @param {number} m */
+  function wrapCell(n, m) {
+    if (m <= 0) return 0;
+    return ((n % m) + m) % m;
+  }
+
+  /**
+   * Remap logical grid indices for animation (sampling only; cell rectangles stay at i,j).
+   * @typedef {(i:number,j:number,cols:number,rows:number)=>{i:number,j:number}} AnimRemap
+   */
+
+  /**
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {number} gapPxReq
+   * @param {AnimRemap} [animRemap]
+   */
+  function drawToContext(ctx, pw, ph, cols, rows, gapPxReq, animRemap) {
+    const map = animRemap || ((i, j) => ({ i, j }));
     const base = parseHex($('colBase').value);
     const accentCol = parseHex($('colAccent').value);
     const noiseS = parseInt($('noiseStr').value, 10) / 100;
@@ -1186,8 +1280,13 @@
 
     for (let j = 0; j < rows; j++) {
       for (let i = 0; i < cols; i++) {
+        const mapped = map(i, j, cols, rows);
+        const ci = wrapCell(mapped.i, cols);
+        const cj = wrapCell(mapped.j, rows);
+
         let baseCellR = base.r, baseCellG = base.g, baseCellB = base.b;
         if (noiseS > 0) {
+          /* Paper noise follows screen cell (i,j); layer sampling uses (ci,cj) so content can wave. */
           if (noiseMode === 'cca') {
             const d = ccaRgbDelta(i, j, noiseSc, noiseSd, noiseS);
             baseCellR = Math.max(0, Math.min(255, Math.round(baseCellR + d.dr)));
@@ -1205,7 +1304,7 @@
         let cellR = baseCellR, cellG = baseCellG, cellB = baseCellB;
 
         for (const L of layers) {
-          const { u, v, inside } = cellToImageUv(L, i + 0.5, j + 0.5, cols, rows);
+          const { u, v, inside } = cellToImageUv(L, ci + 0.5, cj + 0.5, cols, rows);
           if (!inside) continue;
           const pc = parseHex(L.pixelHex);
           const op = L.opacity;
@@ -1229,12 +1328,12 @@
                 pc,
                 colorRecipe,
                 colorMix,
-                i,
-                j,
+                ci,
+                cj,
                 noiseSc,
                 noiseSd
               );
-              const tinted = noiseTintRgb(baseRgb.r, baseRgb.g, baseRgb.b, i, j, noiseSc, noiseSd, infl, ntStyle, accentCol);
+              const tinted = noiseTintRgb(baseRgb.r, baseRgb.g, baseRgb.b, ci, cj, noiseSc, noiseSd, infl, ntStyle, accentCol);
               const blended = blendOver(
                 { r: cellR, g: cellG, b: cellB },
                 { r: tinted.r, g: tinted.g, b: tinted.b },
@@ -1255,12 +1354,12 @@
                 pc,
                 colorRecipe,
                 colorMix,
-                i,
-                j,
+                ci,
+                cj,
                 noiseSc,
                 noiseSd
               );
-              const tinted = noiseTintRgb(baseRgb.r, baseRgb.g, baseRgb.b, i, j, noiseSc, noiseSd, infl, ntStyle, accentCol);
+              const tinted = noiseTintRgb(baseRgb.r, baseRgb.g, baseRgb.b, ci, cj, noiseSc, noiseSd, infl, ntStyle, accentCol);
               const blended = blendOver(
                 { r: cellR, g: cellG, b: cellB },
                 { r: tinted.r, g: tinted.g, b: tinted.b },
@@ -1446,6 +1545,199 @@
     });
   }
 
+  function readAnimUi() {
+    return {
+      mode: $('animMode').value,
+      waveStyle: $('animWaveStyle').value,
+      fps: Math.max(1, parseInt($('animFps').value, 10) || 12),
+      loops: Math.max(1, parseInt($('animLoops').value, 10) || 2),
+      pause: Math.max(0, parseInt($('animPause').value, 10) || 0),
+      shiftCells: Math.max(1, parseInt($('animShiftCells').value, 10) || 1),
+      translateCells: Math.max(2, parseInt($('animTranslateCells').value, 10) || 12),
+      exportScale: Math.max(5, Math.min(100, parseInt($('animExportScale').value, 10) || 50)),
+      sinAmpTenths: Math.max(1, parseInt($('animSinAmp').value, 10) || 15),
+      sinWavelength: Math.max(2, parseInt($('animSinWavelength').value, 10) || 14),
+      sinFrames: Math.max(4, parseInt($('animSinFrames').value, 10) || 24),
+      sinReverse: $('animSinReverse').checked
+    };
+  }
+
+  /** One full cycle length in frames (before multiplying by loops). */
+  function animCycleFrames(mode, cols, rows, pause) {
+    const ui = readAnimUi();
+    const P = Math.max(0, pause);
+    if (mode === 'wave_col' || mode === 'wave_row') {
+      if (ui.waveStyle === 'sine') return ui.sinFrames;
+      if (mode === 'wave_col') return P + cols + P;
+      return P + rows + P;
+    }
+    if (mode === 'translate') return ui.translateCells;
+    return 1;
+  }
+
+  function animTotalFrames(mode, cols, rows) {
+    if (mode === 'none') return 0;
+    const { loops, pause } = readAnimUi();
+    return animCycleFrames(mode, cols, rows, pause) * loops;
+  }
+
+  /** Frames in one preview run (single cycle; ignores export loops & FPS). */
+  function animPreviewFrameCount(mode, cols, rows) {
+    if (mode === 'none') return 0;
+    const ui = readAnimUi();
+    if (mode === 'translate') return ui.translateCells;
+    if (mode === 'wave_col' || mode === 'wave_row') {
+      if (ui.waveStyle === 'sine') return ui.sinFrames;
+      const P = Math.max(0, ui.pause);
+      return mode === 'wave_col' ? P + cols + P : P + rows + P;
+    }
+    return 0;
+  }
+
+  /**
+   * @param {number} globalFrame 0 .. total−1
+   * @returns {AnimRemap}
+   */
+  function makeAnimRemap(globalFrame, mode, cols, rows) {
+    const ui = readAnimUi();
+    const { pause, shiftCells, translateCells } = ui;
+    const P = Math.max(0, pause);
+    const sh = Math.max(1, shiftCells);
+    const tc = Math.max(2, translateCells);
+
+    if (mode === 'none' || cols < 1 || rows < 1) {
+      return (i, j) => ({ i, j });
+    }
+
+    if (mode === 'translate') {
+      const f = globalFrame % tc;
+      return (i, j) => ({ i: i - f, j });
+    }
+
+    if (mode === 'wave_col') {
+      if (ui.waveStyle === 'sine') {
+        const amp = ui.sinAmpTenths / 10;
+        const wl = Math.max(2, ui.sinWavelength);
+        const T = ui.sinFrames;
+        const fr = globalFrame % T;
+        let timePh = (-2 * Math.PI * fr) / T;
+        if (ui.sinReverse) timePh = -timePh;
+        return (i, j) => {
+          const dj = Math.round(amp * Math.sin((2 * Math.PI * i) / wl + timePh));
+          return { i, j: j + dj };
+        };
+      }
+      const cycle = P + cols + P;
+      const f = globalFrame % cycle;
+      if (f < P || f >= P + cols) return (i, j) => ({ i, j });
+      const activeCol = f - P;
+      return (i, j) => (i === activeCol ? { i, j: j + sh } : { i, j });
+    }
+
+    if (mode === 'wave_row') {
+      if (ui.waveStyle === 'sine') {
+        const amp = ui.sinAmpTenths / 10;
+        const wl = Math.max(2, ui.sinWavelength);
+        const T = ui.sinFrames;
+        const fr = globalFrame % T;
+        let timePh = (-2 * Math.PI * fr) / T;
+        if (ui.sinReverse) timePh = -timePh;
+        return (i, j) => {
+          const di = Math.round(amp * Math.sin((2 * Math.PI * j) / wl + timePh));
+          return { i: i + di, j };
+        };
+      }
+      const cycle = P + rows + P;
+      const f = globalFrame % cycle;
+      if (f < P || f >= P + rows) return (i, j) => ({ i, j });
+      const activeRow = f - P;
+      return (i, j) => (j === activeRow ? { i: i + sh, j } : { i, j });
+    }
+
+    return (i, j) => ({ i, j });
+  }
+
+  function updateAnimModeUi() {
+    const mode = $('animMode').value;
+    const trRow = $('animTranslateRow');
+    const shapeWrap = $('animWaveShapeWrap');
+    const stepBlock = $('animStepWaveBlock');
+    const sineBlock = $('animSineBlock');
+    const isWave = mode === 'wave_col' || mode === 'wave_row';
+    const sine = isWave && $('animWaveStyle').value === 'sine';
+    shapeWrap.style.display = isWave ? 'block' : 'none';
+    stepBlock.style.display = isWave && !sine ? 'block' : 'none';
+    sineBlock.style.display = isWave && sine ? 'block' : 'none';
+    trRow.style.display = mode === 'translate' ? 'flex' : 'none';
+  }
+
+  let animPreviewRaf = 0;
+  let animPreviewActive = false;
+
+  function stopAnimPreview() {
+    animPreviewActive = false;
+    if (animPreviewRaf) {
+      cancelAnimationFrame(animPreviewRaf);
+      animPreviewRaf = 0;
+    }
+  }
+
+  function runAnimPreview() {
+    const mode = $('animMode').value;
+    if (mode === 'none') {
+      $('statusBar').textContent = 'Choose an animation mode first.';
+      return;
+    }
+    if (exportAnimBusy) return;
+
+    stopAnimPreview();
+    animPreviewActive = true;
+
+    const cols = vp.cols;
+    const rows = vp.rows;
+    const pw = vp.pw;
+    const ph = vp.ph;
+    const gapPx = parseInt($('gapPx').value, 10) || 0;
+    const total = animPreviewFrameCount(mode, cols, rows);
+    if (total < 1) {
+      animPreviewActive = false;
+      return;
+    }
+
+    let fi = 0;
+    function stepFrame() {
+      if (!animPreviewActive) return;
+      if (fi >= total) {
+        animPreviewActive = false;
+        animPreviewRaf = 0;
+        scheduleDraw(true);
+        $('statusBar').textContent = 'Preview done.';
+        return;
+      }
+      const remap = makeAnimRemap(fi, mode, cols, rows);
+      drawToContext(workCtx, pw, ph, cols, rows, gapPx, remap);
+      paintView({ rebuild: false });
+      $('statusBar').textContent = 'Preview ' + (fi + 1) + '/' + total + ' · click ▶ again to stop';
+      fi++;
+      animPreviewRaf = requestAnimationFrame(stepFrame);
+    }
+    animPreviewRaf = requestAnimationFrame(stepFrame);
+  }
+
+  function exportDimsForAnim() {
+    const { w: mmW, h: mmH } = paperMm();
+    const cols = parseInt($('gridCols').value, 10) || 48;
+    const aspect = mmH / mmW;
+    const rows = Math.max(1, Math.round(cols * aspect));
+    const baseDpi = parseInt($('exportDpi').value, 10) || 300;
+    const scale = readAnimUi().exportScale / 100;
+    const dpi = Math.max(36, Math.round(baseDpi * scale));
+    const pxPerMm = dpi / 25.4;
+    const pw = Math.max(1, Math.round(mmW * pxPerMm));
+    const ph = Math.max(1, Math.round(mmH * pxPerMm));
+    return { pw, ph, cols, rows, dpi, gapPx: parseInt($('gapPx').value, 10) || 0 };
+  }
+
   function exportPng() {
     const { w: mmW, h: mmH } = paperMm();
     const cols = parseInt($('gridCols').value, 10) || 48;
@@ -1470,6 +1762,161 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
       $('statusBar').textContent = 'Exported ' + pw + '×' + ph + ' px @ ' + dpi + ' DPI';
     }, 'image/png');
+  }
+
+  let exportAnimBusy = false;
+
+  async function exportAnimatedGif() {
+    const ui = readAnimUi();
+    if (ui.mode === 'none') {
+      $('statusBar').textContent = 'Turn on an animation mode (not Off) before exporting GIF.';
+      return;
+    }
+    if (exportAnimBusy) return;
+    stopAnimPreview();
+    exportAnimBusy = true;
+    const { pw, ph, cols, rows, dpi, gapPx } = exportDimsForAnim();
+    const total = animTotalFrames(ui.mode, cols, rows);
+    if (total < 2) {
+      $('statusBar').textContent = 'Need at least 2 frames — check grid size and loops.';
+      exportAnimBusy = false;
+      return;
+    }
+
+    $('statusBar').textContent = 'Loading GIF encoder…';
+    let mod;
+    try {
+      mod = await import('https://esm.sh/gifenc@1.0.3');
+    } catch (e) {
+      $('statusBar').textContent = 'Could not load GIF encoder (network?). Try video export.';
+      exportAnimBusy = false;
+      return;
+    }
+
+    const GIFEncoder = mod.GIFEncoder || mod.default;
+    const quantize = mod.quantize;
+    const applyPalette = mod.applyPalette;
+    if (typeof GIFEncoder !== 'function' || !quantize || !applyPalette) {
+      $('statusBar').textContent = 'GIF encoder API mismatch — try video export.';
+      exportAnimBusy = false;
+      return;
+    }
+
+    const c = document.createElement('canvas');
+    c.width = pw;
+    c.height = ph;
+    const x = c.getContext('2d', { alpha: false });
+    const enc = GIFEncoder();
+    const delayMs = Math.max(2, Math.round(1000 / ui.fps));
+
+    try {
+      for (let fi = 0; fi < total; fi++) {
+        $('statusBar').textContent = 'GIF frame ' + (fi + 1) + '/' + total + '…';
+        await new Promise(r => setTimeout(r, 0));
+        const remap = makeAnimRemap(fi, ui.mode, cols, rows);
+        drawToContext(x, pw, ph, cols, rows, gapPx, remap);
+        const data = x.getImageData(0, 0, pw, ph).data;
+        const palette = quantize(data, 256);
+        const index = applyPalette(data, palette);
+        /** @type {{palette:unknown,delay:number,repeat?:number}} */
+        const opts = { palette, delay: delayMs };
+        if (fi === 0) opts.repeat = 0;
+        enc.writeFrame(index, pw, ph, opts);
+      }
+      enc.finish();
+      const bytes = enc.bytes();
+      const blob = new Blob([bytes], { type: 'image/gif' });
+      const a = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(blob),
+        download: 'pixel-art-' + paperPreset + '-' + ui.mode + '-' + pw + 'x' + ph + '.gif'
+      });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      $('statusBar').textContent = 'GIF ' + pw + '×' + ph + ' · ' + total + ' f · ~' + dpi + ' DPI equiv · done';
+    } catch (err) {
+      $('statusBar').textContent = 'GIF export failed: ' + (err && err.message ? err.message : String(err));
+    }
+    exportAnimBusy = false;
+  }
+
+  async function exportAnimatedVideo() {
+    const ui = readAnimUi();
+    if (ui.mode === 'none') {
+      $('statusBar').textContent = 'Turn on an animation mode (not Off) before exporting video.';
+      return;
+    }
+    if (exportAnimBusy) return;
+    stopAnimPreview();
+    if (typeof MediaRecorder === 'undefined') {
+      $('statusBar').textContent = 'MediaRecorder not available — try GIF export.';
+      return;
+    }
+
+    const { pw, ph, cols, rows, dpi, gapPx } = exportDimsForAnim();
+    const total = animTotalFrames(ui.mode, cols, rows);
+    if (total < 2) {
+      $('statusBar').textContent = 'Need at least 2 frames — check grid size and loops.';
+      return;
+    }
+
+    const candidates = [
+      'video/mp4',
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm'
+    ];
+    const mime = candidates.find(m => MediaRecorder.isTypeSupported(m));
+    if (!mime) {
+      $('statusBar').textContent = 'No supported video codec — try GIF export.';
+      return;
+    }
+
+    exportAnimBusy = true;
+    const c = document.createElement('canvas');
+    c.width = pw;
+    c.height = ph;
+    const x = c.getContext('2d', { alpha: false });
+    const stream = c.captureStream(ui.fps);
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12_000_000 });
+    const chunks = [];
+    rec.ondataavailable = e => {
+      if (e.data && e.data.size) chunks.push(e.data);
+    };
+
+    const stopped = new Promise(resolve => {
+      rec.onstop = () => resolve();
+    });
+
+    rec.start();
+    const frameMs = 1000 / ui.fps;
+
+    try {
+      for (let fi = 0; fi < total; fi++) {
+        $('statusBar').textContent = 'Video frame ' + (fi + 1) + '/' + total + '…';
+        const remap = makeAnimRemap(fi, ui.mode, cols, rows);
+        drawToContext(x, pw, ph, cols, rows, gapPx, remap);
+        await new Promise(r => setTimeout(r, frameMs));
+      }
+    } catch (e) {
+      $('statusBar').textContent = 'Recording error: ' + (e && e.message ? e.message : String(e));
+      try { rec.stop(); } catch (_) {}
+      exportAnimBusy = false;
+      return;
+    }
+
+    rec.stop();
+    await stopped;
+
+    const blob = new Blob(chunks, { type: mime.split(';')[0] });
+    const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob),
+      download: 'pixel-art-' + paperPreset + '-' + ui.mode + '-' + pw + 'x' + ph + '.' + ext
+    });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    $('statusBar').textContent = 'Video ' + pw + '×' + ph + ' · ' + total + ' f · ~' + dpi + ' DPI equiv · ' + ext;
+    exportAnimBusy = false;
   }
 
   viewCanvas.addEventListener('pointerdown', e => {
@@ -1589,6 +2036,34 @@
   $('noiseMode').addEventListener('change', () => scheduleDraw());
   bindRange('exportDpi', v => String(v));
 
+  function bindAnimRange(id, fmt) {
+    const el = $(id);
+    const disp = $(id + 'Val');
+    const upd = () => { disp.textContent = fmt(el.value); };
+    el.addEventListener('input', upd);
+    upd();
+  }
+  bindAnimRange('animFps', v => String(v));
+  bindAnimRange('animLoops', v => String(v));
+  bindAnimRange('animPause', v => String(v));
+  bindAnimRange('animShiftCells', v => String(v));
+  bindAnimRange('animTranslateCells', v => String(v));
+  bindAnimRange('animExportScale', v => v + '%');
+  bindAnimRange('animSinAmp', v => (parseInt(v, 10) / 10).toFixed(1));
+  bindAnimRange('animSinWavelength', v => String(v));
+  bindAnimRange('animSinFrames', v => String(v));
+  $('animMode').addEventListener('change', updateAnimModeUi);
+  $('animWaveStyle').addEventListener('change', updateAnimModeUi);
+  $('btnAnimPreview').addEventListener('click', () => {
+    if (animPreviewActive) {
+      stopAnimPreview();
+      scheduleDraw(true);
+      $('statusBar').textContent = 'Preview stopped.';
+      return;
+    }
+    runAnimPreview();
+  });
+
   ['colBase', 'colAccent', 'colText'].forEach(id => $(id).addEventListener('input', () => scheduleDraw()));
 
   $('btnAddText').addEventListener('click', addTextLayer);
@@ -1695,6 +2170,8 @@
   });
 
   $('btnPng').addEventListener('click', exportPng);
+  $('btnGif').addEventListener('click', () => { exportAnimatedGif(); });
+  $('btnVideo').addEventListener('click', () => { exportAnimatedVideo(); });
   $('btnFit').addEventListener('click', () => {
     viewZoom = 1;
     viewPanX = 0;
@@ -1709,6 +2186,7 @@
 
   pushStarterTextLayer();
   updateLayColorRecipeUi();
+  updateAnimModeUi();
   paintView({ rebuild: true });
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(() => scheduleDraw());
