@@ -191,8 +191,8 @@
       </select>
       <label class="row" style="flex-wrap:wrap;">
         <span class="param-label" style="flex:1 0 100%;">Base strength</span>
-        <input type="range" id="noiseStr" min="0" max="100" value="0" style="flex:1;">
-        <span class="range-val" id="noiseStrVal">0%</span>
+        <input type="range" id="noiseStr" min="0" max="100" value="22" style="flex:1;">
+        <span class="range-val" id="noiseStrVal">22%</span>
       </label>
       <label class="row" style="flex-wrap:wrap;">
         <span class="param-label" style="flex:1 0 100%;">Scale</span>
@@ -858,6 +858,33 @@
     };
     img.onerror = () => { URL.revokeObjectURL(url); $('statusBar').textContent = 'Failed to load image'; };
     img.src = url;
+  }
+
+  function pushStarterTextLayer() {
+    const px = $('colText').value;
+    textLayerSeq = 1;
+    layers.push({
+      kind: 'text',
+      id: nextId++,
+      name: 'Hint',
+      text: 'EDIT ME',
+      fontCss: '700',
+      x: 0.5,
+      y: 0.5,
+      scale: 0.92,
+      invert: false,
+      threshold: 128,
+      opacity: 1,
+      noPixel: false,
+      pixelHex: px,
+      noiseInfluence: 0,
+      noiseTintStyle: 'offset',
+      colorRecipe: 'tint_noise',
+      colorMix: 50
+    });
+    selId = layers[0].id;
+    renderLayerList();
+    syncLayerPanel();
   }
 
   function addTextLayer() {
@@ -1635,6 +1662,7 @@
     new ResizeObserver(() => scheduleDraw(false)).observe(canvasOuter);
   }
 
+  pushStarterTextLayer();
   updateLayColorRecipeUi();
   paintView({ rebuild: true });
   if (document.fonts && document.fonts.ready) {
