@@ -181,6 +181,14 @@
 
     <div class="section">
       <div class="section-label">Noise field</div>
+      <span class="param-label" style="display:block;margin-bottom:5px;">Mode</span>
+      <select id="noiseMode" style="margin-bottom:8px;">
+        <option value="value">Value — fast, coarse</option>
+        <option value="perlin">Perlin — smooth blobs</option>
+        <option value="fbm" selected>FBM — layered terrain (rich)</option>
+        <option value="cca">CCA — dual noise + colour fringe</option>
+        <option value="warp">Warp — flowing distortion</option>
+      </select>
       <label class="row" style="flex-wrap:wrap;">
         <span class="param-label" style="flex:1 0 100%;">Base strength</span>
         <input type="range" id="noiseStr" min="0" max="100" value="0" style="flex:1;">
@@ -197,7 +205,7 @@
         <span class="range-val" id="noiseSeedVal">42</span>
       </label>
       <p class="muted" style="margin-top:6px;font-size:10px;color:var(--text-muted);line-height:1.45;">
-        Base strength only perturbs the empty grid before layers. Scale and seed apply to the whole field; layer noise tint uses the same pattern with its own intensity.
+        <strong>CCA</strong> echoes the banner tool: two Perlin samples multiplied, sparse bright cells, RGB shifted per channel. <strong>FBM</strong> stacks octaves for detail. Layer tint uses the same mode.
       </p>
     </div>
 
@@ -363,6 +371,135 @@
     return v / (1 + 0.5 + 0.333);
   }
 
+  let _permSeed = NaN;
+  /** @type {Uint8Array|null} */
+  let _perm = null;
+
+  function noisePerm(seed) {
+    const s = Math.floor(seed) | 0;
+    if (_perm && _permSeed === s) return _perm;
+    _permSeed = s;
+    const p = new Uint8Array(512);
+    const src = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) src[i] = i;
+    let rng = (s * 1664525 + 1013904223) >>> 0;
+    for (let i = 255; i > 0; i--) {
+      rng = (rng * 1103515245 + 12345) >>> 0;
+      const j = rng % (i + 1);
+      const t = src[i];
+      src[i] = src[j];
+      src[j] = t;
+    }
+    for (let i = 0; i < 256; i++) p[i] = p[i + 256] = src[i];
+    _perm = p;
+    return p;
+  }
+
+  function fadePerlin(t) {
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  }
+
+  function lerpPerlin(a, b, t) {
+    return a + t * (b - a);
+  }
+
+  function gradPerlin(hash, x, y) {
+    const h = hash & 15;
+    const u = h < 8 ? x : y;
+    const v = h < 4 ? y : h === 12 || h === 14 ? x : 0;
+    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+  }
+
+  /** @returns {number} 0..1 */
+  function perlin01(ix, iy, scale, seed) {
+    const perm = noisePerm(seed);
+    const x = ix / scale + seed * 0.0017;
+    const y = iy / scale + seed * 0.0029;
+    const X = Math.floor(x) & 255;
+    const Y = Math.floor(y) & 255;
+    const xf = x - Math.floor(x);
+    const yf = y - Math.floor(y);
+    const u = fadePerlin(xf);
+    const v = fadePerlin(yf);
+    const aa = perm[X] + Y;
+    const ab = perm[X] + Y + 1;
+    const ba = perm[X + 1] + Y;
+    const bb = perm[X + 1] + Y + 1;
+    const x1 = lerpPerlin(gradPerlin(perm[aa], xf, yf), gradPerlin(perm[ba], xf - 1, yf), u);
+    const x2 = lerpPerlin(gradPerlin(perm[ab], xf, yf - 1), gradPerlin(perm[bb], xf - 1, yf - 1), u);
+    return (lerpPerlin(x1, x2, v) + 1) / 2;
+  }
+
+  function fbmPerlin01(ix, iy, scale, seed) {
+    let v = 0;
+    let a = 0.5;
+    let f = 1;
+    for (let o = 0; o < 5; o++) {
+      v += a * perlin01(ix * f, iy * f, scale, seed + o * 31);
+      a *= 0.5;
+      f *= 2;
+    }
+    return Math.min(1, Math.max(0, v));
+  }
+
+  function warpPerlin01(ix, iy, scale, seed) {
+    const wx = (perlin01(ix, iy, scale, seed) - 0.5) * 6;
+    const wy = (perlin01(ix + 77, iy + 33, scale, seed + 41) - 0.5) * 6;
+    return perlin01(ix + wx, iy + wy, scale, seed + 13);
+  }
+
+  /** CCA-style: two fields multiplied → sparse highlights */
+  function ccaProduct01(ix, iy, scale, seed) {
+    const nx = (ix / scale) * 0.85 + seed * 0.01;
+    const ny = (iy / scale) * 0.85 + seed * 0.013;
+    const n = perlin01(nx * 12, ny * 12, 1, seed);
+    const n2 = perlin01(nx * 12 + 2.7, ny * 12 + 1.9, 1, seed + 7);
+    return Math.min(1, Math.max(0, n * n2 * 1.35));
+  }
+
+  /**
+   * @param {string} mode
+   * @returns {number} 0..1
+   */
+  function fieldNoise01(mode, ix, iy, scale, seed) {
+    switch (mode) {
+      case 'value':
+        return noise2(ix, iy, scale, seed);
+      case 'perlin':
+        return perlin01(ix, iy, scale, seed);
+      case 'fbm':
+        return fbmPerlin01(ix, iy, scale, seed);
+      case 'cca':
+        return ccaProduct01(ix, iy, scale, seed);
+      case 'warp':
+        return warpPerlin01(ix, iy, scale, seed);
+      default:
+        return noise2(ix, iy, scale, seed);
+    }
+  }
+
+  /**
+   * RGB deltas for CCA (banner-like channel shift). `strength` 0..1 scales effect.
+   * @returns {{dr:number,dg:number,db:number}}
+   */
+  function ccaRgbDelta(ix, iy, scale, seed, strength) {
+    const prod = ccaProduct01(ix, iy, scale, seed);
+    const th = 0.14;
+    if (prod < th) return { dr: 0, dg: 0, db: 0 };
+    const str = (prod - th) / (1 - th);
+    const amp = strength * 72;
+    const nx = (ix / scale) * 0.9 + seed * 0.01;
+    const ny = (iy / scale) * 0.9 + seed * 0.012;
+    const pr = perlin01(nx * 14 + 0.4, ny * 14 - 0.2, 1, seed + 1);
+    const pg = perlin01(nx * 14, ny * 14, 1, seed + 2);
+    const pb = perlin01(nx * 14 - 0.35, ny * 14 + 0.25, 1, seed + 3);
+    return {
+      dr: amp * str * ((pr - 0.5) * 1.1 + 0.25),
+      dg: amp * str * ((pg - 0.5) * 0.9 + 0.08),
+      db: amp * str * ((pb - 0.5) * 1.15 + 0.22)
+    };
+  }
+
   function luminance(r, g, b) {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
@@ -382,7 +519,16 @@
   function noiseTintRgb(r, g, b, i, j, noiseSc, noiseSd, layerIntensity) {
     const t = Math.max(0, Math.min(1, layerIntensity));
     if (t <= 0) return { r, g, b };
-    const n = noise2(i, j, noiseSc, noiseSd) - 0.5;
+    const mode = $('noiseMode').value;
+    if (mode === 'cca') {
+      const d = ccaRgbDelta(i, j, noiseSc, noiseSd, t);
+      return {
+        r: Math.max(0, Math.min(255, Math.round(r + d.dr))),
+        g: Math.max(0, Math.min(255, Math.round(g + d.dg))),
+        b: Math.max(0, Math.min(255, Math.round(b + d.db)))
+      };
+    }
+    const n = fieldNoise01(mode, i, j, noiseSc, noiseSd) - 0.5;
     const amp = t * 92;
     return {
       r: Math.max(0, Math.min(255, Math.round(r + n * amp))),
@@ -695,6 +841,7 @@
     const noiseS = parseInt($('noiseStr').value, 10) / 100;
     const noiseSc = parseFloat($('noiseScale').value) || 12;
     const noiseSd = parseFloat($('noiseSeed').value) || 0;
+    const noiseMode = $('noiseMode').value;
 
     const cellW = pw / cols;
     const cellH = ph / rows;
@@ -715,11 +862,18 @@
       for (let i = 0; i < cols; i++) {
         let baseCellR = base.r, baseCellG = base.g, baseCellB = base.b;
         if (noiseS > 0) {
-          const n = noise2(i, j, noiseSc, noiseSd) - 0.5;
-          const amp = noiseS * 55;
-          baseCellR = Math.max(0, Math.min(255, Math.round(baseCellR + n * amp)));
-          baseCellG = Math.max(0, Math.min(255, Math.round(baseCellG + n * amp * 0.97)));
-          baseCellB = Math.max(0, Math.min(255, Math.round(baseCellB + n * amp * 1.03)));
+          if (noiseMode === 'cca') {
+            const d = ccaRgbDelta(i, j, noiseSc, noiseSd, noiseS);
+            baseCellR = Math.max(0, Math.min(255, Math.round(baseCellR + d.dr)));
+            baseCellG = Math.max(0, Math.min(255, Math.round(baseCellG + d.dg)));
+            baseCellB = Math.max(0, Math.min(255, Math.round(baseCellB + d.db)));
+          } else {
+            const n = fieldNoise01(noiseMode, i, j, noiseSc, noiseSd) - 0.5;
+            const amp = noiseS * 55;
+            baseCellR = Math.max(0, Math.min(255, Math.round(baseCellR + n * amp)));
+            baseCellG = Math.max(0, Math.min(255, Math.round(baseCellG + n * amp * 0.97)));
+            baseCellB = Math.max(0, Math.min(255, Math.round(baseCellB + n * amp * 1.03)));
+          }
         }
 
         let cellR = baseCellR, cellG = baseCellG, cellB = baseCellB;
@@ -1093,6 +1247,7 @@
   bindRange('noiseStr', v => String(v) + '%');
   bindRange('noiseScale', v => String(v));
   bindRange('noiseSeed', v => String(v));
+  $('noiseMode').addEventListener('change', () => scheduleDraw());
   bindRange('exportDpi', v => String(v));
 
   ['colBase', 'colAccent', 'colText'].forEach(id => $(id).addEventListener('input', () => scheduleDraw()));
