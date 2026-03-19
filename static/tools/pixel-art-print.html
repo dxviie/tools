@@ -248,12 +248,21 @@
           <input type="range" id="layOp" min="0" max="100" value="90" style="flex:1;">
           <span class="range-val" id="layOpVal">90%</span>
         </label>
+        <span class="param-label" style="display:block;margin-bottom:4px;">Layer noise tint</span>
+        <select id="layNoiseStyle" style="margin-bottom:6px;width:100%;">
+          <option value="offset">Offset — push RGB (follows field mode)</option>
+          <option value="rgb_split">RGB split — channel-shifted samples</option>
+          <option value="hue_shift">Hue spin — rotate colour in HSL</option>
+          <option value="saturation">Saturation — pump or mute chroma</option>
+          <option value="blend_accent">Wash — blend toward accent colour</option>
+          <option value="contrast">Contrast — noise around mid grey</option>
+        </select>
         <label class="row" style="flex-wrap:wrap;">
-          <span class="param-label" style="flex:1 0 100%;">Layer noise tint</span>
+          <span class="param-label" style="flex:1 0 100%;">Tint strength</span>
           <input type="range" id="layNoiseInfl" min="0" max="100" value="0" style="flex:1;">
           <span class="range-val" id="layNoiseInflVal">0%</span>
         </label>
-        <p class="muted" style="font-size:10px;line-height:1.4;">After threshold / averaging, tints this layer’s drawn RGB using the field (scale·seed). Intensity is independent of base strength. 0 = off.</p>
+        <p class="muted" style="font-size:10px;line-height:1.4;">Uses the same noise field as the grid (scale·seed·mode). <strong>Wash</strong> pulls pixels toward the paper “Accent” swatch. 0% strength = off.</p>
         <label class="check"><input type="checkbox" id="layNoPix"> Disable pixelation (avg. color / cell)</label>
         <div class="row2" style="margin-top:4px;">
           <span class="param-label">Pixel color</span>
@@ -306,8 +315,8 @@
   const FONT_FAMILY = '"IBM Plex Mono", monospace';
 
   /**
-   * @typedef {{kind:'image',id:number,name:string,el:HTMLImageElement,blobUrl?:string,x:number,y:number,scale:number,invert:boolean,threshold:number,opacity:number,noPixel:boolean,pixelHex:string,noiseInfluence:number,_c?:HTMLCanvasElement|null,_d?:Uint8ClampedArray|null}} ImageLayer
-   * @typedef {{kind:'text',id:number,name:string,text:string,fontCss:string,x:number,y:number,scale:number,invert:boolean,threshold:number,opacity:number,noPixel:boolean,pixelHex:string,noiseInfluence:number,_tw?:number,_th?:number,_c?:HTMLCanvasElement|null,_d?:Uint8ClampedArray|null,_rasterSig?:string}} TextLayer
+   * @typedef {{kind:'image',id:number,name:string,el:HTMLImageElement,blobUrl?:string,x:number,y:number,scale:number,invert:boolean,threshold:number,opacity:number,noPixel:boolean,pixelHex:string,noiseInfluence:number,noiseTintStyle:string,_c?:HTMLCanvasElement|null,_d?:Uint8ClampedArray|null}} ImageLayer
+   * @typedef {{kind:'text',id:number,name:string,text:string,fontCss:string,x:number,y:number,scale:number,invert:boolean,threshold:number,opacity:number,noPixel:boolean,pixelHex:string,noiseInfluence:number,noiseTintStyle:string,_tw?:number,_th?:number,_c?:HTMLCanvasElement|null,_d?:Uint8ClampedArray|null,_rasterSig?:string}} TextLayer
    * @typedef {ImageLayer|TextLayer} SceneLayer
    */
   /** @type {SceneLayer[]} */
@@ -515,11 +524,118 @@
     };
   }
 
-  /** Tint RGB using noise field (after rendering decision). Layer intensity only — not gated by base strength. */
-  function noiseTintRgb(r, g, b, i, j, noiseSc, noiseSd, layerIntensity) {
+  /** @returns {{h:number,s:number,l:number}} h,s,l in 0..1 */
+  function rgbToHsl(r, g, b) {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return { h: 0, s: 0, l };
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h;
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      default:
+        h = (r - g) / d + 4;
+    }
+    h /= 6;
+    return { h, s, l };
+  }
+
+  /** h,s,l in 0..1 → RGB bytes */
+  function hslToRgb(h, s, l) {
+    if (s <= 0) {
+      const x = Math.round(l * 255);
+      return { r: x, g: x, b: x };
+    }
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const tR = h + 1 / 3;
+    const tG = h;
+    const tB = h - 1 / 3;
+    function comp(t) {
+      let u = t;
+      if (u < 0) u += 1;
+      if (u > 1) u -= 1;
+      if (u < 1 / 6) return p + (q - p) * 6 * u;
+      if (u < 0.5) return q;
+      if (u < 2 / 3) return p + (q - p) * (2 / 3 - u) * 6;
+      return p;
+    }
+    return {
+      r: Math.max(0, Math.min(255, Math.round(comp(tR) * 255))),
+      g: Math.max(0, Math.min(255, Math.round(comp(tG) * 255))),
+      b: Math.max(0, Math.min(255, Math.round(comp(tB) * 255)))
+    };
+  }
+
+  /**
+   * Tint RGB using noise field (after rendering decision). Layer strength only — not gated by base strength.
+   * @param {{r:number,g:number,b:number}} accent — paper accent (for blend_accent)
+   */
+  function noiseTintRgb(r, g, b, i, j, noiseSc, noiseSd, layerIntensity, tintStyle, accent) {
     const t = Math.max(0, Math.min(1, layerIntensity));
     if (t <= 0) return { r, g, b };
+    const style = tintStyle || 'offset';
     const mode = $('noiseMode').value;
+
+    if (style === 'rgb_split') {
+      const nr = fieldNoise01(mode, i + 2.1, j - 1.3, noiseSc, noiseSd) - 0.5;
+      const ng = fieldNoise01(mode, i - 0.8, j + 1.6, noiseSc, noiseSd) - 0.5;
+      const nb = fieldNoise01(mode, i + 0.4, j + 0.2, noiseSc, noiseSd) - 0.5;
+      const amp = t * 90;
+      return {
+        r: Math.max(0, Math.min(255, Math.round(r + nr * amp * 1.08))),
+        g: Math.max(0, Math.min(255, Math.round(g + ng * amp * 0.96))),
+        b: Math.max(0, Math.min(255, Math.round(b + nb * amp * 1.05)))
+      };
+    }
+
+    if (style === 'hue_shift') {
+      const n = fieldNoise01(mode, i, j, noiseSc, noiseSd) - 0.5;
+      const { h, s, l } = rgbToHsl(r, g, b);
+      const dh = n * t * 0.42;
+      let nh = h + dh;
+      nh -= Math.floor(nh);
+      return hslToRgb(nh, s, l);
+    }
+
+    if (style === 'saturation') {
+      const n = fieldNoise01(mode, i, j, noiseSc, noiseSd) - 0.5;
+      const { h, s, l } = rgbToHsl(r, g, b);
+      const ns = Math.max(0, Math.min(1, s + n * t * 0.95));
+      return hslToRgb(h, ns, l);
+    }
+
+    if (style === 'blend_accent') {
+      const n = fieldNoise01(mode, i, j, noiseSc, noiseSd);
+      const k = t * n;
+      return {
+        r: Math.max(0, Math.min(255, Math.round(r * (1 - k) + accent.r * k))),
+        g: Math.max(0, Math.min(255, Math.round(g * (1 - k) + accent.g * k))),
+        b: Math.max(0, Math.min(255, Math.round(b * (1 - k) + accent.b * k)))
+      };
+    }
+
+    if (style === 'contrast') {
+      const n = fieldNoise01(mode, i, j, noiseSc, noiseSd) - 0.5;
+      const f = 1 + n * t * 1.15;
+      return {
+        r: Math.max(0, Math.min(255, Math.round((r - 128) * f + 128))),
+        g: Math.max(0, Math.min(255, Math.round((g - 128) * f + 128))),
+        b: Math.max(0, Math.min(255, Math.round((b - 128) * f + 128)))
+      };
+    }
+
+    /* offset — follows global noise mode (incl. CCA chromatic) */
     if (mode === 'cca') {
       const d = ccaRgbDelta(i, j, noiseSc, noiseSd, t);
       return {
@@ -572,6 +688,10 @@
     const ni = L.noiseInfluence ?? 0;
     $('layNoiseInfl').value = String(Math.round(ni));
     $('layNoiseInflVal').textContent = Math.round(ni) + '%';
+    const nts = L.noiseTintStyle || 'offset';
+    const styleSel = $('layNoiseStyle');
+    if ([...styleSel.options].some(o => o.value === nts)) styleSel.value = nts;
+    else styleSel.value = 'offset';
   }
 
   function renderLayerList() {
@@ -629,7 +749,8 @@
         opacity: 0.9,
         noPixel: false,
         pixelHex: accent,
-        noiseInfluence: 0
+        noiseInfluence: 0,
+        noiseTintStyle: 'offset'
       });
       selId = layers[layers.length - 1].id;
       renderLayerList();
@@ -657,7 +778,8 @@
       opacity: 1,
       noPixel: false,
       pixelHex: px,
-      noiseInfluence: 0
+      noiseInfluence: 0,
+      noiseTintStyle: 'offset'
     });
     selId = layers[layers.length - 1].id;
     renderLayerList();
@@ -838,6 +960,7 @@
 
   function drawToContext(ctx, pw, ph, cols, rows, gapRatio, forExport) {
     const base = parseHex($('colBase').value);
+    const accentCol = parseHex($('colAccent').value);
     const noiseS = parseInt($('noiseStr').value, 10) / 100;
     const noiseSc = parseFloat($('noiseScale').value) || 12;
     const noiseSd = parseFloat($('noiseSeed').value) || 0;
@@ -885,6 +1008,7 @@
           const op = L.opacity;
           const { bw, bh } = layerNormSize(L);
           const infl = Math.max(0, Math.min(1, (L.noiseInfluence ?? 0) / 100));
+          const ntStyle = L.noiseTintStyle || 'offset';
 
           if (L.noPixel) {
             const du = 0.5 / cols / bw;
@@ -894,7 +1018,7 @@
             const avg = sampleLayerAvg(L, u0, v0, u1, v1, 3);
             const a = avg.a * op;
             if (a > 0) {
-              const tinted = noiseTintRgb(avg.r, avg.g, avg.b, i, j, noiseSc, noiseSd, infl);
+              const tinted = noiseTintRgb(avg.r, avg.g, avg.b, i, j, noiseSc, noiseSd, infl, ntStyle, accentCol);
               const blended = blendOver(
                 { r: cellR, g: cellG, b: cellB },
                 { r: tinted.r, g: tinted.g, b: tinted.b },
@@ -909,7 +1033,7 @@
             const on = lum >= L.threshold;
             if (on && samp.a * op > 0) {
               const a = samp.a * op;
-              const tinted = noiseTintRgb(pc.r, pc.g, pc.b, i, j, noiseSc, noiseSd, infl);
+              const tinted = noiseTintRgb(pc.r, pc.g, pc.b, i, j, noiseSc, noiseSd, infl, ntStyle, accentCol);
               const blended = blendOver(
                 { r: cellR, g: cellG, b: cellB },
                 { r: tinted.r, g: tinted.g, b: tinted.b },
@@ -1311,6 +1435,13 @@
     if (L) {
       L.noiseInfluence = parseInt($('layNoiseInfl').value, 10);
       $('layNoiseInflVal').textContent = L.noiseInfluence + '%';
+      scheduleDraw();
+    }
+  });
+  $('layNoiseStyle').addEventListener('change', () => {
+    const L = selectedLayer();
+    if (L) {
+      L.noiseTintStyle = $('layNoiseStyle').value;
       scheduleDraw();
     }
   });
