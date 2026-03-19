@@ -382,6 +382,12 @@
     return { w, h };
   }
 
+  /** Width / height (mm), same as pixel canvas aspect pw/ph. */
+  function paperAspectWH() {
+    const { w, h } = paperMm();
+    return w / h;
+  }
+
   function parseHex(hex) {
     const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
     if (!m) return { r: 26, g: 26, b: 36 };
@@ -1094,14 +1100,20 @@
       ih = L.el.naturalHeight;
     }
     if (!iw || !ih) return { bw: L.scale, bh: L.scale };
-    const ar = iw / ih;
+    /**
+     * Normalized box (bw×bh) maps to physical size (bw·mmW)×(bh·mmH). Physical aspect
+     * (bw/bh)·(mmW/mmH) must match image aspect iw/ih → bw/bh = (iw/ih)/(mmW/mmH).
+     */
+    const Ri = iw / ih;
+    const Rp = paperAspectWH();
+    const Rt = Ri / Rp;
     let bw, bh;
-    if (ar >= 1) {
+    if (Rt >= 1) {
       bw = L.scale;
-      bh = L.scale / ar;
+      bh = L.scale / Rt;
     } else {
       bh = L.scale;
-      bw = L.scale * ar;
+      bw = L.scale * Rt;
     }
     return { bw, bh };
   }
