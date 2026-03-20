@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- tool-meta: {"name":"Hershey Calendar","slug":"hershey-calendar","description":"Generate plottable SVG and printable PDF calendars (month, quarter, year) at A6–A4 or custom sizes, portrait or landscape. Text uses Hershey or EMS SVG vector fonts.","tags":["calendar","svg","pdf","hershey","ems","plotter","print"]} -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hershey Calendar</title>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2.2.4/dist/svg2pdf.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+  :root {
+    --bg:#0e0e0e; --panel:#161616; --border:#2a2a2a; --border-hi:#404040;
+    --accent:#c8f060; --accent-dim:#8aaa3a; --text:#d4d4d4; --text-dim:#666;
+    --text-muted:#444; --input-bg:#1c1c1c; --mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;
+       height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+  header{display:flex;align-items:center;gap:16px;padding:10px 20px;border-bottom:1px solid var(--border);flex-shrink:0;}
+  .logo{font-size:11px;font-weight:500;letter-spacing:.18em;color:var(--accent);text-transform:uppercase;}
+  .subtitle{font-size:11px;color:var(--text-dim);letter-spacing:.05em;}
+  .header-right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .badge{font-size:10px;padding:2px 8px;border:1px solid var(--border-hi);color:var(--text-dim);letter-spacing:.1em;}
+  .main{display:grid;grid-template-columns:300px 1fr;flex:1;overflow:hidden;min-height:0;}
+  .sidebar{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:auto;}
+  .section{border-bottom:1px solid var(--border);padding:10px 13px;flex-shrink:0;}
+  .section-label{font-size:10px;letter-spacing:.16em;color:var(--text-dim);text-transform:uppercase;margin-bottom:6px;}
+  textarea,input[type=text],input[type=number],select{
+    background:var(--input-bg);border:1px solid var(--border);color:var(--text);
+    font-family:var(--mono);font-size:11.5px;outline:none;width:100%;padding:5px 8px;}
+  textarea:focus,input:focus,select:focus{border-color:var(--border-hi);}
+  select{cursor:pointer;} select option{background:var(--panel);}
+  input[type=checkbox].theme-chk{
+    appearance:none;-webkit-appearance:none;width:14px;height:14px;margin:0;flex-shrink:0;cursor:pointer;
+    border:1px solid var(--border-hi);border-radius:2px;background:var(--input-bg);
+    transition:border-color .12s,background .12s,box-shadow .12s;
+  }
+  input[type=checkbox].theme-chk:hover{border-color:var(--accent-dim);}
+  input[type=checkbox].theme-chk:focus{outline:none;box-shadow:0 0 0 2px rgba(200,240,96,.22);}
+  input[type=checkbox].theme-chk:checked{
+    background:var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%230e0e0e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M2.5 6l2.5 3 4.5-5.5'/%3E%3C/svg%3E") center/10px 10px no-repeat;
+    border-color:var(--accent);
+  }
+  label.chk-label{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;color:var(--text);
+    letter-spacing:.04em;text-transform:none;flex:1;min-width:0;line-height:1.35;}
+  label.chk-label span{flex:1;}
+  .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .row > *{flex:1;min-width:0;}
+  .row .narrow{flex:0 0 auto;width:auto;}
+  .param-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;}
+  .actions{padding:10px 13px;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--border);}
+  button{font-family:var(--mono);font-size:11px;letter-spacing:.08em;cursor:pointer;padding:7px 11px;
+         border:1px solid var(--border-hi);text-transform:uppercase;transition:all .12s;}
+  .btn-dl{background:transparent;color:var(--accent);border-color:var(--accent-dim);}
+  .btn-dl:hover{background:rgba(200,240,96,.08);}
+  .btn-dl:disabled{opacity:.35;cursor:default;}
+  .hint{font-size:10px;color:var(--text-muted);line-height:1.55;margin-top:4px;}
+  .font-status{display:flex;align-items:center;gap:7px;font-size:10px;flex-wrap:wrap;margin-top:4px;}
+  .font-dot{width:7px;height:7px;border-radius:50%;background:var(--text-muted);}
+  .font-dot.ok{background:var(--accent);}
+  .font-dot.loading{background:#e0a040;animation:p .7s ease-in-out infinite alternate;}
+  .font-dot.err{background:#e05050;}
+  @keyframes p{from{opacity:.3}to{opacity:1}}
+  .preview-area{background:#111;display:flex;flex-direction:column;overflow:hidden;min-height:0;}
+  .preview-toolbar{display:flex;align-items:center;gap:10px;padding:6px 13px;border-bottom:1px solid var(--border);}
+  .preview-label{font-size:10px;letter-spacing:.16em;color:var(--text-dim);text-transform:uppercase;}
+  .svg-viewport{
+    flex:1;min-height:0;min-width:0;overflow:hidden;
+    display:flex;flex-direction:column;padding:16px;box-sizing:border-box;
+  }
+  #svgContainer{
+    flex:1 1 0;min-height:0;min-width:0;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #svgContainer svg{
+    max-width:100%;max-height:100%;width:auto;height:auto;flex-shrink:1;
+    box-shadow:0 4px 28px rgba(0,0,0,.45);
+  }
+  .empty-state{text-align:center;color:var(--text-muted);font-size:11px;line-height:1.8;padding:24px;max-width:100%;}
+  .status-bar{padding:5px 13px;border-top:1px solid var(--border);font-size:10px;color:var(--text-muted);}
+  .ok{color:var(--accent-dim);} .err{color:#e05050;}
+  #customDims{display:none;gap:6px;margin-top:6px;}
+  #customDims.show{display:flex;}
+  ::-webkit-scrollbar{width:4px;height:4px;}
+  ::-webkit-scrollbar-thumb{background:var(--border-hi);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Hershey <span style="color:var(--text-muted)">·</span> Calendar</div>
+  <div class="subtitle">SVG + PDF · plot &amp; print</div>
+  <div class="header-right">
+    <span class="badge">HERSHEY · EMS</span>
+    <span class="badge">A6 · A5 · A4 · CUSTOM</span>
+  </div>
+</header>
+
+<div class="main">
+<div class="sidebar">
+
+  <div class="section">
+    <div class="section-label">Layout</div>
+    <div class="row" style="margin-bottom:6px;">
+      <select id="layoutSelect" style="flex:1;">
+        <option value="month">Month</option>
+        <option value="quarter">Quarter (3 months)</option>
+        <option value="year">Year (12 months)</option>
+      </select>
+    </div>
+    <div class="row" id="monthRow">
+      <span class="param-label narrow">Month</span>
+      <select id="monthSelect"></select>
+    </div>
+    <div class="row" id="quarterRow" style="display:none;">
+      <span class="param-label narrow">Quarter</span>
+      <select id="quarterSelect">
+        <option value="0">Q1 (Jan–Mar)</option>
+        <option value="1">Q2 (Apr–Jun)</option>
+        <option value="2">Q3 (Jul–Sep)</option>
+        <option value="3">Q4 (Oct–Dec)</option>
+      </select>
+    </div>
+    <div class="row">
+      <span class="param-label narrow">Year</span>
+      <input type="number" id="yearInput" min="1900" max="2100" value="">
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <label class="chk-label" for="weekMonday">
+        <input type="checkbox" class="theme-chk" id="weekMonday" checked>
+        <span>Week starts Monday</span>
+      </label>
+    </div>
+    <div class="row" style="margin-top:6px;">
+      <label class="chk-label" for="showMonthFrame">
+        <input type="checkbox" class="theme-chk" id="showMonthFrame" checked>
+        <span>Month bounding box</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Page</div>
+    <div class="row" style="margin-bottom:6px;">
+      <select id="sizePreset">
+        <option value="A4">A4</option>
+        <option value="A5">A5</option>
+        <option value="A6">A6</option>
+        <option value="custom">Custom (mm)</option>
+      </select>
+      <select id="orientation">
+        <option value="portrait">Portrait</option>
+        <option value="landscape">Landscape</option>
+      </select>
+    </div>
+    <div id="customDims">
+      <input type="number" id="customW" placeholder="Width mm" min="20" max="1200" value="210" title="Width mm">
+      <input type="number" id="customH" placeholder="Height mm" min="20" max="1200" value="297" title="Height mm">
+    </div>
+    <p class="hint">ISO sizes are in mm. Landscape swaps width and height.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Font (SVG vector)</div>
+    <select id="fontSelect" style="margin-bottom:6px;">
+      <optgroup label="Hershey">
+        <option value="HersheySans1">Sans 1 · single-stroke</option>
+        <option value="HersheyScript1">Script 1</option>
+        <option value="HersheySerifMed">Serif Med</option>
+        <option value="HersheySerifMedItalic">Serif Med Italic</option>
+      </optgroup>
+      <optgroup label="EMS">
+        <option value="ems/EMSReadability">Readability</option>
+        <option value="ems/EMSReadabilityItalic">Readability Italic</option>
+      </optgroup>
+    </select>
+    <div class="font-status">
+      <div class="font-dot" id="fontDot"></div>
+      <span id="fontStatus">—</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Stroke</div>
+    <div class="row">
+      <span class="param-label narrow">Width mm</span>
+      <input type="number" id="strokeW" min="0.05" max="2" step="0.05" value="0.5">
+    </div>
+  </div>
+
+  <div class="actions">
+    <div class="row">
+      <button class="btn-dl" id="btnSvg" disabled>Download SVG</button>
+      <button class="btn-dl" id="btnPdf" disabled>Download PDF</button>
+    </div>
+  </div>
+</div>
+
+<div class="preview-area">
+  <div class="preview-toolbar">
+    <span class="preview-label">Preview</span>
+  </div>
+  <div class="svg-viewport">
+    <div id="svgContainer">
+      <div class="empty-state">Loading font…</div>
+    </div>
+  </div>
+  <div class="status-bar"><span id="statusLine">Idle.</span></div>
+</div>
+</div>
+
+<script>
+// ── ISO paper (portrait: width × height mm) ───────────────────────────────
+const PAPER = { A4: [210, 297], A5: [148, 210], A6: [105, 148] };
+
+// ── Font (Hershey SVG) ─────────────────────────────────────────────────────
+const fontCache = {};
+let activeFont = null;
+
+function fontUrl(name) {
+  if (name.startsWith('ems/')) return '/fonts/' + name + '.svg';
+  return '/fonts/hershey/' + name + '.svg';
+}
+
+function setFontStatus(st, msg) {
+  const dot = document.getElementById('fontDot');
+  dot.className = 'font-dot ' + (st === 'ok' ? 'ok' : st === 'loading' ? 'loading' : st === 'err' ? 'err' : '');
+  document.getElementById('fontStatus').textContent = msg;
+}
+
+async function loadFont(name) {
+  if (fontCache[name]) {
+    activeFont = fontCache[name];
+    setFontStatus('ok', name + ' · ready');
+    return true;
+  }
+  setFontStatus('loading', 'Loading ' + name + '…');
+  try {
+    const r = await fetch(fontUrl(name));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const doc = new DOMParser().parseFromString(await r.text(), 'image/svg+xml');
+    if (doc.querySelector('parsererror')) throw new Error('parse');
+    const fontEl = doc.querySelector('font');
+    const defaultAdv = parseFloat(fontEl?.getAttribute('horiz-adv-x') || '600');
+    const faceEl = doc.querySelector('font-face');
+    const unitsPerEm = parseFloat(faceEl?.getAttribute('units-per-em') || '1000');
+    const glyphs = {};
+    for (const g of doc.querySelectorAll('glyph')) {
+      const uni = g.getAttribute('unicode');
+      if (!uni) continue;
+      glyphs[uni] = {
+        horizAdvX: parseFloat(g.getAttribute('horiz-adv-x') || defaultAdv),
+        d: g.getAttribute('d') || ''
+      };
+    }
+    if (!glyphs[' ']) glyphs[' '] = { horizAdvX: defaultAdv * 0.5, d: '' };
+    const font = { name, unitsPerEm, defaultAdv, glyphs };
+    fontCache[name] = font;
+    activeFont = font;
+    setFontStatus('ok', name + ' · ' + Object.keys(glyphs).length + ' glyphs');
+    return true;
+  } catch (e) {
+    setFontStatus('err', 'Font failed: ' + e.message);
+    return false;
+  }
+}
+
+function measureText(text, sizeMm, font) {
+  if (!font || !text) return 0;
+  const sc = sizeMm / font.unitsPerEm;
+  let w = 0;
+  for (const ch of text) {
+    const g = font.glyphs[ch];
+    w += (g ? g.horizAdvX : font.defaultAdv) * sc;
+  }
+  return w;
+}
+
+function renderText(text, x, y, sizeMm, font, sa, maxWidthMm = 0) {
+  if (!font || !text) return { paths: '', width: 0 };
+  let sc = sizeMm / font.unitsPerEm;
+  if (maxWidthMm > 0) {
+    const w = measureText(text, sizeMm, font);
+    if (w > maxWidthMm) sc *= maxWidthMm / w;
+  }
+  let cur = x, paths = '';
+  for (const ch of text) {
+    const g = font.glyphs[ch];
+    const adv = (g ? g.horizAdvX : font.defaultAdv) * sc;
+    if (g && g.d) {
+      const s = sc.toFixed(6), ns = (-sc).toFixed(6);
+      paths += `<path transform="translate(${cur.toFixed(4)},${y.toFixed(4)}) scale(${s},${ns})" d="${g.d}" ${sa} vector-effect="non-scaling-stroke"/>`;
+    }
+    cur += adv;
+  }
+  return { paths, width: cur - x };
+}
+
+// ── Calendar math ───────────────────────────────────────────────────────────
+function buildMonthGrid(year, month, weekStartMonday) {
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  let dow = new Date(year, month, 1).getDay();
+  if (weekStartMonday) dow = (dow + 6) % 7;
+  const weeks = [];
+  let day = 1;
+  const row0 = Array(7).fill(null);
+  for (let c = dow; c < 7 && day <= lastDay; c++) row0[c] = day++;
+  weeks.push(row0);
+  while (day <= lastDay) {
+    const row = Array(7).fill(null);
+    for (let c = 0; c < 7 && day <= lastDay; c++) row[c] = day++;
+    weeks.push(row);
+  }
+  return weeks;
+}
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+function cellFilled(weekRows, r, c) {
+  return weekRows[r][c] != null;
+}
+
+/** Returns SVG fragment for one month inside box (bx,by,bw,bh) in mm. */
+function drawMonthBlock(bx, by, bw, bh, year, month, font, sa, weekStartMonday, blockOpts) {
+  const showMonthFrame = blockOpts && blockOpts.showMonthFrame;
+  let s = '';
+  const pad = clamp(Math.min(bw, bh) * 0.028, 0.8, 4);
+  const ix = bx + pad, iy = by + pad, iw = bw - 2 * pad, ih = bh - 2 * pad;
+  const monthName = new Intl.DateTimeFormat('en', { month: 'long' }).format(new Date(year, month, 1));
+  const title = monthName + ' ' + year;
+  const titleSize = clamp(ih * 0.11, 1.5, Math.min(iw, ih) * 0.13);
+  const tw0 = measureText(title, titleSize, font);
+  const titleBaseline = iy + titleSize * 0.88;
+  const titleX = ix + Math.max(0, (iw - Math.min(tw0, iw)) / 2);
+  s += renderText(title, titleX, titleBaseline, titleSize, font, sa, iw).paths;
+
+  const labSize = clamp(titleSize * 0.38, 0.9, titleSize * 0.5);
+  const weekRows = buildMonthGrid(year, month, weekStartMonday);
+  const n = weekRows.length;
+  const headerY = titleBaseline + labSize * 1.65;
+  const gridTop = headerY + labSize * 0.35;
+  const gridH = iy + ih - gridTop - pad * 0.4;
+  const cellH = gridH / Math.max(n, 1);
+  const cellW = iw / 7;
+
+  const labels = weekStartMonday
+    ? ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+    : ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  for (let c = 0; c < 7; c++) {
+    const lm = measureText(labels[c], labSize, font);
+    const cx = ix + c * cellW + cellW / 2;
+    s += renderText(labels[c], cx - lm / 2, headerY, labSize, font, sa).paths;
+  }
+
+  // Grid lines only on edges of in-month cells (no boxes for empty leading/trailing cells)
+  for (let r = 0; r <= n; r++) {
+    const y = gridTop + r * cellH;
+    for (let c = 0; c < 7; c++) {
+      let drawSeg = false;
+      if (r === 0) drawSeg = cellFilled(weekRows, 0, c);
+      else if (r === n) drawSeg = cellFilled(weekRows, n - 1, c);
+      else drawSeg = cellFilled(weekRows, r - 1, c) || cellFilled(weekRows, r, c);
+      if (drawSeg) {
+        const x1 = ix + c * cellW, x2 = ix + (c + 1) * cellW;
+        s += `<line x1="${x1.toFixed(3)}" y1="${y.toFixed(3)}" x2="${x2.toFixed(3)}" y2="${y.toFixed(3)}" ${sa}/>`;
+      }
+    }
+  }
+  for (let c = 0; c <= 7; c++) {
+    const x = ix + c * cellW;
+    for (let r = 0; r < n; r++) {
+      let drawSeg = false;
+      if (c === 0) drawSeg = cellFilled(weekRows, r, 0);
+      else if (c === 7) drawSeg = cellFilled(weekRows, r, 6);
+      else drawSeg = cellFilled(weekRows, r, c - 1) || cellFilled(weekRows, r, c);
+      if (drawSeg) {
+        const y1 = gridTop + r * cellH, y2 = gridTop + (r + 1) * cellH;
+        s += `<line x1="${x.toFixed(3)}" y1="${y1.toFixed(3)}" x2="${x.toFixed(3)}" y2="${y2.toFixed(3)}" ${sa}/>`;
+      }
+    }
+  }
+
+  const cornerInset = clamp(Math.min(cellW, cellH) * 0.07, 0.45, 1.8);
+  const dayNumSize = clamp(Math.min(labSize * 0.72, cellH * 0.22), 0.55, labSize * 0.95);
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < 7; c++) {
+      const d = weekRows[r][c];
+      if (d == null) continue;
+      const ds = String(d);
+      const cellLeft = ix + c * cellW;
+      const cellTop = gridTop + r * cellH;
+      const textX = cellLeft + cornerInset;
+      const textY = cellTop + cornerInset + dayNumSize * 0.78;
+      s += renderText(ds, textX, textY, dayNumSize, font, sa).paths;
+    }
+  }
+
+  if (showMonthFrame)
+    s += `<rect x="${(bx + 0.25).toFixed(3)}" y="${(by + 0.25).toFixed(3)}" width="${(bw - 0.5).toFixed(3)}" height="${(bh - 0.5).toFixed(3)}" ${sa}/>`;
+  return s;
+}
+
+function pageDimensions() {
+  const ori = document.getElementById('orientation').value;
+  const preset = document.getElementById('sizePreset').value;
+  let w, h;
+  if (preset === 'custom') {
+    w = parseFloat(document.getElementById('customW').value) || 210;
+    h = parseFloat(document.getElementById('customH').value) || 297;
+  } else {
+    [w, h] = PAPER[preset];
+  }
+  if (ori === 'landscape') [w, h] = [h, w];
+  return { widthMm: w, heightMm: h };
+}
+
+function buildSvgString(font, opts) {
+  const { widthMm: PW, heightMm: PH } = pageDimensions();
+  const sw = parseFloat(document.getElementById('strokeW').value) || 0.5;
+  const sa = `stroke="#000000" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round"`;
+  const layout = document.getElementById('layoutSelect').value;
+  const year = parseInt(document.getElementById('yearInput').value, 10) || new Date().getFullYear();
+  const weekMon = document.getElementById('weekMonday').checked;
+  const blockOpts = { showMonthFrame: document.getElementById('showMonthFrame').checked };
+
+  const margin = clamp(Math.min(PW, PH) * 0.022, 3, 8);
+  const pw = PW - 2 * margin, ph = PH - 2 * margin;
+  const bg = opts.plotMode ? '#ffffff' : '#faf9f6';
+
+  let body = `<rect x="0" y="0" width="${PW}" height="${PH}" fill="${bg}" stroke="none"/>`;
+
+  if (layout === 'month') {
+    const m = parseInt(document.getElementById('monthSelect').value, 10);
+    body += drawMonthBlock(margin, margin, pw, ph, year, m, font, sa, weekMon, blockOpts);
+  } else if (layout === 'quarter') {
+    const q = parseInt(document.getElementById('quarterSelect').value, 10);
+    const gap = clamp(Math.min(pw, ph) * 0.018, 1.2, 4);
+    const land = PW >= PH;
+    if (land) {
+      const bw = (pw - 2 * gap) / 3;
+      for (let i = 0; i < 3; i++)
+        body += drawMonthBlock(margin + i * (bw + gap), margin, bw, ph, year, q * 3 + i, font, sa, weekMon, blockOpts);
+    } else {
+      const bh = (ph - 2 * gap) / 3;
+      for (let i = 0; i < 3; i++)
+        body += drawMonthBlock(margin, margin + i * (bh + gap), pw, bh, year, q * 3 + i, font, sa, weekMon, blockOpts);
+    }
+  } else {
+    const cols = PW >= PH ? 4 : 3;
+    const rows = PW >= PH ? 3 : 4;
+    const gap = clamp(Math.min(pw, ph) * 0.014, 0.9, 3.5);
+    const bw = (pw - (cols - 1) * gap) / cols;
+    const bh = (ph - (rows - 1) * gap) / rows;
+    let idx = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (idx >= 12) break;
+        body += drawMonthBlock(
+          margin + c * (bw + gap),
+          margin + r * (bh + gap),
+          bw, bh,
+          year, idx,
+          font, sa, weekMon, blockOpts
+        );
+        idx++;
+      }
+    }
+  }
+
+  const pxScale = 3.7795275591;
+  const pxW = (PW * pxScale).toFixed(2);
+  const pxH = (PH * pxScale).toFixed(2);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${pxW}px" height="${pxH}px" viewBox="0 0 ${PW} ${PH}">
+<g id="calendar">${body}</g>
+</svg>`;
+}
+
+// ── State ───────────────────────────────────────────────────────────────────
+let lastSvg = '';
+let lastFilename = 'calendar';
+
+function filenameBase() {
+  const layout = document.getElementById('layoutSelect').value;
+  const year = document.getElementById('yearInput').value;
+  if (layout === 'month') {
+    const m = parseInt(document.getElementById('monthSelect').value, 10);
+    const mn = new Intl.DateTimeFormat('en', { month: 'short' }).format(new Date(year, m, 1));
+    return 'calendar-' + mn + '-' + year;
+  }
+  if (layout === 'quarter') {
+    const q = parseInt(document.getElementById('quarterSelect').value, 10) + 1;
+    return 'calendar-Q' + q + '-' + year;
+  }
+  return 'calendar-year-' + year;
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('statusLine');
+  el.textContent = msg;
+  el.className = cls || '';
+}
+
+let regenTimer = null;
+function scheduleGenerate() {
+  clearTimeout(regenTimer);
+  regenTimer = setTimeout(() => {
+    regenTimer = null;
+    if (activeFont) generate();
+  }, 100);
+}
+
+function generate() {
+  if (!activeFont) {
+    setStatus('Load a font first.', 'err');
+    return;
+  }
+  lastSvg = buildSvgString(activeFont, { plotMode: false });
+  lastFilename = filenameBase().replace(/\s+/g, '-').toLowerCase();
+  const container = document.getElementById('svgContainer');
+  container.innerHTML = lastSvg;
+  document.getElementById('btnSvg').disabled = false;
+  document.getElementById('btnPdf').disabled = false;
+  setStatus('Generated ' + pageDimensions().widthMm.toFixed(0) + '×' + pageDimensions().heightMm.toFixed(0) + ' mm.', 'ok');
+}
+
+function downloadSvg() {
+  if (!lastSvg) return;
+  const blob = new Blob([lastSvg], { type: 'image/svg+xml;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = lastFilename + '.svg';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function downloadPdf() {
+  if (!lastSvg) return;
+  const { jsPDF } = window.jspdf;
+  if (!jsPDF) {
+    setStatus('jsPDF not loaded — open this tool via the site or check network.', 'err');
+    return;
+  }
+  const { widthMm, heightMm } = pageDimensions();
+  // jsPDF defaults to portrait; without explicit orientation the page stays tall/narrow even when format is [297,210].
+  const orientation = widthMm > heightMm ? 'l' : 'p';
+  const doc = new jsPDF({
+    orientation,
+    unit: 'mm',
+    format: [widthMm, heightMm],
+    compress: true
+  });
+  const host = document.createElement('div');
+  host.setAttribute('aria-hidden', 'true');
+  host.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden;';
+  document.body.appendChild(host);
+  host.innerHTML = lastSvg.trim();
+  const svgEl = host.querySelector('svg');
+  if (!svgEl) {
+    document.body.removeChild(host);
+    setStatus('No SVG root found.', 'err');
+    return;
+  }
+  svgEl.setAttribute('width', String(widthMm));
+  svgEl.setAttribute('height', String(heightMm));
+  try {
+    const opts = { x: 0, y: 0, width: widthMm, height: heightMm };
+    if (typeof doc.svg === 'function') {
+      await doc.svg(svgEl, opts);
+    } else if (window.svg2pdf && typeof window.svg2pdf.svg2pdf === 'function') {
+      await window.svg2pdf.svg2pdf(svgEl, doc, opts);
+    } else {
+      setStatus('svg2pdf not available — use Download SVG and print to PDF.', 'err');
+      return;
+    }
+    doc.save(lastFilename + '.pdf');
+    setStatus('PDF saved.', 'ok');
+  } catch (e) {
+    console.error(e);
+    setStatus('PDF export failed: ' + (e.message || e) + ' — try SVG + print.', 'err');
+  } finally {
+    if (host.parentNode) document.body.removeChild(host);
+  }
+}
+
+// ── Month dropdown ──────────────────────────────────────────────────────────
+const monthSelect = document.getElementById('monthSelect');
+for (let m = 0; m < 12; m++) {
+  const opt = document.createElement('option');
+  opt.value = String(m);
+  opt.textContent = new Intl.DateTimeFormat('en', { month: 'long' }).format(new Date(2000, m, 1));
+  monthSelect.appendChild(opt);
+}
+
+function applyTodayDefaults() {
+  const now = new Date();
+  document.getElementById('yearInput').value = String(now.getFullYear());
+  monthSelect.value = String(now.getMonth());
+  document.getElementById('quarterSelect').value = String(Math.floor(now.getMonth() / 3));
+}
+applyTodayDefaults();
+
+document.getElementById('layoutSelect').addEventListener('change', () => {
+  const v = document.getElementById('layoutSelect').value;
+  document.getElementById('monthRow').style.display = v === 'month' ? 'flex' : 'none';
+  document.getElementById('quarterRow').style.display = v === 'quarter' ? 'flex' : 'none';
+  scheduleGenerate();
+});
+
+function syncCustomDimsVisibility() {
+  document.getElementById('customDims').classList.toggle('show', document.getElementById('sizePreset').value === 'custom');
+}
+function onSizePresetChange() {
+  syncCustomDimsVisibility();
+  scheduleGenerate();
+}
+document.getElementById('sizePreset').addEventListener('change', onSizePresetChange);
+syncCustomDimsVisibility();
+
+['monthSelect', 'quarterSelect', 'orientation'].forEach(id => {
+  document.getElementById(id).addEventListener('change', scheduleGenerate);
+});
+['yearInput', 'customW', 'customH', 'strokeW'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('change', scheduleGenerate);
+  el.addEventListener('input', scheduleGenerate);
+});
+document.getElementById('weekMonday').addEventListener('change', scheduleGenerate);
+document.getElementById('showMonthFrame').addEventListener('change', scheduleGenerate);
+
+document.getElementById('fontSelect').addEventListener('change', () => {
+  loadFont(document.getElementById('fontSelect').value).then(ok => {
+    if (ok) generate();
+  });
+});
+
+document.getElementById('btnSvg').addEventListener('click', downloadSvg);
+document.getElementById('btnPdf').addEventListener('click', () => downloadPdf());
+
+loadFont(document.getElementById('fontSelect').value).then(ok => {
+  if (ok) generate();
+  else {
+    document.getElementById('svgContainer').innerHTML =
+      '<div class="empty-state">Font failed to load. Check you are on the site origin or reload.</div>';
+  }
+});
+</script>
+</body>
+</html>
