@@ -563,6 +563,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     <button type="button" class="primary" id="btnSvg" disabled>
                         Export SVG
                     </button>
+                    <button type="button" id="btnReset">Reset defaults</button>
                 </div>
                 <p class="hint">
                     Camera requires HTTPS or localhost. Export is always A3
@@ -597,32 +598,195 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 const pctx = preview.getContext("2d", { alpha: false });
                 const btnPause = document.getElementById("btnPause");
                 const btnSvg = document.getElementById("btnSvg");
+                const btnReset = document.getElementById("btnReset");
 
+                const APP_SETTINGS = Object.freeze({
+                    storageKey: "webcam-adaptive-voronoi-hatch.v1",
+                    defaults: Object.freeze({
+                        debugView: "final",
+                        targetFps: 8,
+                        analysisW: 96,
+                        thresh: 0.65,
+                        seedCount: 72,
+                        gridDiv: 20,
+                        detailGamma: 1.15,
+                        detailGain: 1.4,
+                        detailSmooth: 1,
+                        hatchSpacingMinMm: 1.25,
+                        hatchSpacingMaxMm: 5.5,
+                        hatchDensityChannel: "lum",
+                        lumDensityAmt: 1,
+                        hueAngleScale: 1.1,
+                        angleOffset: 12,
+                        satAngleAmt: 22,
+                        svgPageSize: "a4",
+                        shadingMode: "off",
+                        depthFps: 2,
+                        shadingAngleAmt: 0.35,
+                        shadingDensityAmt: 0.35,
+                        svgCaption:
+                            "CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev",
+                    }),
+                    ranges: Object.freeze({
+                        targetFps: Object.freeze({
+                            id: "targetFps",
+                            valueId: "v-fps",
+                            min: 4,
+                            max: 15,
+                            step: 1,
+                            integer: true,
+                        }),
+                        analysisW: Object.freeze({
+                            id: "analysisW",
+                            valueId: "v-aw",
+                            min: 48,
+                            max: 140,
+                            step: 8,
+                            integer: true,
+                        }),
+                        thresh: Object.freeze({
+                            id: "thresh",
+                            valueId: "v-thresh",
+                            min: 0.35,
+                            max: 0.92,
+                            step: 0.01,
+                        }),
+                        seedCount: Object.freeze({
+                            id: "seedCount",
+                            valueId: "v-seeds",
+                            min: 20,
+                            max: 140,
+                            step: 2,
+                            integer: true,
+                        }),
+                        gridDiv: Object.freeze({
+                            id: "gridDiv",
+                            valueId: "v-grid",
+                            min: 10,
+                            max: 36,
+                            step: 1,
+                            integer: true,
+                        }),
+                        detailGamma: Object.freeze({
+                            id: "detailGamma",
+                            valueId: "v-gamma",
+                            min: 0.35,
+                            max: 2.8,
+                            step: 0.05,
+                        }),
+                        detailGain: Object.freeze({
+                            id: "detailGain",
+                            valueId: "v-dgain",
+                            min: 0.4,
+                            max: 3.5,
+                            step: 0.05,
+                        }),
+                        detailSmooth: Object.freeze({
+                            id: "detailSmooth",
+                            valueId: "v-smooth",
+                            min: 0,
+                            max: 4,
+                            step: 1,
+                            integer: true,
+                        }),
+                        lumDensityAmt: Object.freeze({
+                            id: "lumDensityAmt",
+                            valueId: "v-lum",
+                            min: 0,
+                            max: 1.35,
+                            step: 0.05,
+                        }),
+                        hueAngleScale: Object.freeze({
+                            id: "hueAngleScale",
+                            valueId: "v-hue",
+                            min: 0,
+                            max: 2.5,
+                            step: 0.05,
+                        }),
+                        angleOffset: Object.freeze({
+                            id: "angleOffset",
+                            valueId: "v-angoff",
+                            min: -45,
+                            max: 45,
+                            step: 1,
+                            integer: true,
+                        }),
+                        satAngleAmt: Object.freeze({
+                            id: "satAngleAmt",
+                            valueId: "v-satang",
+                            min: 0,
+                            max: 55,
+                            step: 1,
+                            integer: true,
+                        }),
+                        depthFps: Object.freeze({
+                            id: "depthFps",
+                            valueId: "v-dfps",
+                            min: 0.5,
+                            max: 6,
+                            step: 0.5,
+                        }),
+                        shadingAngleAmt: Object.freeze({
+                            id: "shadingAngleAmt",
+                            valueId: "v-shang",
+                            min: 0,
+                            max: 1.2,
+                            step: 0.05,
+                        }),
+                        shadingDensityAmt: Object.freeze({
+                            id: "shadingDensityAmt",
+                            valueId: "v-shden",
+                            min: 0,
+                            max: 1,
+                            step: 0.05,
+                        }),
+                        hatchSpacingMinMm: Object.freeze({
+                            id: "hatchSpacingMin",
+                            min: 0.25,
+                            max: 18,
+                            step: 0.05,
+                        }),
+                        hatchSpacingMaxMm: Object.freeze({
+                            id: "hatchSpacingMax",
+                            min: 0.25,
+                            max: 18,
+                            step: 0.05,
+                        }),
+                    }),
+                    selects: Object.freeze({
+                        debugView: Object.freeze({ id: "debugView" }),
+                        hatchDensityChannel: Object.freeze({
+                            id: "hatchDensityChannel",
+                        }),
+                        shadingMode: Object.freeze({ id: "shadingMode" }),
+                        svgPageSize: Object.freeze({ id: "svgPageSize" }),
+                    }),
+                    text: Object.freeze({
+                        svgCaption: Object.freeze({ id: "svgCaption" }),
+                    }),
+                });
                 const params = {
-                    debugView: "final",
-                    targetFps: 8,
-                    analysisW: 96,
-                    thresh: 0.65,
-                    seedCount: 72,
-                    gridDiv: 20,
-                    detailGamma: 1.15,
-                    detailGain: 1.4,
-                    detailSmooth: 1,
-                    /** Line spacing at min / max luminance (mm on chosen SVG export size). */
-                    hatchSpacingMinMm: 1.25,
-                    hatchSpacingMaxMm: 5.5,
-                    /** lum | r | g | b — linear 0…1 from raw cell mean. */
-                    hatchDensityChannel: "lum",
-                    /** Spacing span factor: 0=uniform, 1=full min–max from channel. */
-                    lumDensityAmt: 1,
-                    hueAngleScale: 1.1,
-                    angleOffset: 12,
-                    satAngleAmt: 22,
-                    svgPageSize: "a4",
-                    shadingMode: "off",
-                    depthFps: 2,
-                    shadingAngleAmt: 0.35,
-                    shadingDensityAmt: 0.35,
+                    debugView: APP_SETTINGS.defaults.debugView,
+                    targetFps: APP_SETTINGS.defaults.targetFps,
+                    analysisW: APP_SETTINGS.defaults.analysisW,
+                    thresh: APP_SETTINGS.defaults.thresh,
+                    seedCount: APP_SETTINGS.defaults.seedCount,
+                    gridDiv: APP_SETTINGS.defaults.gridDiv,
+                    detailGamma: APP_SETTINGS.defaults.detailGamma,
+                    detailGain: APP_SETTINGS.defaults.detailGain,
+                    detailSmooth: APP_SETTINGS.defaults.detailSmooth,
+                    hatchSpacingMinMm: APP_SETTINGS.defaults.hatchSpacingMinMm,
+                    hatchSpacingMaxMm: APP_SETTINGS.defaults.hatchSpacingMaxMm,
+                    hatchDensityChannel: APP_SETTINGS.defaults.hatchDensityChannel,
+                    lumDensityAmt: APP_SETTINGS.defaults.lumDensityAmt,
+                    hueAngleScale: APP_SETTINGS.defaults.hueAngleScale,
+                    angleOffset: APP_SETTINGS.defaults.angleOffset,
+                    satAngleAmt: APP_SETTINGS.defaults.satAngleAmt,
+                    svgPageSize: APP_SETTINGS.defaults.svgPageSize,
+                    shadingMode: APP_SETTINGS.defaults.shadingMode,
+                    depthFps: APP_SETTINGS.defaults.depthFps,
+                    shadingAngleAmt: APP_SETTINGS.defaults.shadingAngleAmt,
+                    shadingDensityAmt: APP_SETTINGS.defaults.shadingDensityAmt,
                 };
 
                 let foregroundSegmenter = null;
@@ -676,8 +840,10 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 const SVG_ART_INSET = 0.92;
                 const SVG_PAGE_MARGIN_MM = 8;
                 /** Legal bounds for hatch spacing dual-slider (mm on export). */
-                const HATCH_SPACING_MM_GLOBAL_MIN = 0.25;
-                const HATCH_SPACING_MM_GLOBAL_MAX = 18;
+                const HATCH_SPACING_MM_GLOBAL_MIN =
+                    APP_SETTINGS.ranges.hatchSpacingMinMm.min;
+                const HATCH_SPACING_MM_GLOBAL_MAX =
+                    APP_SETTINGS.ranges.hatchSpacingMinMm.max;
 
                 /**
                  * Millimetres per preview pixel for hatch stroke spacing when exported at
@@ -844,6 +1010,88 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
 
                 function setStatus(t) {
                     statusEl.textContent = t;
+                }
+
+                function clampParamValue(key, v) {
+                    const spec = APP_SETTINGS.ranges[key];
+                    if (!spec) return v;
+                    let out = Number(v);
+                    if (Number.isNaN(out)) out = APP_SETTINGS.defaults[key];
+                    if (spec.integer) out = Math.round(out);
+                    out = Math.max(spec.min, Math.min(spec.max, out));
+                    return out;
+                }
+
+                function setFactoryParams() {
+                    for (const key of Object.keys(APP_SETTINGS.ranges)) {
+                        if (
+                            key === "hatchSpacingMinMm" ||
+                            key === "hatchSpacingMaxMm"
+                        )
+                            continue;
+                        params[key] = APP_SETTINGS.defaults[key];
+                    }
+                    params.hatchSpacingMinMm =
+                        APP_SETTINGS.defaults.hatchSpacingMinMm;
+                    params.hatchSpacingMaxMm =
+                        APP_SETTINGS.defaults.hatchSpacingMaxMm;
+                    params.debugView = APP_SETTINGS.defaults.debugView;
+                    params.hatchDensityChannel =
+                        APP_SETTINGS.defaults.hatchDensityChannel;
+                    params.shadingMode = APP_SETTINGS.defaults.shadingMode;
+                    params.svgPageSize = APP_SETTINGS.defaults.svgPageSize;
+                }
+
+                function readPersistedSettings() {
+                    try {
+                        const raw = localStorage.getItem(APP_SETTINGS.storageKey);
+                        if (!raw) return null;
+                        const parsed = JSON.parse(raw);
+                        if (!parsed || typeof parsed !== "object") return null;
+                        return parsed;
+                    } catch (_) {
+                        return null;
+                    }
+                }
+
+                function applyPersistedSettings(snapshot) {
+                    if (!snapshot || typeof snapshot !== "object") return;
+                    const storedParams = snapshot.params;
+                    if (storedParams && typeof storedParams === "object") {
+                        for (const key of Object.keys(APP_SETTINGS.ranges)) {
+                            if (Object.prototype.hasOwnProperty.call(storedParams, key)) {
+                                params[key] = clampParamValue(
+                                    key,
+                                    storedParams[key],
+                                );
+                            }
+                        }
+                        for (const key of Object.keys(APP_SETTINGS.selects)) {
+                            const v = storedParams[key];
+                            if (typeof v === "string" && v.length > 0)
+                                params[key] = v;
+                        }
+                    }
+                }
+
+                function persistSettings() {
+                    try {
+                        const capEl = document.getElementById("svgCaption");
+                        const payload = {
+                            params: { ...params },
+                            svgCaption: capEl ? capEl.value : "",
+                        };
+                        localStorage.setItem(
+                            APP_SETTINGS.storageKey,
+                            JSON.stringify(payload),
+                        );
+                    } catch (_) {}
+                }
+
+                function clearPersistedSettings() {
+                    try {
+                        localStorage.removeItem(APP_SETTINGS.storageKey);
+                    } catch (_) {}
                 }
 
                 function captureFramePixelSize() {
@@ -3026,94 +3274,88 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 }
 
                 function bindControls() {
-                    const bindRange = (id, key, vid, parse) => {
-                        const el = document.getElementById(id);
-                        const vEl = document.getElementById("v-" + vid);
-                        el.addEventListener("input", () => {
-                            params[key] = parse(el.value);
-                            if (vEl) vEl.textContent = String(params[key]);
-                            if (maskBin) buildAndDraw();
-                        });
-                    };
-                    bindRange("targetFps", "targetFps", "fps", Number);
-                    bindRange("analysisW", "analysisW", "aw", Number);
-                    bindRange("thresh", "thresh", "thresh", Number);
-                    bindRange("seedCount", "seedCount", "seeds", Number);
-                    bindRange("gridDiv", "gridDiv", "grid", Number);
-                    bindRange("detailGamma", "detailGamma", "gamma", Number);
-                    bindRange("detailGain", "detailGain", "dgain", Number);
-                    bindRange("detailSmooth", "detailSmooth", "smooth", Number);
-                    bindRange(
-                        "lumDensityAmt",
-                        "lumDensityAmt",
-                        "lum",
-                        Number,
-                    );
-                    bindRange(
-                        "hueAngleScale",
-                        "hueAngleScale",
-                        "hue",
-                        Number,
-                    );
-                    bindRange("angleOffset", "angleOffset", "angoff", Number);
-                    bindRange("satAngleAmt", "satAngleAmt", "satang", Number);
-                    bindRange("depthFps", "depthFps", "dfps", Number);
-                    bindRange(
-                        "shadingAngleAmt",
-                        "shadingAngleAmt",
-                        "shang",
-                        Number,
-                    );
-                    bindRange(
-                        "shadingDensityAmt",
-                        "shadingDensityAmt",
-                        "shden",
-                        Number,
-                    );
+                    const saved = readPersistedSettings();
+                    setFactoryParams();
+                    applyPersistedSettings(saved);
 
-                    document
-                        .getElementById("debugView")
-                        .addEventListener("change", (e) => {
-                            params.debugView = e.target.value;
+                    const captionEl = document.getElementById("svgCaption");
+                    if (captionEl) {
+                        captionEl.value =
+                            saved && typeof saved.svgCaption === "string"
+                                ? saved.svgCaption
+                                : APP_SETTINGS.defaults.svgCaption;
+                        captionEl.addEventListener("input", () =>
+                            persistSettings(),
+                        );
+                    }
+
+                    const updateRangeReadout = (key) => {
+                        const spec = APP_SETTINGS.ranges[key];
+                        if (!spec || !spec.valueId) return;
+                        const vEl = document.getElementById(spec.valueId);
+                        if (!vEl) return;
+                        vEl.textContent = String(params[key]);
+                    };
+
+                    for (const key of Object.keys(APP_SETTINGS.ranges)) {
+                        if (
+                            key === "hatchSpacingMinMm" ||
+                            key === "hatchSpacingMaxMm"
+                        )
+                            continue;
+                        const spec = APP_SETTINGS.ranges[key];
+                        const el = document.getElementById(spec.id);
+                        if (!el) continue;
+                        el.min = String(spec.min);
+                        el.max = String(spec.max);
+                        el.step = String(spec.step);
+                        params[key] = clampParamValue(key, params[key]);
+                        el.value = String(params[key]);
+                        updateRangeReadout(key);
+                        el.addEventListener("input", () => {
+                            params[key] = clampParamValue(key, el.value);
+                            el.value = String(params[key]);
+                            updateRangeReadout(key);
+                            persistSettings();
                             if (maskBin) buildAndDraw();
                         });
-                    document
-                        .getElementById("svgPageSize")
-                        .addEventListener("change", (e) => {
-                            params.svgPageSize = e.target.value;
-                            if (maskBin) buildAndDraw();
-                        });
-                    document
-                        .getElementById("shadingMode")
-                        .addEventListener("change", (e) => {
-                            params.shadingMode = e.target.value;
-                            lastDepthMs = 0;
-                            if (shadingZ) {
-                                shadingZ.fill(0);
-                                shadingGx.fill(0);
-                                shadingGy.fill(0);
+                    }
+
+                    for (const key of Object.keys(APP_SETTINGS.selects)) {
+                        const spec = APP_SETTINGS.selects[key];
+                        const el = document.getElementById(spec.id);
+                        if (!el) continue;
+                        el.value = params[key];
+                        el.addEventListener("change", () => {
+                            params[key] = el.value;
+                            if (key === "shadingMode") {
+                                lastDepthMs = 0;
+                                if (shadingZ) {
+                                    shadingZ.fill(0);
+                                    shadingGx.fill(0);
+                                    shadingGy.fill(0);
+                                }
                             }
+                            persistSettings();
                             if (maskBin) buildAndDraw();
                         });
-                    document
-                        .getElementById("hatchDensityChannel")
-                        .addEventListener("change", (e) => {
-                            params.hatchDensityChannel = e.target.value;
-                            if (maskBin) buildAndDraw();
-                        });
+                    }
 
                     function syncHatchSpacingDualRange(doRedraw, sourceEl) {
                         const a = document.getElementById("hatchSpacingMin");
                         const b = document.getElementById("hatchSpacingMax");
                         const vEl = document.getElementById("v-sp-mm");
-                        const G0 = HATCH_SPACING_MM_GLOBAL_MIN;
-                        const G1 = HATCH_SPACING_MM_GLOBAL_MAX;
-                        let lo = parseFloat(a.value);
-                        let hi = parseFloat(b.value);
-                        if (Number.isNaN(lo)) lo = params.hatchSpacingMinMm;
-                        if (Number.isNaN(hi)) hi = params.hatchSpacingMaxMm;
-                        lo = Math.max(G0, Math.min(G1, lo));
-                        hi = Math.max(G0, Math.min(G1, hi));
+                        const minSpec = APP_SETTINGS.ranges.hatchSpacingMinMm;
+                        const maxSpec = APP_SETTINGS.ranges.hatchSpacingMaxMm;
+                        a.min = String(minSpec.min);
+                        a.max = String(minSpec.max);
+                        a.step = String(minSpec.step);
+                        b.min = String(maxSpec.min);
+                        b.max = String(maxSpec.max);
+                        b.step = String(maxSpec.step);
+
+                        let lo = clampParamValue("hatchSpacingMinMm", a.value);
+                        let hi = clampParamValue("hatchSpacingMaxMm", b.value);
                         if (sourceEl === a) {
                             if (lo > hi) {
                                 hi = lo;
@@ -3134,6 +3376,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         params.hatchSpacingMinMm = lo;
                         params.hatchSpacingMaxMm = hi;
                         vEl.textContent = `${lo.toFixed(2)} – ${hi.toFixed(2)} mm`;
+                        persistSettings();
                         if (doRedraw && maskBin) buildAndDraw();
                     }
 
@@ -3160,6 +3403,11 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         if (paused) el.pause();
                         else el.play();
                     }
+                });
+
+                btnReset.addEventListener("click", () => {
+                    clearPersistedSettings();
+                    window.location.reload();
                 });
 
                 btnSvg.addEventListener("click", async () => {
