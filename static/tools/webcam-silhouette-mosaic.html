@@ -181,12 +181,50 @@
                 color: var(--muted);
             }
 
+            label.chk {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 7px;
+                cursor: pointer;
+                color: var(--muted);
+                font-size: 11px;
+            }
+
+            label.chk input {
+                accent-color: var(--accent2);
+                flex-shrink: 0;
+            }
+
+            .feat-sub {
+                margin-left: 18px;
+                margin-top: -2px;
+                margin-bottom: 8px;
+                border-left: 1px solid var(--border);
+                padding-left: 10px;
+            }
+
             #p5-hidden {
                 position: absolute;
                 width: 0;
                 height: 0;
                 overflow: hidden;
                 clip: rect(0, 0, 0, 0);
+            }
+
+            .debug-readout {
+                font-size: 10px;
+                line-height: 1.45;
+                margin: 0;
+                padding: 10px 10px 12px;
+                background: #0f0f0f;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                max-height: 240px;
+                overflow: auto;
+                white-space: pre-wrap;
+                word-break: break-word;
+                color: var(--muted);
             }
         </style>
     </head>
@@ -327,6 +365,61 @@
                     />
                 </label>
 
+                <h2>Feature strokes</h2>
+                <p class="hint" style="margin-bottom: 10px">
+                    Slower when on: shared BodyPix part pass for checked body
+                    layers. FaceMesh adds eyes, lips, brows (no separate beard
+                    mask). BodyPix “face” is left/right regions including ears.
+                </p>
+                <label class="chk"
+                    ><input type="checkbox" id="featEnable" />Enable feature
+                        layer</label
+                >
+                <div class="feat-sub" id="featSub">
+                    <label class="chk"
+                        ><input type="checkbox" id="featFacemesh" checked />FaceMesh
+                        · eyes, lips, eyebrows</label
+                    >
+                    <label class="chk"
+                        ><input type="checkbox" id="featBodyFace" checked />BodyPix
+                        · face regions (incl. ears)</label
+                    >
+                    <label class="chk"
+                        ><input type="checkbox" id="featNeck" checked />Neck seam
+                        (head ↔ torso)</label
+                    >
+                    <label class="chk"
+                        ><input type="checkbox" id="featTorso" checked />Torso
+                        (clothing silhouette)</label
+                    >
+                    <label class="chk"
+                        ><input type="checkbox" id="featArms" checked />Arms &
+                        hands</label
+                    >
+                    <label class="chk"
+                        ><input type="checkbox" id="featLegs" />Legs & feet</label
+                    >
+                    <label class="row"
+                        ><span>Feature line weight</span
+                        ><span class="val" id="v-featw">0.22</span>
+                        <input
+                            type="range"
+                            id="featStrokeW"
+                            min="0.08"
+                            max="0.45"
+                            step="0.02"
+                            value="0.22"
+                        />
+                    </label>
+                </div>
+
+                <h2>Debug</h2>
+                <pre
+                    id="debugReadout"
+                    class="debug-readout"
+                    aria-live="polite"
+                ></pre>
+
                 <div class="btn-row">
                     <button type="button" class="primary" id="btnSvg" disabled>
                         Download SVG
@@ -373,9 +466,19 @@
                     spread: 52,
                     epsilon: 1.8,
                     outline: 0.35,
+                    featEnable: false,
+                    featFacemesh: true,
+                    featBodyFace: true,
+                    featNeck: true,
+                    featTorso: true,
+                    featArms: true,
+                    featLegs: false,
+                    featStrokeW: 0.22,
                 };
 
                 let bodyPixModel = null;
+                let faceMeshModel = null;
+                let faceMeshReady = false;
                 let captureVideo = null;
                 let paused = false;
                 let frameCount = 0;
@@ -383,6 +486,27 @@
                 let analysisW = 96;
                 let analysisH = 96;
                 let lastSvg = "";
+                /** @type {{ data: Int32Array, width: number, height: number } | null} */
+                let lastPartSeg = null;
+                let lastFaces = [];
+
+                const PART_FACE = [0, 1];
+                const PART_TORSO = [12, 13];
+                const PART_ARMS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+                const PART_LEGS = [
+                    14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                ];
+
+                const FACEMESH_ANNOTATION_KEYS = [
+                    "lipsUpperOuter",
+                    "lipsLowerOuter",
+                    "lipsUpperInner",
+                    "lipsLowerInner",
+                    "leftEye",
+                    "rightEye",
+                    "leftEyebrow",
+                    "rightEyebrow",
+                ];
 
                 const outW = 720;
                 const outH = 720;
@@ -393,6 +517,23 @@
 
                 function setStatus(t) {
                     statusEl.textContent = t;
+                }
+
+                /** BodyPix / FaceMesh run on the video element; landmarks and masks align to videoWidth×videoHeight, not p5 captureVideo.size(). */
+                function captureFramePixelSize() {
+                    if (!captureVideo) return [320, 240];
+                    const el = captureVideo.elt;
+                    if (
+                        el &&
+                        el.videoWidth > 0 &&
+                        el.videoHeight > 0
+                    ) {
+                        return [el.videoWidth, el.videoHeight];
+                    }
+                    return [
+                        captureVideo.width || 320,
+                        captureVideo.height || 240,
+                    ];
                 }
 
                 function bindRanges() {
@@ -424,6 +565,93 @@
                         });
                 }
 
+                const featSubEl = document.getElementById("featSub");
+
+                function updateFeatSubDisabled() {
+                    const on = document.getElementById("featEnable").checked;
+                    if (featSubEl) {
+                        featSubEl
+                            .querySelectorAll("input")
+                            .forEach((el) => {
+                                el.disabled = !on;
+                            });
+                    }
+                }
+
+                function bindFeatControls() {
+                    const stroke = document.getElementById("featStrokeW");
+                    const vFeatw = document.getElementById("v-featw");
+                    stroke.addEventListener("input", () => {
+                        params.featStrokeW = +stroke.value;
+                        if (vFeatw) vFeatw.textContent = String(params.featStrokeW);
+                        if (maskBin) buildAndDraw();
+                    });
+                    const pairs = [
+                        ["featEnable", "featEnable"],
+                        ["featFacemesh", "featFacemesh"],
+                        ["featBodyFace", "featBodyFace"],
+                        ["featNeck", "featNeck"],
+                        ["featTorso", "featTorso"],
+                        ["featArms", "featArms"],
+                        ["featLegs", "featLegs"],
+                    ];
+                    for (const [domId, pkey] of pairs) {
+                        const el = document.getElementById(domId);
+                        if (!el) continue;
+                        el.checked = params[pkey];
+                        el.addEventListener("change", () => {
+                            params[pkey] = el.checked;
+                            updateFeatSubDisabled();
+                            if (maskBin) buildAndDraw();
+                        });
+                    }
+                    updateFeatSubDisabled();
+                }
+
+                /** opts.omitPartSegFromResult: skip ml5 part payload; we fetch parts via model.estimatePartSegmentation (ml5 segmentWithParts breaks in p5 global mode: instanceof p5.Color when p5 is window). */
+                function applyMaskFromResult(result, thenFn, opts) {
+                    const omitParts =
+                        opts && opts.omitPartSegFromResult === true;
+                    const bmBg = result && result.backgroundMask;
+                    const bmPe = result && result.personMask;
+                    const bm = bmBg || bmPe;
+                    if (!bm) {
+                        setStatus("No mask on result");
+                        return;
+                    }
+                    const maskSource = bmBg ? "background" : "person";
+                    let canvas = bm.canvas;
+                    if (!canvas && bm.elt) canvas = bm.elt;
+                    if (!(canvas && canvas.getContext)) {
+                        setStatus("Unexpected mask format");
+                        return;
+                    }
+                    const ctx = canvas.getContext("2d");
+                    const idata = ctx.getImageData(
+                        0,
+                        0,
+                        canvas.width,
+                        canvas.height,
+                    );
+                    fillMaskFromImageData(idata, params.thresh, maskSource);
+                    if (omitParts) {
+                        lastPartSeg = null;
+                    } else if (
+                        result.segmentation &&
+                        result.segmentation.data &&
+                        result.segmentation.width
+                    ) {
+                        lastPartSeg = {
+                            data: result.segmentation.data,
+                            width: result.segmentation.width,
+                            height: result.segmentation.height,
+                        };
+                    } else {
+                        lastPartSeg = null;
+                    }
+                    if (typeof thenFn === "function") thenFn();
+                }
+
                 function ratioHeight(w, vw, vh) {
                     return Math.max(8, Math.round((w * vh) / vw));
                 }
@@ -431,11 +659,8 @@
                 function resizeAnalysis() {
                     if (!captureVideo || !captureVideo.width) return;
                     analysisW = params.analysisW;
-                    analysisH = ratioHeight(
-                        analysisW,
-                        captureVideo.width,
-                        captureVideo.height,
-                    );
+                    const [vw, vh] = captureFramePixelSize();
+                    analysisH = ratioHeight(analysisW, vw, vh);
                     const n = analysisW * analysisH;
                     if (!maskBin || maskBin.length !== n)
                         maskBin = new Uint8Array(n);
@@ -525,6 +750,348 @@
                         d += ` L ${(ox + p[0] * sx).toFixed(3)} ${(oy + p[1] * sy).toFixed(3)}`;
                     }
                     return d + " Z";
+                }
+
+                function svgPathOpenPoly(pts, sx, sy, ox, oy) {
+                    if (pts.length < 2) return "";
+                    const p0 = pts[0];
+                    let d = `M ${(ox + p0[0] * sx).toFixed(3)} ${(oy + p0[1] * sy).toFixed(3)}`;
+                    for (let i = 1; i < pts.length; i++) {
+                        const p = pts[i];
+                        d += ` L ${(ox + p[0] * sx).toFixed(3)} ${(oy + p[1] * sy).toFixed(3)}`;
+                    }
+                    return d;
+                }
+
+                function videoXYToOutput(vx, vy, vW, vH, ox, oy, sFit) {
+                    const ax = (vx / vW) * analysisW;
+                    const ay = (vy / vH) * analysisH;
+                    return [ox + ax * sFit, oy + ay * sFit];
+                }
+
+                function segXYToOutput(
+                    sx,
+                    sy,
+                    segW,
+                    segH,
+                    vW,
+                    vH,
+                    ox,
+                    oy,
+                    sfit,
+                ) {
+                    const vx = (sx / segW) * vW;
+                    const vy = (sy / segH) * vH;
+                    return videoXYToOutput(vx, vy, vW, vH, ox, oy, sfit);
+                }
+
+                function wantsPartSegmentation() {
+                    if (!params.featEnable) return false;
+                    return (
+                        params.featBodyFace ||
+                        params.featNeck ||
+                        params.featTorso ||
+                        params.featArms ||
+                        params.featLegs
+                    );
+                }
+
+                function wantsFacemesh() {
+                    return params.featEnable && params.featFacemesh;
+                }
+
+                function partMaskForIds(data, w, h, ids) {
+                    const set = Object.create(null);
+                    for (const id of ids) set[id] = true;
+                    const m = new Uint8Array(w * h);
+                    for (let i = 0; i < w * h; i++) {
+                        const p = data[i];
+                        if (p >= 0 && set[p]) m[i] = 1;
+                    }
+                    return m;
+                }
+
+                function partMaskForSingle(data, w, h, pid) {
+                    const m = new Uint8Array(w * h);
+                    for (let i = 0; i < w * h; i++) {
+                        if (data[i] === pid) m[i] = 1;
+                    }
+                    return m;
+                }
+
+                function seamMask(data, w, h, idsA, idsB) {
+                    const setA = Object.create(null);
+                    const setB = Object.create(null);
+                    for (const id of idsA) setA[id] = true;
+                    for (const id of idsB) setB[id] = true;
+                    const inA = (p) => p >= 0 && setA[p];
+                    const inB = (p) => p >= 0 && setB[p];
+                    const m = new Uint8Array(w * h);
+                    const dirs = [
+                        [1, 0],
+                        [-1, 0],
+                        [0, 1],
+                        [0, -1],
+                    ];
+                    for (let y = 0; y < h; y++) {
+                        for (let x = 0; x < w; x++) {
+                            const i = y * w + x;
+                            const p = data[i];
+                            if (p < 0) continue;
+                            for (const [dx, dy] of dirs) {
+                                const x2 = x + dx;
+                                const y2 = y + dy;
+                                if (x2 < 0 || y2 < 0 || x2 >= w || y2 >= h)
+                                    continue;
+                                const q = data[y2 * w + x2];
+                                if (q < 0) continue;
+                                if (
+                                    (inA(p) && inB(q)) ||
+                                    (inB(p) && inA(q))
+                                ) {
+                                    m[i] = 1;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    return m;
+                }
+
+                function countMaskPixels(m) {
+                    let n = 0;
+                    for (let i = 0; i < m.length; i++) if (m[i]) n++;
+                    return n;
+                }
+
+                /**
+                 * @returns {{ d: string, close: boolean }[]}
+                 */
+                function buildFeaturePaths(
+                    ox,
+                    oy,
+                    sFit,
+                    vW,
+                    vH,
+                    epsScale,
+                ) {
+                    const out = [];
+                    const feps = Math.max(0.15, params.epsilon * epsScale);
+                    const seg = lastPartSeg;
+                    if (params.featEnable && seg && seg.data && seg.width > 2) {
+                        const w = seg.width;
+                        const h = seg.height;
+                        const d = seg.data;
+
+                        if (params.featBodyFace) {
+                            for (const pid of PART_FACE) {
+                                const bin = partMaskForSingle(d, w, h, pid);
+                                if (countMaskPixels(bin) < 30) continue;
+                                const ring = marchingSquaresOuterPolyline(
+                                    bin,
+                                    w,
+                                    h,
+                                );
+                                if (ring.length < 6) continue;
+                                const simp = rdp(ring, feps);
+                                const ptsOut = simp.map(([gx, gy]) =>
+                                    segXYToOutput(
+                                        gx,
+                                        gy,
+                                        w,
+                                        h,
+                                        vW,
+                                        vH,
+                                        ox,
+                                        oy,
+                                        sFit,
+                                    ),
+                                );
+                                const dPath = svgPathFromPoly(
+                                    ptsOut,
+                                    1,
+                                    1,
+                                    0,
+                                    0,
+                                );
+                                if (dPath) out.push({ d: dPath, close: true });
+                            }
+                        }
+                        if (params.featTorso) {
+                            const bin = partMaskForIds(d, w, h, PART_TORSO);
+                            if (countMaskPixels(bin) > 40) {
+                                const ring = marchingSquaresOuterPolyline(
+                                    bin,
+                                    w,
+                                    h,
+                                );
+                                if (ring.length >= 6) {
+                                    const simp = rdp(ring, feps);
+                                    const ptsOut = simp.map(([gx, gy]) =>
+                                        segXYToOutput(
+                                            gx,
+                                            gy,
+                                            w,
+                                            h,
+                                            vW,
+                                            vH,
+                                            ox,
+                                            oy,
+                                            sFit,
+                                        ),
+                                    );
+                                    const dPath = svgPathFromPoly(
+                                        ptsOut,
+                                        1,
+                                        1,
+                                        0,
+                                        0,
+                                    );
+                                    if (dPath) out.push({ d: dPath, close: true });
+                                }
+                            }
+                        }
+                        if (params.featArms) {
+                            const bin = partMaskForIds(d, w, h, PART_ARMS);
+                            if (countMaskPixels(bin) > 50) {
+                                const ring = marchingSquaresOuterPolyline(
+                                    bin,
+                                    w,
+                                    h,
+                                );
+                                if (ring.length >= 6) {
+                                    const simp = rdp(ring, feps * 0.9);
+                                    const ptsOut = simp.map(([gx, gy]) =>
+                                        segXYToOutput(
+                                            gx,
+                                            gy,
+                                            w,
+                                            h,
+                                            vW,
+                                            vH,
+                                            ox,
+                                            oy,
+                                            sFit,
+                                        ),
+                                    );
+                                    const dPath = svgPathFromPoly(
+                                        ptsOut,
+                                        1,
+                                        1,
+                                        0,
+                                        0,
+                                    );
+                                    if (dPath) out.push({ d: dPath, close: true });
+                                }
+                            }
+                        }
+                        if (params.featLegs) {
+                            const bin = partMaskForIds(d, w, h, PART_LEGS);
+                            if (countMaskPixels(bin) > 50) {
+                                const ring = marchingSquaresOuterPolyline(
+                                    bin,
+                                    w,
+                                    h,
+                                );
+                                if (ring.length >= 6) {
+                                    const simp = rdp(ring, feps);
+                                    const ptsOut = simp.map(([gx, gy]) =>
+                                        segXYToOutput(
+                                            gx,
+                                            gy,
+                                            w,
+                                            h,
+                                            vW,
+                                            vH,
+                                            ox,
+                                            oy,
+                                            sFit,
+                                        ),
+                                    );
+                                    const dPath = svgPathFromPoly(
+                                        ptsOut,
+                                        1,
+                                        1,
+                                        0,
+                                        0,
+                                    );
+                                    if (dPath) out.push({ d: dPath, close: true });
+                                }
+                            }
+                        }
+                        if (params.featNeck) {
+                            const sm = seamMask(d, w, h, PART_FACE, PART_TORSO);
+                            if (countMaskPixels(sm) > 8) {
+                                const ring = marchingSquaresOuterPolyline(
+                                    sm,
+                                    w,
+                                    h,
+                                );
+                                if (ring.length >= 4) {
+                                    const simp = rdp(ring, feps * 0.45);
+                                    const ptsOut = simp.map(([gx, gy]) =>
+                                        segXYToOutput(
+                                            gx,
+                                            gy,
+                                            w,
+                                            h,
+                                            vW,
+                                            vH,
+                                            ox,
+                                            oy,
+                                            sFit,
+                                        ),
+                                    );
+                                    const dPath = svgPathOpenPoly(
+                                        ptsOut,
+                                        1,
+                                        1,
+                                        0,
+                                        0,
+                                    );
+                                    if (dPath) out.push({ d: dPath, close: false });
+                                }
+                            }
+                        }
+                    }
+
+                    if (
+                        wantsFacemesh() &&
+                        lastFaces &&
+                        lastFaces.length > 0 &&
+                        vW > 0 &&
+                        vH > 0
+                    ) {
+                        const face = lastFaces[0];
+                        const src = face.annotations;
+                        if (src) {
+                            for (const key of FACEMESH_ANNOTATION_KEYS) {
+                                const pts = src[key];
+                                if (!pts || pts.length < 4) continue;
+                                const ptsOut = pts.map((p) =>
+                                    videoXYToOutput(
+                                        p[0],
+                                        p[1],
+                                        vW,
+                                        vH,
+                                        ox,
+                                        oy,
+                                        sFit,
+                                    ),
+                                );
+                                const simp = rdp(ptsOut, feps * 0.35);
+                                const closed =
+                                    key.startsWith("lips") ||
+                                    key === "leftEye" ||
+                                    key === "rightEye";
+                                const dPath = closed
+                                    ? svgPathFromPoly(simp, 1, 1, 0, 0)
+                                    : svgPathOpenPoly(simp, 1, 1, 0, 0);
+                                if (dPath) out.push({ d: dPath, close: closed });
+                            }
+                        }
+                    }
+                    return out;
                 }
 
                 function hash2(i, j) {
@@ -995,6 +1562,100 @@
                     return lines;
                 }
 
+                function updateDebugReadout(featPathCount, canvasPathErr) {
+                    const el = document.getElementById("debugReadout");
+                    if (!el) return;
+                    const [vw, vh] = captureFramePixelSize();
+                    const pw = captureVideo ? captureVideo.width : 0;
+                    const ph = captureVideo ? captureVideo.height : 0;
+                    let maskN = 0;
+                    let maskCells = 0;
+                    if (maskBin && analysisW > 0 && analysisH > 0) {
+                        maskCells = analysisW * analysisH;
+                        for (let i = 0; i < maskBin.length; i++)
+                            maskN += maskBin[i];
+                    }
+                    const pct = maskCells
+                        ? ((100 * maskN) / maskCells).toFixed(1)
+                        : "0";
+                    const lines = [
+                        "Live canvas: feature strokes are drawn on top without silhouette clip (export SVG still uses clip).",
+                        `Video intrinsic: ${vw}×${vh} · p5 capture: ${pw}×${ph}`,
+                        `Analysis grid: ${analysisW}×${analysisH} · mask foreground: ${maskN}/${maskCells} (${pct}%)`,
+                        `Feature flags — parts pass: ${wantsPartSegmentation()} · FaceMesh: ${wantsFacemesh()}`,
+                    ];
+                    const seg = lastPartSeg;
+                    if (seg && seg.data && seg.width > 0) {
+                        const w = seg.width;
+                        const h = seg.height;
+                        const d = seg.data;
+                        lines.push(`Part buffer: ${w}×${h} (Int32)`);
+                        const line = (label, n) => {
+                            if (n > 0)
+                                lines.push(`  · ${label}: ${n} px`);
+                        };
+                        if (params.featBodyFace) {
+                            for (const pid of PART_FACE) {
+                                line(
+                                    `BodyPix face part id ${pid}`,
+                                    countMaskPixels(
+                                        partMaskForSingle(d, w, h, pid),
+                                    ),
+                                );
+                            }
+                        }
+                        if (params.featTorso)
+                            line(
+                                "BodyPix torso",
+                                countMaskPixels(
+                                    partMaskForIds(d, w, h, PART_TORSO),
+                                ),
+                            );
+                        if (params.featArms)
+                            line(
+                                "BodyPix arms+hands",
+                                countMaskPixels(
+                                    partMaskForIds(d, w, h, PART_ARMS),
+                                ),
+                            );
+                        if (params.featLegs)
+                            line(
+                                "BodyPix legs+feet",
+                                countMaskPixels(
+                                    partMaskForIds(d, w, h, PART_LEGS),
+                                ),
+                            );
+                        if (params.featNeck) {
+                            const sm = seamMask(
+                                d,
+                                w,
+                                h,
+                                PART_FACE,
+                                PART_TORSO,
+                            );
+                            line("Neck seam candidates", countMaskPixels(sm));
+                        }
+                    } else {
+                        lines.push(
+                            "Part buffer: — (off or not received this frame)",
+                        );
+                    }
+                    lines.push(`FaceMesh: ${lastFaces.length} face(s)`);
+                    const ann0 = lastFaces[0] && lastFaces[0].annotations;
+                    if (ann0) {
+                        for (const key of FACEMESH_ANNOTATION_KEYS) {
+                            const pts = ann0[key];
+                            const n = pts ? pts.length : 0;
+                            if (n > 0)
+                                lines.push(`  · ${key}: ${n} points`);
+                        }
+                    }
+                    lines.push(
+                        `Compiled feature paths: ${featPathCount} · canvas Path2D errors: ${canvasPathErr}`,
+                    );
+                    el.textContent = lines.join("\n");
+                }
+
                 function buildAndDraw() {
                     if (!maskBin) return;
 
@@ -1051,12 +1712,12 @@
                         `<g fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round"${outlinePath ? ' clip-path="url(#silhouetteClip)"' : ""}>`,
                     );
 
-                    let canvasClipped = false;
+                    let canvasClippedHatch = false;
                     if (outlinePath) {
                         try {
                             pctx.save();
                             pctx.clip(new Path2D(outlinePath));
-                            canvasClipped = true;
+                            canvasClippedHatch = true;
                         } catch (_) {}
                     }
 
@@ -1088,9 +1749,21 @@
                         }
                     }
 
-                    if (canvasClipped) pctx.restore();
+                    if (canvasClippedHatch) pctx.restore();
 
                     svgParts.push("</g>");
+
+                    const [vW, vH] = captureFramePixelSize();
+                    const featPaths = params.featEnable
+                        ? buildFeaturePaths(
+                              ox,
+                              oy,
+                              sFit,
+                              vW,
+                              vH,
+                              0.55,
+                          )
+                        : [];
 
                     if (outlinePath && params.outline > 0) {
                         try {
@@ -1104,9 +1777,61 @@
                         );
                     }
 
+                    let canvasPathErr = 0;
+                    if (featPaths.length > 0) {
+                        const fsw = params.featStrokeW;
+                        const clipAttr = outlinePath
+                            ? ' clip-path="url(#silhouetteClip)"'
+                            : "";
+                        svgParts.push(
+                            `<g fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round"${clipAttr}>`,
+                        );
+                        for (const { d } of featPaths) {
+                            if (!d) continue;
+                            svgParts.push(
+                                `<path d="${d}" fill="none" stroke="#000000" stroke-width="${fsw.toFixed(2)}"/>`,
+                            );
+                        }
+                        svgParts.push("</g>");
+
+                        pctx.save();
+                        pctx.strokeStyle = "#f6f6f6";
+                        pctx.lineWidth = Math.max(1.35, fsw * 4.25);
+                        pctx.lineCap = "round";
+                        pctx.lineJoin = "round";
+                        for (const { d } of featPaths) {
+                            if (!d) continue;
+                            try {
+                                pctx.stroke(new Path2D(d));
+                            } catch (_) {
+                                canvasPathErr++;
+                            }
+                        }
+                        pctx.restore();
+                    }
+
                     svgParts.push("</svg>");
                     lastSvg = svgParts.join("\n");
                     btnSvg.disabled = ids.length === 0;
+                    updateDebugReadout(featPaths.length, canvasPathErr);
+                }
+
+                function finishFrameWithOptionalFaceMesh() {
+                    if (wantsFacemesh() && faceMeshReady && faceMeshModel) {
+                        faceMeshModel.predict(captureVideo, (faces) => {
+                            lastFaces = Array.isArray(faces) ? faces : [];
+                            buildAndDraw();
+                            setStatus(
+                                params.featEnable
+                                    ? "Live · BodyPix + feature strokes"
+                                    : "Live · BodyPix",
+                            );
+                        });
+                    } else {
+                        lastFaces = [];
+                        buildAndDraw();
+                        setStatus("Live · BodyPix");
+                    }
                 }
 
                 function segmentLoop() {
@@ -1114,43 +1839,59 @@
                     if (!bodyPixModel || !captureVideo || paused) return;
                     frameCount++;
                     if (frameCount % params.frameSkip !== 0) return;
-                    bodyPixModel.segment(captureVideo, (err, result) => {
-                        if (err) {
-                            console.error(err);
-                            setStatus("Segment error — see console");
-                            return;
-                        }
-                        const bmBg = result && result.backgroundMask;
-                        const bmPe = result && result.personMask;
-                        const bm = bmBg || bmPe;
-                        if (!bm) {
-                            setStatus("No mask on result");
-                            return;
-                        }
-                        const maskSource = bmBg ? "background" : "person";
-                        let canvas = bm.canvas;
-                        if (!canvas && bm.elt) canvas = bm.elt;
-                        if (canvas && canvas.getContext) {
-                            const ctx = canvas.getContext("2d");
-                            const idata = ctx.getImageData(
-                                0,
-                                0,
-                                canvas.width,
-                                canvas.height,
-                            );
-                            fillMaskFromImageData(
-                                idata,
-                                params.thresh,
-                                maskSource,
-                            );
-                            buildAndDraw();
-                            setStatus("Live · BodyPix");
-                        } else if (result.raw && result.raw.dataSync) {
-                            setStatus("Mask is tensor — needs canvas");
-                        } else {
-                            setStatus("Unexpected mask format");
-                        }
-                    });
+
+                    const needParts = wantsPartSegmentation();
+                    bodyPixModel.segment(
+                        captureVideo,
+                        async (err, result) => {
+                            if (err) {
+                                console.error(err);
+                                setStatus("Segment error — see console");
+                                return;
+                            }
+                            applyMaskFromResult(result, null, {
+                                omitPartSegFromResult: needParts,
+                            });
+
+                            if (
+                                needParts &&
+                                bodyPixModel.model &&
+                                typeof bodyPixModel.model
+                                    .estimatePartSegmentation === "function"
+                            ) {
+                                try {
+                                    const cfg = bodyPixModel.config || {};
+                                    const seg =
+                                        await bodyPixModel.model.estimatePartSegmentation(
+                                            captureVideo.elt,
+                                            cfg.outputStride,
+                                            cfg.segmentationThreshold,
+                                        );
+                                    if (
+                                        seg &&
+                                        seg.data &&
+                                        seg.width
+                                    ) {
+                                        lastPartSeg = {
+                                            data: seg.data,
+                                            width: seg.width,
+                                            height: seg.height,
+                                        };
+                                    } else {
+                                        lastPartSeg = null;
+                                    }
+                                } catch (e) {
+                                    console.error(e);
+                                    setStatus(
+                                        "Part segmentation error — see console",
+                                    );
+                                    lastPartSeg = null;
+                                }
+                            }
+
+                            finishFrameWithOptionalFaceMesh();
+                        },
+                    );
                 }
 
                 btnSvg.addEventListener("click", () => {
@@ -1174,9 +1915,14 @@
                 });
 
                 bindRanges();
+                bindFeatControls();
 
                 window.setup = function setup() {
                     createCanvas(320, 240).parent("p5-hidden");
+                    setStatus("Loading FaceMesh…");
+                    faceMeshModel = ml5.facemesh({}, () => {
+                        faceMeshReady = true;
+                    });
                     captureVideo = createCapture(VIDEO, () => {
                         captureVideo.size(320, 240);
                         captureVideo.hide();
