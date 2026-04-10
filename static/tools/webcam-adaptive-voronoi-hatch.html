@@ -442,6 +442,18 @@
                         </div>
                     </div>
                 </label>
+                <label class="row"
+                    ><span>Line width (mm · export size)</span
+                    ><span class="val" id="v-lw">0.45</span>
+                    <input
+                        type="range"
+                        id="hatchLineWidthMm"
+                        min="0.1"
+                        max="2"
+                        step="0.01"
+                        value="0.45"
+                    />
+                </label>
                 <select id="hatchDensityChannel" title="Per-cell raw colour drives spacing; angle still uses smoothed colour.">
                     <option value="lum" selected>Density from · luminance (L)</option>
                     <option value="r">Density from · red</option>
@@ -614,6 +626,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         detailSmooth: 1,
                         hatchSpacingMinMm: 1.25,
                         hatchSpacingMaxMm: 5.5,
+                        hatchLineWidthMm: 0.45,
                         hatchDensityChannel: "lum",
                         lumDensityAmt: 1,
                         hueAngleScale: 1.1,
@@ -752,6 +765,13 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                             max: 18,
                             step: 0.05,
                         }),
+                        hatchLineWidthMm: Object.freeze({
+                            id: "hatchLineWidthMm",
+                            valueId: "v-lw",
+                            min: 0.1,
+                            max: 2,
+                            step: 0.01,
+                        }),
                     }),
                     selects: Object.freeze({
                         debugView: Object.freeze({ id: "debugView" }),
@@ -777,6 +797,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     detailSmooth: APP_SETTINGS.defaults.detailSmooth,
                     hatchSpacingMinMm: APP_SETTINGS.defaults.hatchSpacingMinMm,
                     hatchSpacingMaxMm: APP_SETTINGS.defaults.hatchSpacingMaxMm,
+                    hatchLineWidthMm: APP_SETTINGS.defaults.hatchLineWidthMm,
                     hatchDensityChannel: APP_SETTINGS.defaults.hatchDensityChannel,
                     lumDensityAmt: APP_SETTINGS.defaults.lumDensityAmt,
                     hueAngleScale: APP_SETTINGS.defaults.hueAngleScale,
@@ -884,6 +905,16 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     const safeW = Math.max(1, outW);
                     const safeH = Math.max(1, outH);
                     return Math.min(availW / safeW, availH / safeH);
+                }
+
+                function hatchStrokeWidthPreviewPx() {
+                    const mmPerPx = computeHatchExportInnerScale(
+                        preview.width,
+                        preview.height,
+                        params.svgPageSize,
+                    );
+                    const wMm = Math.max(0.05, params.hatchLineWidthMm);
+                    return Math.max(0.15, wMm / Math.max(1e-6, mmPerPx));
                 }
 
                 let hersheySansFontCache = null;
@@ -2697,7 +2728,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 ) {
                     pctx.save();
                     pctx.strokeStyle = strokeRgb || "#e8e8e8";
-                    pctx.lineWidth = Math.max(0.35, sFit * 0.08);
+                    pctx.lineWidth = hatchStrokeWidthPreviewPx();
                     pctx.lineCap = "round";
                     const sh = shadeOpt !== undefined ? shadeOpt : hatchShadeOptForDraw();
                     forEachHatchLineSegment(
@@ -2806,7 +2837,10 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     const ty =
                         innerY + hatchPadTop + slackY * SVG_HATCH_VERTICAL_BIAS;
 
-                    const sw = Math.max(0.25, snap.sFit * 0.08);
+                    const sw = Math.max(
+                        0.05,
+                        snap.hatchLineWidthMm || params.hatchLineWidthMm,
+                    );
                     const hatchGAttrs = `fill="none" stroke="${strokeHex}" stroke-width="${sw.toFixed(4)}" stroke-linecap="round" stroke-linejoin="round"`;
 
                     const ink =
@@ -3002,6 +3036,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         sFit,
                         ox,
                         oy,
+                        hatchLineWidthMm: params.hatchLineWidthMm,
                         labels: new Int32Array(labels),
                         labelCounts: Uint32Array.from(labelCounts),
                         means: means.map((m) => ({
@@ -3216,6 +3251,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         `Seeds: ${seeds.length} · Voronoi cells (used): ${activeCells}`,
                         `ML throttle: ~${params.targetFps} Hz`,
                         `Spacing scale: ${mmPx.toFixed(4)} mm/px @ export ${params.svgPageSize} · range ${params.hatchSpacingMinMm.toFixed(2)}–${params.hatchSpacingMaxMm.toFixed(2)} mm · drive ${params.hatchDensityChannel}`,
+                        `Line width: ${params.hatchLineWidthMm.toFixed(2)} mm (${hatchStrokeWidthPreviewPx().toFixed(2)} px preview)`,
                         `Shading: ${params.shadingMode} · angle×${params.shadingAngleAmt.toFixed(2)} · density×${params.shadingDensityAmt.toFixed(2)} · depth ~${params.depthFps} Hz`,
                     ].join("\n");
                 }
