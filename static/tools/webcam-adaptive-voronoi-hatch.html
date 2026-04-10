@@ -223,6 +223,35 @@
                 cursor: not-allowed;
             }
 
+            .conference-only {
+                display: none;
+            }
+
+            body.conference .conference-only {
+                display: inline-block;
+            }
+
+            body.stage-only header,
+            body.stage-only aside {
+                display: none;
+            }
+
+            body.stage-only .layout {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            body.stage-only .stage {
+                padding: 0;
+            }
+
+            body.stage-only #preview {
+                max-width: 100vw;
+                max-height: 100vh;
+                width: 100vw;
+                height: 100vh;
+                box-shadow: none;
+            }
+
             .hint {
                 margin-top: 12px;
                 font-size: 10px;
@@ -576,6 +605,12 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         Export SVG
                     </button>
                     <button type="button" id="btnReset">Reset defaults</button>
+                    <button type="button" id="btnStageMode" class="conference-only">
+                        Stage mode
+                    </button>
+                    <button type="button" id="btnFullscreen" class="conference-only">
+                        Fullscreen
+                    </button>
                 </div>
                 <p class="hint">
                     Camera requires HTTPS or localhost. Export is always A3
@@ -611,6 +646,11 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 const btnPause = document.getElementById("btnPause");
                 const btnSvg = document.getElementById("btnSvg");
                 const btnReset = document.getElementById("btnReset");
+                const btnStageMode = document.getElementById("btnStageMode");
+                const btnFullscreen = document.getElementById("btnFullscreen");
+                const query = new URLSearchParams(window.location.search);
+                const IS_CONFERENCE_MODE = query.get("conference") === "1";
+                if (IS_CONFERENCE_MODE) document.body.classList.add("conference");
 
                 const APP_SETTINGS = Object.freeze({
                     storageKey: "webcam-adaptive-voronoi-hatch.v1",
@@ -811,6 +851,34 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 };
                 /** Mirror webcam processing/output so it behaves like a mirror. */
                 const MIRROR_CAMERA = true;
+                const MIDI_CONFIG = Object.freeze({
+                    enabled: IS_CONFERENCE_MODE,
+                    inputNameIncludes: "nanokontrol2",
+                    /**
+                     * Easy MIDI mapping table (CC -> binding). Edit this object to
+                     * remap controls quickly.
+                     */
+                    ccBindings: Object.freeze({
+                        0: Object.freeze({ type: "range", key: "thresh" }),
+                        1: Object.freeze({ type: "range", key: "seedCount" }),
+                        2: Object.freeze({ type: "range", key: "gridDiv" }),
+                        3: Object.freeze({ type: "range", key: "detailGamma" }),
+                        4: Object.freeze({ type: "range", key: "detailGain" }),
+                        5: Object.freeze({ type: "range", key: "hatchSpacingMinMm" }),
+                        6: Object.freeze({ type: "range", key: "hatchSpacingMaxMm" }),
+                        7: Object.freeze({ type: "range", key: "hatchLineWidthMm" }),
+                        16: Object.freeze({ type: "range", key: "lumDensityAmt" }),
+                        17: Object.freeze({ type: "range", key: "hueAngleScale" }),
+                        18: Object.freeze({ type: "range", key: "angleOffset" }),
+                        19: Object.freeze({ type: "range", key: "satAngleAmt" }),
+                        20: Object.freeze({ type: "range", key: "shadingAngleAmt" }),
+                        21: Object.freeze({ type: "range", key: "shadingDensityAmt" }),
+                        22: Object.freeze({ type: "range", key: "depthFps" }),
+                        23: Object.freeze({ type: "range", key: "analysisW" }),
+                        41: Object.freeze({ type: "action", key: "toggleStageMode" }),
+                        45: Object.freeze({ type: "action", key: "toggleFullscreen" }),
+                    }),
+                });
 
                 let foregroundSegmenter = null;
                 let segBusy = false;
@@ -839,6 +907,9 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 let depthInitPromise = null;
                 let lastDepthMs = 0;
                 let depthBusy = false;
+                let stageOnlyMode = false;
+                let preStageDebugView = "final";
+                let syncHatchSpacingDualRangeFn = null;
                 /** ISO 216, landscape (long × short mm). */
                 const SVG_PAGE_LANDSCAPE_MM = {
                     a6: [148, 105],
@@ -1125,6 +1196,152 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     try {
                         localStorage.removeItem(APP_SETTINGS.storageKey);
                     } catch (_) {}
+                }
+
+                function updateRangeReadoutByKey(key) {
+                    const spec = APP_SETTINGS.ranges[key];
+                    if (!spec || !spec.valueId) return;
+                    const vEl = document.getElementById(spec.valueId);
+                    if (!vEl) return;
+                    vEl.textContent = String(params[key]);
+                }
+
+                function applyShadingModeSideEffects() {
+                    lastDepthMs = 0;
+                    if (shadingZ) {
+                        shadingZ.fill(0);
+                        shadingGx.fill(0);
+                        shadingGy.fill(0);
+                    }
+                }
+
+                function setNumericParamFromExternal(key, value, doRedraw = true) {
+                    if (
+                        key === "hatchSpacingMinMm" ||
+                        key === "hatchSpacingMaxMm"
+                    ) {
+                        const spec = APP_SETTINGS.ranges[key];
+                        const el = document.getElementById(spec.id);
+                        if (el) el.value = String(clampParamValue(key, value));
+                        if (syncHatchSpacingDualRangeFn) {
+                            syncHatchSpacingDualRangeFn(doRedraw, el || null);
+                            return;
+                        }
+                    }
+                    params[key] = clampParamValue(key, value);
+                    const spec = APP_SETTINGS.ranges[key];
+                    if (spec) {
+                        const el = document.getElementById(spec.id);
+                        if (el) el.value = String(params[key]);
+                    }
+                    updateRangeReadoutByKey(key);
+                    persistSettings();
+                    if (doRedraw && maskBin) buildAndDraw();
+                }
+
+                function setSelectParamFromExternal(key, value, doRedraw = true) {
+                    if (typeof value !== "string" || !value) return;
+                    params[key] = value;
+                    const spec = APP_SETTINGS.selects[key];
+                    if (spec) {
+                        const el = document.getElementById(spec.id);
+                        if (el) el.value = value;
+                    }
+                    if (key === "shadingMode") applyShadingModeSideEffects();
+                    persistSettings();
+                    if (doRedraw && maskBin) buildAndDraw();
+                }
+
+                function setStageOnlyMode(on) {
+                    const next = !!on;
+                    if (next === stageOnlyMode) return;
+                    if (next) {
+                        preStageDebugView = params.debugView;
+                        setSelectParamFromExternal("debugView", "final", false);
+                    } else {
+                        setSelectParamFromExternal(
+                            "debugView",
+                            preStageDebugView || "final",
+                            false,
+                        );
+                    }
+                    stageOnlyMode = next;
+                    document.body.classList.toggle("stage-only", stageOnlyMode);
+                    if (btnStageMode) {
+                        btnStageMode.textContent = stageOnlyMode
+                            ? "Exit stage"
+                            : "Stage mode";
+                    }
+                    if (maskBin) buildAndDraw();
+                }
+
+                async function toggleFullscreenStage() {
+                    try {
+                        if (!document.fullscreenElement) {
+                            await document.documentElement.requestFullscreen();
+                        } else {
+                            await document.exitFullscreen();
+                        }
+                    } catch (e) {
+                        console.warn("Fullscreen failed", e);
+                    }
+                }
+
+                function applyMidiCc(cc, value) {
+                    const bind = MIDI_CONFIG.ccBindings[String(cc)] || MIDI_CONFIG.ccBindings[cc];
+                    if (!bind) return;
+                    if (bind.type === "action") {
+                        if (value < 64) return;
+                        if (bind.key === "toggleStageMode") {
+                            setStageOnlyMode(!stageOnlyMode);
+                        } else if (bind.key === "toggleFullscreen") {
+                            toggleFullscreenStage();
+                        }
+                        return;
+                    }
+                    if (bind.type === "range") {
+                        const spec = APP_SETTINGS.ranges[bind.key];
+                        if (!spec) return;
+                        const t = Math.max(0, Math.min(127, value)) / 127;
+                        const raw = spec.min + t * (spec.max - spec.min);
+                        setNumericParamFromExternal(bind.key, raw, true);
+                        return;
+                    }
+                }
+
+                async function initMidiController() {
+                    if (!MIDI_CONFIG.enabled) return;
+                    if (typeof navigator.requestMIDIAccess !== "function") {
+                        setStatus("MIDI unavailable (Web MIDI not supported)");
+                        return;
+                    }
+                    try {
+                        const access = await navigator.requestMIDIAccess();
+                        const attachInputs = () => {
+                            for (const input of access.inputs.values()) {
+                                const nm = String(input.name || "").toLowerCase();
+                                if (
+                                    MIDI_CONFIG.inputNameIncludes &&
+                                    !nm.includes(MIDI_CONFIG.inputNameIncludes)
+                                ) {
+                                    continue;
+                                }
+                                input.onmidimessage = (ev) => {
+                                    const d = ev.data;
+                                    if (!d || d.length < 3) return;
+                                    const st = d[0] & 0xf0;
+                                    if (st !== 0xb0) return;
+                                    applyMidiCc(d[1], d[2]);
+                                };
+                            }
+                        };
+                        attachInputs();
+                        access.onstatechange = () => attachInputs();
+                        setStatus("MIDI ready");
+                    } catch (e) {
+                        console.error(e);
+                        setStatus("MIDI init failed");
+                    }
                 }
 
                 function captureFramePixelSize() {
@@ -3069,7 +3286,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     );
                     btnSvg.disabled = lastExportLineCount === 0;
 
-                    const view = params.debugView;
+                    const view = stageOnlyMode ? "final" : params.debugView;
                     pctx.fillStyle = "#080808";
                     pctx.fillRect(0, 0, outW, outH);
 
@@ -3329,14 +3546,6 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         );
                     }
 
-                    const updateRangeReadout = (key) => {
-                        const spec = APP_SETTINGS.ranges[key];
-                        if (!spec || !spec.valueId) return;
-                        const vEl = document.getElementById(spec.valueId);
-                        if (!vEl) return;
-                        vEl.textContent = String(params[key]);
-                    };
-
                     for (const key of Object.keys(APP_SETTINGS.ranges)) {
                         if (
                             key === "hatchSpacingMinMm" ||
@@ -3351,13 +3560,9 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         el.step = String(spec.step);
                         params[key] = clampParamValue(key, params[key]);
                         el.value = String(params[key]);
-                        updateRangeReadout(key);
+                        updateRangeReadoutByKey(key);
                         el.addEventListener("input", () => {
-                            params[key] = clampParamValue(key, el.value);
-                            el.value = String(params[key]);
-                            updateRangeReadout(key);
-                            persistSettings();
-                            if (maskBin) buildAndDraw();
+                            setNumericParamFromExternal(key, el.value, true);
                         });
                     }
 
@@ -3367,17 +3572,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         if (!el) continue;
                         el.value = params[key];
                         el.addEventListener("change", () => {
-                            params[key] = el.value;
-                            if (key === "shadingMode") {
-                                lastDepthMs = 0;
-                                if (shadingZ) {
-                                    shadingZ.fill(0);
-                                    shadingGx.fill(0);
-                                    shadingGy.fill(0);
-                                }
-                            }
-                            persistSettings();
-                            if (maskBin) buildAndDraw();
+                            setSelectParamFromExternal(key, el.value, true);
                         });
                     }
 
@@ -3431,6 +3626,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         syncHatchSpacingDualRange(true, e.target),
                     );
                     syncHatchSpacingDualRange(false, null);
+                    syncHatchSpacingDualRangeFn = syncHatchSpacingDualRange;
                 }
 
                 btnPause.addEventListener("click", () => {
@@ -3448,6 +3644,27 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 btnReset.addEventListener("click", () => {
                     clearPersistedSettings();
                     window.location.reload();
+                });
+
+                if (btnStageMode) {
+                    btnStageMode.addEventListener("click", () =>
+                        setStageOnlyMode(!stageOnlyMode),
+                    );
+                }
+                if (btnFullscreen) {
+                    btnFullscreen.addEventListener("click", () =>
+                        toggleFullscreenStage(),
+                    );
+                }
+                window.addEventListener("keydown", (ev) => {
+                    if (!IS_CONFERENCE_MODE) return;
+                    if (ev.key === "f" || ev.key === "F") {
+                        ev.preventDefault();
+                        toggleFullscreenStage();
+                    } else if (ev.key === "s" || ev.key === "S") {
+                        ev.preventDefault();
+                        setStageOnlyMode(!stageOnlyMode);
+                    }
                 });
 
                 btnSvg.addEventListener("click", async () => {
@@ -3489,9 +3706,13 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 window.addEventListener("load", () => {
                     onStageResize();
                     ensureHersheySansFont().catch(() => {});
+                    if (IS_CONFERENCE_MODE && btnStageMode) {
+                        btnStageMode.textContent = "Stage mode";
+                    }
                 });
 
                 bindControls();
+                initMidiController();
 
                 window.setup = function setup() {
                     createCanvas(320, 240).parent("p5-hidden");

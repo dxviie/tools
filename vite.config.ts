@@ -47,7 +47,8 @@ function toolsManifestPlugin(): Plugin {
     configureServer(server) {
       const dir = join(process.cwd(), 'static', 'tools');
       server.watcher.add(dir);
-      server.watcher.on('change', path => {
+      server.watcher.on('all', (event, path) => {
+        if (!['add', 'change', 'unlink'].includes(event)) return;
         if (path.startsWith(dir) && path.endsWith('.html')) {
           const mod = server.moduleGraph.getModuleById(RESOLVED_ID);
           if (mod) server.moduleGraph.invalidateModule(mod);
