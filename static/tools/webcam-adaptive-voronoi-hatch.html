@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
     <head>
-        <!-- tool-meta: {"name":"Webcam adaptive Voronoi hatch","slug":"webcam-adaptive-voronoi-hatch","description":"Webcam → ml5 BodyPix foreground → detail-weighted Voronoi → per-cell hatching from local color; aspect-matched preview, SVG export (A6–A3 landscape mm), ~8 FPS ML budget.","tags":["webcam","ml5","p5","body-pix","voronoi","hatching","svg","generative"]} -->
+        <!-- tool-meta: {"name":"Webcam adaptive Voronoi hatch","slug":"webcam-adaptive-voronoi-hatch","description":"Webcam → ml5 BodyPix foreground → detail-weighted Voronoi → per-cell hatching from local color; spacing min/max in mm vs SVG export size; dual-range slider; A6–A3 landscape mm export; ~8 FPS ML budget.","tags":["webcam","ml5","p5","body-pix","voronoi","hatching","svg","generative"]} -->
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Webcam adaptive Voronoi hatch</title>
@@ -139,6 +139,48 @@
                 width: 100%;
                 grid-column: 1 / -1;
                 accent-color: var(--accent2);
+            }
+
+            /**
+             * Spacing min / max: two native ranges (same idea as
+             * https://muffinman.io/blog/native-dual-range-input/ ) in a stacked
+             * layout so tracks do not overlap visually.
+             */
+            .dual-range-input {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                margin: 6px 0 4px;
+                grid-column: 1 / -1;
+            }
+
+            .dual-range-input .dri-row {
+                display: grid;
+                grid-template-columns: 2.2rem 1fr;
+                gap: 8px;
+                align-items: center;
+            }
+
+            .dual-range-input .dri-lab {
+                font-size: 9px;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: var(--muted);
+            }
+
+            .dual-range-input input[type="range"] {
+                width: 100%;
+                min-width: 0;
+                margin: 0;
+                grid-column: unset;
+            }
+
+            label.row.dri-wrap {
+                align-items: start;
+            }
+
+            label.row.dri-wrap > .dual-range-input {
+                grid-column: 1 / -1;
             }
 
             select {
@@ -364,28 +406,58 @@
                 </label>
 
                 <h2>Hatching</h2>
-                <label class="row"
-                    ><span>Base spacing</span
-                    ><span class="val" id="v-bspace">4</span>
-                    <input
-                        type="range"
-                        id="baseSpacing"
-                        min="2"
-                        max="24"
-                        step="0.25"
-                        value="4"
-                    />
+                <label class="row dri-wrap"
+                    ><span>Spacing (mm · export size)</span
+                    ><span class="val" id="v-sp-mm">1.25 – 5.50</span>
+                    <div
+                        class="dual-range-input"
+                        id="hatchSpacingDual"
+                        aria-label="Hatch spacing min and max in millimeters"
+                    >
+                        <div class="dri-row">
+                            <span class="dri-lab">Min</span>
+                            <input
+                                type="range"
+                                class="dri-a"
+                                id="hatchSpacingMin"
+                                min="0.25"
+                                max="18"
+                                step="0.05"
+                                value="1.25"
+                            />
+                        </div>
+                        <div class="dri-row">
+                            <span class="dri-lab">Max</span>
+                            <input
+                                type="range"
+                                class="dri-b"
+                                id="hatchSpacingMax"
+                                min="0.25"
+                                max="18"
+                                step="0.05"
+                                value="5.5"
+                            />
+                        </div>
+                    </div>
                 </label>
+                <select id="hatchDensityChannel" title="Per-cell raw colour drives spacing; angle still uses smoothed colour.">
+                    <option value="lum" selected>Density from · luminance (L)</option>
+                    <option value="r">Density from · red</option>
+                    <option value="g">Density from · green</option>
+                    <option value="b">Density from · blue</option>
+                </select>
                 <label class="row"
-                    ><span>Luminance → density</span
-                    ><span class="val" id="v-lum">0.75</span>
+                    ><span
+                        title="0 = same spacing everywhere; 1 = full span min↔max from channel; &gt;1 exaggerates."
+                        >Density strength</span
+                    ><span class="val" id="v-lum">1</span>
                     <input
                         type="range"
                         id="lumDensityAmt"
                         min="0"
                         max="1.35"
                         step="0.05"
-                        value="0.75"
+                        value="1"
                     />
                 </label>
                 <label class="row"
@@ -480,8 +552,13 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     detailGamma: 1.15,
                     detailGain: 1.4,
                     detailSmooth: 1,
-                    baseSpacing: 4,
-                    lumDensityAmt: 0.75,
+                    /** Line spacing at min / max luminance (mm on chosen SVG export size). */
+                    hatchSpacingMinMm: 1.25,
+                    hatchSpacingMaxMm: 5.5,
+                    /** lum | r | g | b — linear 0…1 from raw cell mean. */
+                    hatchDensityChannel: "lum",
+                    /** Spacing span factor: 0=uniform, 1=full min–max from channel. */
+                    lumDensityAmt: 1,
                     hueAngleScale: 1.1,
                     angleOffset: 12,
                     satAngleAmt: 22,
@@ -526,6 +603,48 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 /** Extra shrink inside the inner frame so hatch does not touch guides. */
                 const SVG_ART_INSET = 0.92;
                 const SVG_PAGE_MARGIN_MM = 8;
+                /** Legal bounds for hatch spacing dual-slider (mm on export). */
+                const HATCH_SPACING_MM_GLOBAL_MIN = 0.25;
+                const HATCH_SPACING_MM_GLOBAL_MAX = 18;
+
+                /**
+                 * Millimetres per preview pixel for hatch stroke spacing when exported at
+                 * formatKey (matches SVG hatch transform scale).
+                 */
+                function computeHatchExportInnerScale(outW, outH, formatKey) {
+                    const A3W = A3_LANDSCAPE_MM_W;
+                    const A3H = A3_LANDSCAPE_MM_H;
+                    const fmt =
+                        SVG_PAGE_LANDSCAPE_MM[formatKey] ||
+                        SVG_PAGE_LANDSCAPE_MM.a4;
+                    const [fmtW, fmtH] = fmt;
+                    const isA3 = formatKey === "a3";
+                    let innerW;
+                    let innerH;
+                    if (isA3) {
+                        const m = SVG_PAGE_MARGIN_MM;
+                        innerW = A3W - 2 * m;
+                        innerH = A3H - 2 * m;
+                    } else {
+                        innerW = fmtW;
+                        innerH = fmtH;
+                    }
+                    const capBandH = Math.min(
+                        Math.max(10, innerH * 0.15),
+                        SVG_CAPTION_BAND_INNER_MM + 4,
+                    );
+                    const hatchRegionH =
+                        innerH - capBandH - SVG_HATCH_CAPTION_GAP_MM;
+                    const hatchPadTop = SVG_HATCH_TOP_PAD_MM;
+                    const availW = innerW * SVG_ART_INSET;
+                    const availH = Math.max(
+                        8,
+                        hatchRegionH - hatchPadTop - 1,
+                    );
+                    const safeW = Math.max(1, outW);
+                    const safeH = Math.max(1, outH);
+                    return Math.min(availW / safeW, availH / safeH);
+                }
 
                 let hersheySansFontCache = null;
 
@@ -926,6 +1045,30 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         h /= 6;
                     }
                     return { h, s, l };
+                }
+
+                /**
+                 * Normalized drive [0,1] from raw cell mean for hatch spacing
+                 * (linear in R/G/B or HSL L when channel is lum).
+                 */
+                function normalizedHatchDensityDrive(m, channel) {
+                    let v;
+                    switch (channel) {
+                        case "r":
+                            v = m.r / 255;
+                            break;
+                        case "g":
+                            v = m.g / 255;
+                            break;
+                        case "b":
+                            v = m.b / 255;
+                            break;
+                        default: {
+                            const hsl = hslFromRgb(m.r, m.g, m.b);
+                            v = hsl.l;
+                        }
+                    }
+                    return Math.max(0, Math.min(1, v));
                 }
 
                 /**
@@ -1651,21 +1794,43 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     return { means, labelCounts };
                 }
 
-                function cellStyleFromMean(m) {
-                    const hsl = hslFromRgb(m.r, m.g, m.b);
+                /**
+                 * @param mAngle Colour for angle (EMA-smoothed in live view).
+                 * @param mDensity Raw cell mean for spacing (per-region variation).
+                 */
+                function cellStyleFromMeans(mAngle, mDensity) {
+                    const hsl = hslFromRgb(mAngle.r, mAngle.g, mAngle.b);
                     let angle =
                         params.angleOffset +
                         hsl.h * 360 * params.hueAngleScale +
                         hsl.s * params.satAngleAmt;
-                    const lum = hsl.l;
-                    const dens = Math.max(
-                        0.25,
-                        1 - lum * params.lumDensityAmt,
+                    let v = normalizedHatchDensityDrive(
+                        mDensity,
+                        params.hatchDensityChannel,
                     );
-                    let spacing = Math.max(
-                        1.25,
-                        params.baseSpacing * dens,
+                    const a = params.lumDensityAmt;
+                    let vMix;
+                    if (a <= 0) {
+                        vMix = 0.5;
+                    } else {
+                        vMix = 0.5 + (v - 0.5) * a;
+                        vMix = Math.max(0, Math.min(1, vMix));
+                    }
+                    const mmPerPx = computeHatchExportInnerScale(
+                        preview.width,
+                        preview.height,
+                        params.svgPageSize,
                     );
+                    let minPx = params.hatchSpacingMinMm / mmPerPx;
+                    let maxPx = params.hatchSpacingMaxMm / mmPerPx;
+                    if (maxPx < minPx) {
+                        const s = minPx;
+                        minPx = maxPx;
+                        maxPx = s;
+                    }
+                    /** High channel → tighter spacing (denser hatch). */
+                    let spacing = minPx + (1 - vMix) * (maxPx - minPx);
+                    spacing = Math.max(1.25, spacing);
                     angle = Math.round(angle * 2) / 2;
                     spacing = Math.round(spacing * 4) / 4;
                     return { angle, spacing };
@@ -1929,8 +2094,9 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     const nseed = means.length;
                     for (let lid = 0; lid < nseed; lid++) {
                         if (!labelCounts[lid]) continue;
-                        const m = meanForHatch(lid, means, emaOverride);
-                        const st = cellStyleFromMean(m);
+                        const mA = meanForHatch(lid, means, emaOverride);
+                        const mD = means[lid];
+                        const st = cellStyleFromMeans(mA, mD);
                         let lines = regionHatchLines(
                             lid,
                             labs,
@@ -2059,15 +2225,14 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     const hatchRegionH =
                         innerH - capBandH - SVG_HATCH_CAPTION_GAP_MM;
                     const hatchPadTop = SVG_HATCH_TOP_PAD_MM;
-                    const availW = innerW * SVG_ART_INSET;
-                    const availH = Math.max(
-                        8,
-                        hatchRegionH - hatchPadTop - 1,
-                    );
 
                     const cw = snap.outW;
                     const ch = snap.outH;
-                    const scale1 = Math.min(availW / cw, availH / ch);
+                    const scale1 = computeHatchExportInnerScale(
+                        cw,
+                        ch,
+                        formatKey,
+                    );
                     const tw = cw * scale1;
                     const th = ch * scale1;
                     const tx = innerX + (innerW - tw) * 0.5;
@@ -2142,7 +2307,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     parts.push(`</g></g></g>`);
 
                     const textSa = `stroke="${strokeHex}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="0.22"`;
-                    const capSizeMm = 2.75;
+                    const capSizeMm = 2.75 * 1.25;
                     const maxCapW = innerW - 6;
                     const capLines = captionLinesFromText(
                         captionText || "",
@@ -2436,11 +2601,17 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     for (let i = 0; i < labelCounts.length; i++) {
                         if (labelCounts[i]) activeCells++;
                     }
+                    const mmPx = computeHatchExportInnerScale(
+                        preview.width,
+                        preview.height,
+                        params.svgPageSize,
+                    );
                     readoutEl.textContent = [
                         `Preview: ${preview.width}×${preview.height} · video: ${vw}×${vh} · analysis: ${analysisW}×${analysisH}`,
                         `Foreground px: ${maskN} (${((100 * maskN) / maskBin.length).toFixed(1)}%)`,
                         `Seeds: ${seeds.length} · Voronoi cells (used): ${activeCells}`,
                         `ML throttle: ~${params.targetFps} Hz`,
+                        `Spacing scale: ${mmPx.toFixed(4)} mm/px @ export ${params.svgPageSize} · range ${params.hatchSpacingMinMm.toFixed(2)}–${params.hatchSpacingMaxMm.toFixed(2)} mm · drive ${params.hatchDensityChannel}`,
                     ].join("\n");
                 }
 
@@ -2513,7 +2684,6 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     bindRange("detailGamma", "detailGamma", "gamma", Number);
                     bindRange("detailGain", "detailGain", "dgain", Number);
                     bindRange("detailSmooth", "detailSmooth", "smooth", Number);
-                    bindRange("baseSpacing", "baseSpacing", "bspace", Number);
                     bindRange(
                         "lumDensityAmt",
                         "lumDensityAmt",
@@ -2539,7 +2709,61 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         .getElementById("svgPageSize")
                         .addEventListener("change", (e) => {
                             params.svgPageSize = e.target.value;
+                            if (maskBin) buildAndDraw();
                         });
+                    document
+                        .getElementById("hatchDensityChannel")
+                        .addEventListener("change", (e) => {
+                            params.hatchDensityChannel = e.target.value;
+                            if (maskBin) buildAndDraw();
+                        });
+
+                    function syncHatchSpacingDualRange(doRedraw, sourceEl) {
+                        const a = document.getElementById("hatchSpacingMin");
+                        const b = document.getElementById("hatchSpacingMax");
+                        const vEl = document.getElementById("v-sp-mm");
+                        const G0 = HATCH_SPACING_MM_GLOBAL_MIN;
+                        const G1 = HATCH_SPACING_MM_GLOBAL_MAX;
+                        let lo = parseFloat(a.value);
+                        let hi = parseFloat(b.value);
+                        if (Number.isNaN(lo)) lo = params.hatchSpacingMinMm;
+                        if (Number.isNaN(hi)) hi = params.hatchSpacingMaxMm;
+                        lo = Math.max(G0, Math.min(G1, lo));
+                        hi = Math.max(G0, Math.min(G1, hi));
+                        if (sourceEl === a) {
+                            if (lo > hi) {
+                                hi = lo;
+                                b.value = String(hi);
+                            }
+                        } else if (sourceEl === b) {
+                            if (hi < lo) {
+                                lo = hi;
+                                a.value = String(lo);
+                            }
+                        } else if (lo > hi) {
+                            const s = lo;
+                            lo = hi;
+                            hi = s;
+                            a.value = String(lo);
+                            b.value = String(hi);
+                        }
+                        params.hatchSpacingMinMm = lo;
+                        params.hatchSpacingMaxMm = hi;
+                        vEl.textContent = `${lo.toFixed(2)} – ${hi.toFixed(2)} mm`;
+                        if (doRedraw && maskBin) buildAndDraw();
+                    }
+
+                    const driMin = document.getElementById("hatchSpacingMin");
+                    const driMax = document.getElementById("hatchSpacingMax");
+                    driMin.value = String(params.hatchSpacingMinMm);
+                    driMax.value = String(params.hatchSpacingMaxMm);
+                    driMin.addEventListener("input", (e) =>
+                        syncHatchSpacingDualRange(true, e.target),
+                    );
+                    driMax.addEventListener("input", (e) =>
+                        syncHatchSpacingDualRange(true, e.target),
+                    );
+                    syncHatchSpacingDualRange(false, null);
                 }
 
                 btnPause.addEventListener("click", () => {
