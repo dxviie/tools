@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
     <head>
-        <!-- tool-meta: {"name":"Webcam adaptive Voronoi hatch","slug":"webcam-adaptive-voronoi-hatch","description":"Webcam → ml5 BodyPix foreground → detail-weighted Voronoi → per-cell hatching from local color; spacing min/max in mm vs SVG export size; dual-range slider; A6–A3 landscape mm export; ~8 FPS ML budget.","tags":["webcam","ml5","p5","body-pix","voronoi","hatching","svg","generative"]} -->
+        <!-- tool-meta: {"name":"Webcam adaptive Voronoi hatch","slug":"webcam-adaptive-voronoi-hatch","description":"Webcam → ml5 BodyPix → Voronoi hatch; optional gradient relief or TensorFlow.js AR portrait depth for shading; spacing min/max mm; A6–A3 SVG export.","tags":["webcam","ml5","p5","body-pix","tensorflow.js","voronoi","hatching","svg","depth"]} -->
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Webcam adaptive Voronoi hatch</title>
@@ -279,9 +279,9 @@
         <header>
             <span class="logo">Adaptive Voronoi hatch</span>
             <span class="tagline"
-                >Foreground (ml5 BodyPix) → detail map → Voronoi cell count from
-                local detail → hatching angle/spacing from mean cell
-                colour.</span
+                >Foreground (ml5 BodyPix) → detail map → Voronoi → hatch
+                angle/spacing from colour; optional relief or portrait depth for
+                shading-like cues (TensorFlow.js).</span
             >
             <span class="status" id="status">Starting…</span>
         </header>
@@ -297,6 +297,7 @@
                     <option value="rgb">RGB (analysis)</option>
                     <option value="mask">Mask</option>
                     <option value="detail">Detail heatmap</option>
+                    <option value="shading">Shading height (relief / depth)</option>
                     <option value="seeds">Seeds on RGB</option>
                     <option value="regions">Voronoi regions</option>
                     <option value="hatchOnly">Hatch only (clip)</option>
@@ -497,6 +498,51 @@
                     />
                 </label>
 
+                <h2>Shading / depth</h2>
+                <select id="shadingMode" title="Relief is fast (luminance height). Portrait depth uses TF.js AR model (slow, face-biased).">
+                    <option value="off" selected>Shading · off</option>
+                    <option value="relief">Shading · gradient relief (fast)</option>
+                    <option value="depth">Shading · portrait depth (TF.js)</option>
+                </select>
+                <label class="row"
+                    ><span>Depth update FPS</span><span class="val" id="v-dfps"
+                        >2</span
+                    >
+                    <input
+                        type="range"
+                        id="depthFps"
+                        min="0.5"
+                        max="6"
+                        step="0.5"
+                        value="2"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Shading → angle</span><span class="val" id="v-shang"
+                        >0.35</span
+                    >
+                    <input
+                        type="range"
+                        id="shadingAngleAmt"
+                        min="0"
+                        max="1.2"
+                        step="0.05"
+                        value="0.35"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Shading → density</span
+                    ><span class="val" id="v-shden">0.35</span>
+                    <input
+                        type="range"
+                        id="shadingDensityAmt"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value="0.35"
+                    />
+                </label>
+
                 <h2>SVG export</h2>
                 <select id="svgPageSize">
                     <option value="a6">A6 landscape · 148×105 mm</option>
@@ -528,8 +574,17 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
             </aside>
         </div>
         <div id="p5-hidden"></div>
+        <!-- ml5 must load before global TensorFlow.js: tf 4.x on window breaks BodyPix (bundled older TF). -->
         <script src="https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/ml5@0.12.2/dist/ml5.min.js"></script>
+        <!-- Portrait depth (loads after ml5 so BodyPix keeps working). -->
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+        <script
+            src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js"
+            crossorigin="anonymous"
+        ></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-segmentation@1.0.2/dist/body-segmentation.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/depth-estimation@0.0.4/dist/depth-estimation.min.js"></script>
         <script>
             (function () {
                 "use strict";
@@ -563,6 +618,10 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     angleOffset: 12,
                     satAngleAmt: 22,
                     svgPageSize: "a4",
+                    shadingMode: "off",
+                    depthFps: 2,
+                    shadingAngleAmt: 0.35,
+                    shadingDensityAmt: 0.35,
                 };
 
                 let bodyPixModel = null;
@@ -580,6 +639,17 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 let stratDetailSmooth = null;
                 /** RGB EMA per seed index for stable hatch angle/spacing. */
                 let styleEmaRgb = null;
+                /** Normalized height field + gradients for shading (analysis grid). */
+                let shadingZ = null;
+                let shadingGx = null;
+                let shadingGy = null;
+                /** Per-seed offsets from shading (same index order as seeds / means). */
+                let seedShadeAngle = null;
+                let seedShadeDensity = null;
+                let depthEstimator = null;
+                let depthInitPromise = null;
+                let lastDepthMs = 0;
+                let depthBusy = false;
                 /** ISO 216, landscape (long × short mm). */
                 const SVG_PAGE_LANDSCAPE_MM = {
                     a6: [148, 105],
@@ -829,6 +899,9 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         maskBin = new Uint8Array(n);
                         rgbBuf = new Uint8Array(n * 3);
                         detailBuf = new Float32Array(n);
+                        shadingZ = new Float32Array(n);
+                        shadingGx = new Float32Array(n);
+                        shadingGy = new Float32Array(n);
                     }
                 }
 
@@ -920,6 +993,169 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         0.7152 * (g / 255) +
                         0.0722 * (b / 255)
                     );
+                }
+
+                function normalizeMaskedZ(z, mask, n) {
+                    let zmin = Infinity;
+                    let zmax = -Infinity;
+                    for (let i = 0; i < n; i++) {
+                        if (!mask[i]) continue;
+                        const v = z[i];
+                        zmin = Math.min(zmin, v);
+                        zmax = Math.max(zmax, v);
+                    }
+                    const inv = zmax > zmin + 1e-8 ? 1 / (zmax - zmin) : 0;
+                    for (let i = 0; i < n; i++) {
+                        if (!mask[i]) z[i] = 0;
+                        else z[i] = inv > 0 ? (z[i] - zmin) * inv : 0.5;
+                    }
+                }
+
+                function gradientFromHeight(z, gx, gy, w, h, mask) {
+                    gx.fill(0);
+                    gy.fill(0);
+                    for (let y = 1; y < h - 1; y++) {
+                        for (let x = 1; x < w - 1; x++) {
+                            const p = y * w + x;
+                            if (!mask[p]) continue;
+                            gx[p] = (z[p + 1] - z[p - 1]) * 0.5;
+                            gy[p] = (z[p + w] - z[p - w]) * 0.5;
+                        }
+                    }
+                }
+
+                function computeReliefShading() {
+                    const w = analysisW;
+                    const h = analysisH;
+                    const n = w * h;
+                    const c = [0, 0, 0];
+                    const tmp = new Float32Array(n);
+                    for (let y = 0; y < h; y++) {
+                        for (let x = 0; x < w; x++) {
+                            const p = y * w + x;
+                            if (!maskBin[p]) {
+                                tmp[p] = 0;
+                                continue;
+                            }
+                            rgbAt(x, y, c);
+                            tmp[p] = luminance(c[0], c[1], c[2]);
+                        }
+                    }
+                    boxBlurFloat(tmp, shadingZ, w, h, maskBin, 1);
+                    boxBlurFloat(shadingZ, tmp, w, h, maskBin, 1);
+                    for (let i = 0; i < n; i++) shadingZ[i] = tmp[i];
+                    normalizeMaskedZ(shadingZ, maskBin, n);
+                    gradientFromHeight(
+                        shadingZ,
+                        shadingGx,
+                        shadingGy,
+                        w,
+                        h,
+                        maskBin,
+                    );
+                }
+
+                function rasterizeDepthSourceToShading(src) {
+                    const w = analysisW;
+                    const h = analysisH;
+                    const n = w * h;
+                    if (!shadingZ || shadingZ.length !== n) return;
+                    const tc = document.createElement("canvas");
+                    tc.width = w;
+                    tc.height = h;
+                    const cx = tc.getContext("2d", { alpha: false });
+                    cx.drawImage(src, 0, 0, w, h);
+                    const id = cx.getImageData(0, 0, w, h);
+                    const d = id.data;
+                    for (let y = 0; y < h; y++) {
+                        for (let x = 0; x < w; x++) {
+                            const p = y * w + x;
+                            const j = p * 4;
+                            if (!maskBin[p]) {
+                                shadingZ[p] = 0;
+                                continue;
+                            }
+                            const lum =
+                                (d[j] + d[j + 1] + d[j + 2]) / (3 * 255);
+                            shadingZ[p] = lum;
+                        }
+                    }
+                    normalizeMaskedZ(shadingZ, maskBin, n);
+                    gradientFromHeight(
+                        shadingZ,
+                        shadingGx,
+                        shadingGy,
+                        w,
+                        h,
+                        maskBin,
+                    );
+                }
+
+                function buildSeedShadingArrays(seedArr, nseed) {
+                    if (!seedShadeAngle || seedShadeAngle.length < nseed) {
+                        seedShadeAngle = new Float32Array(Math.max(nseed, 64));
+                        seedShadeDensity = new Float32Array(Math.max(nseed, 64));
+                    }
+                    if (params.shadingMode === "off" || !shadingZ) {
+                        for (let i = 0; i < nseed; i++) {
+                            seedShadeAngle[i] = 0;
+                            seedShadeDensity[i] = 0;
+                        }
+                        return;
+                    }
+                    const w = analysisW;
+                    const h = analysisH;
+                    const am = params.shadingAngleAmt;
+                    const dm = params.shadingDensityAmt;
+                    for (let lid = 0; lid < nseed; lid++) {
+                        const xi = Math.min(w - 1, Math.max(0, seedArr[lid][0] | 0));
+                        const yi = Math.min(h - 1, Math.max(0, seedArr[lid][1] | 0));
+                        const p = yi * w + xi;
+                        const gx = shadingGx[p];
+                        const gy = shadingGy[p];
+                        seedShadeAngle[lid] =
+                            (Math.atan2(gy, gx) * 180) / Math.PI * am;
+                        const zc = shadingZ[p];
+                        seedShadeDensity[lid] = (zc - 0.5) * 2 * dm;
+                    }
+                }
+
+                function maybeRunDepthEstimate(ts) {
+                    if (params.shadingMode !== "depth" || paused) return;
+                    if (typeof depthEstimation === "undefined" || typeof tf === "undefined")
+                        return;
+                    if (depthBusy) return;
+                    const interval = 1000 / Math.max(0.4, params.depthFps);
+                    if (ts - lastDepthMs < interval) return;
+                    lastDepthMs = ts;
+                    const el = captureVideo && captureVideo.elt;
+                    if (!el || el.readyState < 2) return;
+                    depthBusy = true;
+                    (async () => {
+                        try {
+                            if (!depthEstimator) {
+                                setStatus("Loading portrait depth (TF)…");
+                                await tf.ready();
+                                depthEstimator = await depthEstimation.createEstimator(
+                                    depthEstimation.SupportedModels.ARPortraitDepth,
+                                );
+                                setStatus("Portrait depth ready");
+                            }
+                            const dm = await depthEstimator.estimateDepth(el, {
+                                minDepth: 0,
+                                maxDepth: 1,
+                            });
+                            /** DepthMap.toCanvasImageSource() returns a Promise (tfjs-models API). */
+                            const src = await dm.toCanvasImageSource();
+                            if (src) rasterizeDepthSourceToShading(src);
+                            if (maskBin) buildAndDraw();
+                        } catch (e) {
+                            console.error(e);
+                            setStatus("Depth error — try Gradient relief");
+                        } finally {
+                            depthBusy = false;
+                        }
+                    })();
                 }
 
                 /** @param {Float32Array} dst */
@@ -1797,8 +2033,9 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 /**
                  * @param mAngle Colour for angle (EMA-smoothed in live view).
                  * @param mDensity Raw cell mean for spacing (per-region variation).
+                 * @param shadeOpt Optional per-seed shading from relief/depth maps.
                  */
-                function cellStyleFromMeans(mAngle, mDensity) {
+                function cellStyleFromMeans(mAngle, mDensity, lid, shadeOpt) {
                     const hsl = hslFromRgb(mAngle.r, mAngle.g, mAngle.b);
                     let angle =
                         params.angleOffset +
@@ -1814,6 +2051,16 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         vMix = 0.5;
                     } else {
                         vMix = 0.5 + (v - 0.5) * a;
+                        vMix = Math.max(0, Math.min(1, vMix));
+                    }
+                    if (
+                        shadeOpt &&
+                        shadeOpt.angle &&
+                        shadeOpt.density &&
+                        lid < shadeOpt.angle.length
+                    ) {
+                        angle += shadeOpt.angle[lid];
+                        vMix += shadeOpt.density[lid];
                         vMix = Math.max(0, Math.min(1, vMix));
                     }
                     const mmPerPx = computeHatchExportInnerScale(
@@ -1928,6 +2175,30 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                             const v = detailBuf[y * analysisW + x];
                             const hue = (1 - v) * 0.72;
                             const rgb = hslToRgb(hue, 0.95, 0.35 + v * 0.45);
+                            d[j++] = rgb[0];
+                            d[j++] = rgb[1];
+                            d[j++] = rgb[2];
+                            d[j++] = maskAt(x, y) ? 255 : 40;
+                        }
+                    }
+                    const c = document.createElement("canvas");
+                    c.width = analysisW;
+                    c.height = analysisH;
+                    c.getContext("2d").putImageData(id, 0, 0);
+                    pctx.imageSmoothingEnabled = false;
+                    pctx.drawImage(c, px, py, pw, ph);
+                }
+
+                function drawShadingHeat(px, py, pw, ph) {
+                    if (!shadingZ) return;
+                    const id = pctx.createImageData(analysisW, analysisH);
+                    const d = id.data;
+                    let j = 0;
+                    for (let y = 0; y < analysisH; y++) {
+                        for (let x = 0; x < analysisW; x++) {
+                            const v = shadingZ[y * analysisW + x];
+                            const hue = 0.08 + v * 0.28;
+                            const rgb = hslToRgb(hue, 0.75, 0.18 + v * 0.62);
                             d[j++] = rgb[0];
                             d[j++] = rgb[1];
                             d[j++] = rgb[2];
@@ -2090,13 +2361,14 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     oy,
                     visitor,
                     emaOverride,
+                    shadeOpt,
                 ) {
                     const nseed = means.length;
                     for (let lid = 0; lid < nseed; lid++) {
                         if (!labelCounts[lid]) continue;
                         const mA = meanForHatch(lid, means, emaOverride);
                         const mD = means[lid];
-                        const st = cellStyleFromMeans(mA, mD);
+                        const st = cellStyleFromMeans(mA, mD, lid, shadeOpt);
                         let lines = regionHatchLines(
                             lid,
                             labs,
@@ -2124,6 +2396,15 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     }
                 }
 
+                function hatchShadeOptForDraw() {
+                    if (params.shadingMode === "off" || !seedShadeAngle)
+                        return null;
+                    return {
+                        angle: seedShadeAngle,
+                        density: seedShadeDensity,
+                    };
+                }
+
                 function drawHatchFinal(
                     labs,
                     means,
@@ -2132,11 +2413,13 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     ox,
                     oy,
                     strokeRgb,
+                    shadeOpt,
                 ) {
                     pctx.save();
                     pctx.strokeStyle = strokeRgb || "#e8e8e8";
                     pctx.lineWidth = Math.max(0.35, sFit * 0.08);
                     pctx.lineCap = "round";
+                    const sh = shadeOpt !== undefined ? shadeOpt : hatchShadeOptForDraw();
                     forEachHatchLineSegment(
                         labs,
                         means,
@@ -2151,6 +2434,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                             pctx.stroke();
                         },
                         undefined,
+                        sh,
                     );
                     pctx.restore();
                 }
@@ -2163,6 +2447,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     ox,
                     oy,
                     emaOverride,
+                    shadeOpt,
                 ) {
                     let n = 0;
                     forEachHatchLineSegment(
@@ -2176,6 +2461,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                             n++;
                         },
                         emaOverride,
+                        shadeOpt,
                     );
                     return n;
                 }
@@ -2303,6 +2589,12 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                             );
                         },
                         snap.styleEma,
+                        snap.seedShadeAngle && snap.seedShadeDensity
+                            ? {
+                                  angle: snap.seedShadeAngle,
+                                  density: snap.seedShadeDensity,
+                              }
+                            : null,
                     );
                     parts.push(`</g></g></g>`);
 
@@ -2391,6 +2683,15 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     const { means, labelCounts } = collectCellMeans(labels);
                     updateStyleEma(means);
 
+                    if (params.shadingMode === "relief") {
+                        computeReliefShading();
+                    } else if (params.shadingMode === "off" && shadingZ) {
+                        shadingZ.fill(0);
+                        shadingGx.fill(0);
+                        shadingGy.fill(0);
+                    }
+                    buildSeedShadingArrays(seeds, seeds.length);
+
                     const bw = Math.max(1, analysisW);
                     const bh = Math.max(1, analysisH);
                     const sFit = Math.min(outW / bw, outH / bh);
@@ -2400,6 +2701,20 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     mapSy = sFit;
                     mapOx = ox;
                     mapOy = oy;
+
+                    const shadeForSnap =
+                        params.shadingMode !== "off" &&
+                        seedShadeAngle &&
+                        means.length > 0
+                            ? {
+                                  angle: Float32Array.from(
+                                      seedShadeAngle.subarray(0, means.length),
+                                  ),
+                                  density: Float32Array.from(
+                                      seedShadeDensity.subarray(0, means.length),
+                                  ),
+                              }
+                            : null;
 
                     lastExportSnapshot = {
                         outW,
@@ -2420,6 +2735,12 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                             styleEmaRgb.length === means.length * 3
                                 ? new Float64Array(styleEmaRgb)
                                 : null,
+                        seedShadeAngle: shadeForSnap
+                            ? shadeForSnap.angle
+                            : null,
+                        seedShadeDensity: shadeForSnap
+                            ? shadeForSnap.density
+                            : null,
                     };
                     lastExportLineCount = countHatchLineSegments(
                         lastExportSnapshot.labels,
@@ -2429,6 +2750,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         lastExportSnapshot.ox,
                         lastExportSnapshot.oy,
                         lastExportSnapshot.styleEma,
+                        shadeForSnap,
                     );
                     btnSvg.disabled = lastExportLineCount === 0;
 
@@ -2547,6 +2869,8 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         drawMaskGray(ox, oy, bw * sFit, bh * sFit);
                     } else if (view === "detail") {
                         drawDetailHeat(ox, oy, bw * sFit, bh * sFit);
+                    } else if (view === "shading") {
+                        drawShadingHeat(ox, oy, bw * sFit, bh * sFit);
                     } else if (view === "seeds") {
                         drawSeedsOverlay(
                             ox,
@@ -2612,6 +2936,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         `Seeds: ${seeds.length} · Voronoi cells (used): ${activeCells}`,
                         `ML throttle: ~${params.targetFps} Hz`,
                         `Spacing scale: ${mmPx.toFixed(4)} mm/px @ export ${params.svgPageSize} · range ${params.hatchSpacingMinMm.toFixed(2)}–${params.hatchSpacingMaxMm.toFixed(2)} mm · drive ${params.hatchDensityChannel}`,
+                        `Shading: ${params.shadingMode} · angle×${params.shadingAngleAmt.toFixed(2)} · density×${params.shadingDensityAmt.toFixed(2)} · depth ~${params.depthFps} Hz`,
                     ].join("\n");
                 }
 
@@ -2662,6 +2987,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         if (applyMaskFromResult(result)) {
                             buildAndDraw();
                             setStatus(`Live · ~${params.targetFps} FPS ML`);
+                            maybeRunDepthEstimate(ts);
                         }
                     });
                 }
@@ -2698,6 +3024,19 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     );
                     bindRange("angleOffset", "angleOffset", "angoff", Number);
                     bindRange("satAngleAmt", "satAngleAmt", "satang", Number);
+                    bindRange("depthFps", "depthFps", "dfps", Number);
+                    bindRange(
+                        "shadingAngleAmt",
+                        "shadingAngleAmt",
+                        "shang",
+                        Number,
+                    );
+                    bindRange(
+                        "shadingDensityAmt",
+                        "shadingDensityAmt",
+                        "shden",
+                        Number,
+                    );
 
                     document
                         .getElementById("debugView")
@@ -2709,6 +3048,18 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         .getElementById("svgPageSize")
                         .addEventListener("change", (e) => {
                             params.svgPageSize = e.target.value;
+                            if (maskBin) buildAndDraw();
+                        });
+                    document
+                        .getElementById("shadingMode")
+                        .addEventListener("change", (e) => {
+                            params.shadingMode = e.target.value;
+                            lastDepthMs = 0;
+                            if (shadingZ) {
+                                shadingZ.fill(0);
+                                shadingGx.fill(0);
+                                shadingGy.fill(0);
+                            }
                             if (maskBin) buildAndDraw();
                         });
                     document
