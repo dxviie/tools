@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
     <head>
-        <!-- tool-meta: {"name":"Webcam adaptive Voronoi hatch","slug":"webcam-adaptive-voronoi-hatch","description":"Webcam → ml5 BodyPix foreground → detail-weighted Voronoi → per-cell hatching from local color. ~8 FPS ML budget, debug pipeline + tunables.","tags":["webcam","ml5","p5","body-pix","voronoi","hatching","generative"]} -->
+        <!-- tool-meta: {"name":"Webcam adaptive Voronoi hatch","slug":"webcam-adaptive-voronoi-hatch","description":"Webcam → ml5 BodyPix foreground → detail-weighted Voronoi → per-cell hatching from local color; aspect-matched preview, SVG export (A6–A3 landscape mm), ~8 FPS ML budget.","tags":["webcam","ml5","p5","body-pix","voronoi","hatching","svg","generative"]} -->
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Webcam adaptive Voronoi hatch</title>
@@ -83,11 +83,16 @@
                 justify-content: center;
                 padding: 14px;
                 background: #070707;
+                min-width: 0;
+                min-height: 0;
             }
 
             #preview {
+                display: block;
                 max-width: 100%;
-                max-height: calc(100vh - 52px);
+                max-height: 100%;
+                width: auto;
+                height: auto;
                 background: #000;
                 box-shadow: 0 0 0 1px var(--border);
             }
@@ -205,6 +210,27 @@
                 max-height: 200px;
                 overflow: auto;
             }
+
+            .caption-label {
+                display: block;
+                margin-top: 10px;
+                color: var(--muted);
+                font-size: 11px;
+            }
+
+            #svgCaption {
+                width: 100%;
+                min-height: 56px;
+                margin-top: 6px;
+                padding: 8px;
+                background: #1a1a1a;
+                border: 1px solid var(--border);
+                color: var(--text);
+                font-family: var(--mono);
+                font-size: 11px;
+                line-height: 1.4;
+                resize: vertical;
+            }
         </style>
     </head>
     <body>
@@ -218,8 +244,8 @@
             <span class="status" id="status">Starting…</span>
         </header>
         <div class="layout">
-            <div class="stage">
-                <canvas id="preview" width="720" height="720"></canvas>
+            <div class="stage" id="stage">
+                <canvas id="preview" width="960" height="540"></canvas>
             </div>
             <aside>
                 <h2>Debug view</h2>
@@ -399,13 +425,32 @@
                     />
                 </label>
 
+                <h2>SVG export</h2>
+                <select id="svgPageSize">
+                    <option value="a6">A6 landscape · 148×105 mm</option>
+                    <option value="a5">A5 landscape · 210×148 mm</option>
+                    <option value="a4" selected>
+                        A4 landscape · 297×210 mm
+                    </option>
+                    <option value="a3">A3 landscape · 420×297 mm</option>
+                </select>
+                <label class="caption-label" for="svgCaption"
+                    >Caption (Hershey Sans, inside export frame)</label
+                >
+                <textarea id="svgCaption" rows="3">
+CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea>
                 <div class="btn-row">
                     <button type="button" id="btnPause">Pause camera</button>
+                    <button type="button" class="primary" id="btnSvg" disabled>
+                        Export SVG
+                    </button>
                 </div>
                 <p class="hint">
-                    Camera requires HTTPS or localhost. ML runs on a fixed
-                    interval (~target FPS); sliders re-run geometry on the last
-                    frame. “Pipeline” shows steps ①–⑥ (Voronoi + hatch bottom row).
+                    Camera requires HTTPS or localhost. Export is always A3
+                    landscape: smaller formats are centered with a frame; hatch is
+                    inset and biased high inside the frame; caption (Hershey) sits
+                    at the bottom of that frame on its own layer. Pipeline shows
+                    ①–⑥.
                 </p>
                 <pre class="readout" id="readout"></pre>
             </aside>
@@ -420,8 +465,10 @@
                 const statusEl = document.getElementById("status");
                 const readoutEl = document.getElementById("readout");
                 const preview = document.getElementById("preview");
+                const stageEl = document.getElementById("stage");
                 const pctx = preview.getContext("2d", { alpha: false });
                 const btnPause = document.getElementById("btnPause");
+                const btnSvg = document.getElementById("btnSvg");
 
                 const params = {
                     debugView: "final",
@@ -438,6 +485,7 @@
                     hueAngleScale: 1.1,
                     angleOffset: 12,
                     satAngleAmt: 22,
+                    svgPageSize: "a4",
                 };
 
                 let bodyPixModel = null;
@@ -455,9 +503,149 @@
                 let stratDetailSmooth = null;
                 /** RGB EMA per seed index for stable hatch angle/spacing. */
                 let styleEmaRgb = null;
+                /** ISO 216, landscape (long × short mm). */
+                const SVG_PAGE_LANDSCAPE_MM = {
+                    a6: [148, 105],
+                    a5: [210, 148],
+                    a4: [297, 210],
+                    a3: [420, 297],
+                };
+                const A3_LANDSCAPE_MM_W = 420;
+                const A3_LANDSCAPE_MM_H = 297;
+                /** Height (mm) at bottom of the inner export frame for Hershey caption. */
+                const SVG_CAPTION_BAND_INNER_MM = 13;
+                /** Gap between hatch block and caption band inside the inner frame (mm). */
+                const SVG_HATCH_CAPTION_GAP_MM = 2;
+                /** Small pad from top of inner frame before hatch (mm). */
+                const SVG_HATCH_TOP_PAD_MM = 2;
+                /**
+                 * Vertical placement of hatch within slack: 0 = flush to top pad, 0.5 = centered.
+                 * Lower values sit higher to clear caption space.
+                 */
+                const SVG_HATCH_VERTICAL_BIAS = 0.18;
+                /** Extra shrink inside the inner frame so hatch does not touch guides. */
+                const SVG_ART_INSET = 0.92;
+                const SVG_PAGE_MARGIN_MM = 8;
 
-                const outW = 720;
-                const outH = 720;
+                let hersheySansFontCache = null;
+
+                async function ensureHersheySansFont() {
+                    if (hersheySansFontCache) return hersheySansFontCache;
+                    const r = await fetch("/fonts/hershey/HersheySans1.svg");
+                    if (!r.ok) throw new Error(`Hershey font HTTP ${r.status}`);
+                    const t = await r.text();
+                    hersheySansFontCache = parseHersheyFontSvg(t);
+                    return hersheySansFontCache;
+                }
+
+                function parseHersheyFontSvg(svgText) {
+                    const doc = new DOMParser().parseFromString(
+                        svgText,
+                        "image/svg+xml",
+                    );
+                    if (doc.querySelector("parsererror")) {
+                        throw new Error("Hershey font parse error");
+                    }
+                    const fontEl = doc.querySelector("font");
+                    const defaultAdv = parseFloat(
+                        fontEl?.getAttribute("horiz-adv-x") || "600",
+                    );
+                    const faceEl = doc.querySelector("font-face");
+                    const unitsPerEm = parseFloat(
+                        faceEl?.getAttribute("units-per-em") || "1000",
+                    );
+                    const glyphs = {};
+                    for (const g of doc.querySelectorAll("glyph")) {
+                        const uni = g.getAttribute("unicode");
+                        if (!uni) continue;
+                        glyphs[uni] = {
+                            horizAdvX: parseFloat(
+                                g.getAttribute("horiz-adv-x") || defaultAdv,
+                            ),
+                            d: g.getAttribute("d") || "",
+                        };
+                    }
+                    if (!glyphs[" "]) {
+                        glyphs[" "] = { horizAdvX: defaultAdv * 0.5, d: "" };
+                    }
+                    return { unitsPerEm, defaultAdv, glyphs };
+                }
+
+                function measureHersheyText(text, sizeMm, font) {
+                    if (!font || !text) return 0;
+                    const sc = sizeMm / font.unitsPerEm;
+                    let w = 0;
+                    for (const ch of text) {
+                        const g = font.glyphs[ch];
+                        w += (g ? g.horizAdvX : font.defaultAdv) * sc;
+                    }
+                    return w;
+                }
+
+                /**
+                 * y = baseline in SVG mm space (Y down). Font glyph coords use Y up; scale(s,-s).
+                 * @returns {{ paths: string, width: number }}
+                 */
+                function renderHersheyText(
+                    text,
+                    x,
+                    y,
+                    sizeMm,
+                    font,
+                    sa,
+                    maxWidthMm = 0,
+                ) {
+                    if (!font || !text) return { paths: "", width: 0 };
+                    let sc = sizeMm / font.unitsPerEm;
+                    if (maxWidthMm > 0) {
+                        const w = measureHersheyText(text, sizeMm, font);
+                        if (w > maxWidthMm) sc *= maxWidthMm / w;
+                    }
+                    let cur = x;
+                    let paths = "";
+                    for (const ch of text) {
+                        const g = font.glyphs[ch];
+                        const adv = (g ? g.horizAdvX : font.defaultAdv) * sc;
+                        if (g && g.d) {
+                            const s = sc.toFixed(6);
+                            const ns = (-sc).toFixed(6);
+                            paths += `<path transform="translate(${cur.toFixed(4)},${y.toFixed(4)}) scale(${s},${ns})" d="${g.d}" ${sa} vector-effect="non-scaling-stroke"/>`;
+                        }
+                        cur += adv;
+                    }
+                    return { paths, width: cur - x };
+                }
+
+                function captionLinesFromText(raw, maxW, sizeMm, font) {
+                    if (!font) return [raw.trim()].filter(Boolean);
+                    const out = [];
+                    for (const block of raw.replace(/\r\n/g, "\n").split("\n")) {
+                        if (!block.trim()) {
+                            out.push("");
+                            continue;
+                        }
+                        let cur = "";
+                        for (const word of block.split(/\s+/)) {
+                            const cand = cur ? `${cur} ${word}` : word;
+                            if (
+                                !cur ||
+                                measureHersheyText(cand, sizeMm, font) <= maxW
+                            ) {
+                                cur = cand;
+                            } else {
+                                if (cur) out.push(cur);
+                                cur = word;
+                            }
+                        }
+                        if (cur) out.push(cur);
+                    }
+                    return out;
+                }
+
+                /** Immutable snapshot for plot export (not tied to next frame). */
+                let lastExportSnapshot = null;
+                let lastExportLineCount = 0;
+
                 let mapSx = 1;
                 let mapSy = 1;
                 let mapOx = 0;
@@ -477,6 +665,35 @@
                         captureVideo.width || 320,
                         captureVideo.height || 240,
                     ];
+                }
+
+                /**
+                 * Size preview canvas to match webcam aspect ratio and fill the stage (contain, no stretch).
+                 */
+                function fitPreviewToStage() {
+                    if (!stageEl || !preview) return;
+                    const pad = 28;
+                    const rect = stageEl.getBoundingClientRect();
+                    const maxW = Math.max(160, rect.width - pad);
+                    const maxH = Math.max(120, rect.height - pad);
+                    let [vw, vh] = captureFramePixelSize();
+                    if (vw < 2 || vh < 2) {
+                        vw = 16;
+                        vh = 9;
+                    }
+                    const ar = vw / vh;
+                    let cw = maxW;
+                    let ch = cw / ar;
+                    if (ch > maxH) {
+                        ch = maxH;
+                        cw = ch * ar;
+                    }
+                    cw = Math.max(64, Math.round(cw));
+                    ch = Math.max(64, Math.round(ch));
+                    if (preview.width !== cw || preview.height !== ch) {
+                        preview.width = cw;
+                        preview.height = ch;
+                    }
                 }
 
                 function ratioHeight(w, vw, vh) {
@@ -1489,6 +1706,33 @@
                     };
                 }
 
+                function meanForHatch(
+                    lid,
+                    means,
+                    emaOverride,
+                ) {
+                    const nseed = means.length;
+                    if (
+                        emaOverride &&
+                        emaOverride.length === nseed * 3
+                    ) {
+                        const b = lid * 3;
+                        return {
+                            r: emaOverride[b],
+                            g: emaOverride[b + 1],
+                            b: emaOverride[b + 2],
+                            n: means[lid].n,
+                        };
+                    }
+                    if (
+                        styleEmaRgb &&
+                        styleEmaRgb.length === nseed * 3
+                    ) {
+                        return meanForStyle(lid, means);
+                    }
+                    return means[lid];
+                }
+
                 function drawRgbPreview(px, py, pw, ph) {
                     const id = pctx.createImageData(analysisW, analysisH);
                     const d = id.data;
@@ -1672,27 +1916,20 @@
                     pctx.restore();
                 }
 
-                function drawHatchFinal(
+                function forEachHatchLineSegment(
                     labs,
                     means,
                     labelCounts,
                     sFit,
                     ox,
                     oy,
-                    strokeRgb,
+                    visitor,
+                    emaOverride,
                 ) {
-                    pctx.save();
-                    pctx.strokeStyle = strokeRgb || "#e8e8e8";
-                    pctx.lineWidth = Math.max(0.35, sFit * 0.08);
-                    pctx.lineCap = "round";
-                    const nseed = seeds.length;
+                    const nseed = means.length;
                     for (let lid = 0; lid < nseed; lid++) {
                         if (!labelCounts[lid]) continue;
-                        const m =
-                            styleEmaRgb &&
-                            styleEmaRgb.length === nseed * 3
-                                ? meanForStyle(lid, means)
-                                : means[lid];
+                        const m = meanForHatch(lid, means, emaOverride);
                         const st = cellStyleFromMean(m);
                         let lines = regionHatchLines(
                             lid,
@@ -1716,19 +1953,257 @@
                         }
                         for (let li = 0; li < lines.length; li++) {
                             const seg = lines[li];
-                            const a = seg[0];
-                            const b = seg[1];
+                            visitor(seg[0], seg[1]);
+                        }
+                    }
+                }
+
+                function drawHatchFinal(
+                    labs,
+                    means,
+                    labelCounts,
+                    sFit,
+                    ox,
+                    oy,
+                    strokeRgb,
+                ) {
+                    pctx.save();
+                    pctx.strokeStyle = strokeRgb || "#e8e8e8";
+                    pctx.lineWidth = Math.max(0.35, sFit * 0.08);
+                    pctx.lineCap = "round";
+                    forEachHatchLineSegment(
+                        labs,
+                        means,
+                        labelCounts,
+                        sFit,
+                        ox,
+                        oy,
+                        (a, b) => {
                             pctx.beginPath();
                             pctx.moveTo(a[0], a[1]);
                             pctx.lineTo(b[0], b[1]);
                             pctx.stroke();
-                        }
-                    }
+                        },
+                        undefined,
+                    );
                     pctx.restore();
                 }
 
+                function countHatchLineSegments(
+                    labs,
+                    means,
+                    labelCounts,
+                    sFit,
+                    ox,
+                    oy,
+                    emaOverride,
+                ) {
+                    let n = 0;
+                    forEachHatchLineSegment(
+                        labs,
+                        means,
+                        labelCounts,
+                        sFit,
+                        ox,
+                        oy,
+                        () => {
+                            n++;
+                        },
+                        emaOverride,
+                    );
+                    return n;
+                }
+
+                /**
+                 * Root SVG is always A3 landscape (420×297 mm). Chosen format is centered on
+                 * the sheet; caption sits in the bottom of that inner frame; hatch is biased up.
+                 * Inkscape layers: Background, A3 outline, export outline, Hatch,
+                 * Caption (sheet outline is separate so it can be omitted when plotting).
+                 */
+                function buildA3LayoutHatchSvg(
+                    snap,
+                    formatKey,
+                    captionText,
+                    font,
+                    strokeHex,
+                ) {
+                    const A3W = A3_LANDSCAPE_MM_W;
+                    const A3H = A3_LANDSCAPE_MM_H;
+                    const fmt =
+                        SVG_PAGE_LANDSCAPE_MM[formatKey] ||
+                        SVG_PAGE_LANDSCAPE_MM.a4;
+                    const [fmtW, fmtH] = fmt;
+
+                    const isA3 = formatKey === "a3";
+                    let innerX;
+                    let innerY;
+                    let innerW;
+                    let innerH;
+                    if (isA3) {
+                        const m = SVG_PAGE_MARGIN_MM;
+                        innerX = m;
+                        innerY = m;
+                        innerW = A3W - 2 * m;
+                        innerH = A3H - 2 * m;
+                    } else {
+                        innerW = fmtW;
+                        innerH = fmtH;
+                        innerX = (A3W - fmtW) / 2;
+                        innerY = (A3H - fmtH) / 2;
+                    }
+
+                    const capBandH = Math.min(
+                        Math.max(10, innerH * 0.15),
+                        SVG_CAPTION_BAND_INNER_MM + 4,
+                    );
+                    const hatchRegionH =
+                        innerH - capBandH - SVG_HATCH_CAPTION_GAP_MM;
+                    const hatchPadTop = SVG_HATCH_TOP_PAD_MM;
+                    const availW = innerW * SVG_ART_INSET;
+                    const availH = Math.max(
+                        8,
+                        hatchRegionH - hatchPadTop - 1,
+                    );
+
+                    const cw = snap.outW;
+                    const ch = snap.outH;
+                    const scale1 = Math.min(availW / cw, availH / ch);
+                    const tw = cw * scale1;
+                    const th = ch * scale1;
+                    const tx = innerX + (innerW - tw) * 0.5;
+                    const slackY = Math.max(0, hatchRegionH - hatchPadTop - th);
+                    const ty =
+                        innerY + hatchPadTop + slackY * SVG_HATCH_VERTICAL_BIAS;
+
+                    const sw = Math.max(0.25, snap.sFit * 0.08);
+                    const hatchGAttrs = `fill="none" stroke="${strokeHex}" stroke-width="${sw.toFixed(4)}" stroke-linecap="round" stroke-linejoin="round"`;
+
+                    const ink =
+                        'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"';
+                    const parts = [];
+                    parts.push('<?xml version="1.0" encoding="UTF-8"?>');
+                    parts.push(
+                        `<svg xmlns="http://www.w3.org/2000/svg" ${ink} width="${A3W}mm" height="${A3H}mm" viewBox="0 0 ${A3W} ${A3H}">`,
+                    );
+
+                    parts.push(
+                        `<g id="layer-background" inkscape:label="Background" inkscape:groupmode="layer">`,
+                    );
+                    parts.push(
+                        `<rect x="0" y="0" width="${A3W}" height="${A3H}" fill="#ffffff" stroke="none"/>`,
+                    );
+                    parts.push(`</g>`);
+
+                    parts.push(
+                        `<g id="layer-outline-a3" inkscape:label="Outline — A3 sheet" inkscape:groupmode="layer" fill="none">`,
+                    );
+                    parts.push(
+                        `<rect x="0" y="0" width="${A3W}" height="${A3H}" stroke="#1a1a1a" stroke-width="0.35"/>`,
+                    );
+                    parts.push(`</g>`);
+
+                    parts.push(
+                        `<g id="layer-outline-export" inkscape:label="Outline — export" inkscape:groupmode="layer" fill="none">`,
+                    );
+                    if (!isA3) {
+                        parts.push(
+                            `<rect x="${innerX.toFixed(2)}" y="${innerY.toFixed(2)}" width="${innerW}" height="${innerH}" stroke="#1a1a1a" stroke-width="0.3"/>`,
+                        );
+                    } else {
+                        parts.push(
+                            `<rect x="${innerX.toFixed(2)}" y="${innerY.toFixed(2)}" width="${innerW.toFixed(2)}" height="${innerH.toFixed(2)}" stroke="#1a1a1a" stroke-width="0.3" stroke-dasharray="2 1.5"/>`,
+                        );
+                    }
+                    parts.push(`</g>`);
+
+                    parts.push(
+                        `<g id="layer-hatch" inkscape:label="Hatch" inkscape:groupmode="layer">`,
+                    );
+                    parts.push(
+                        `<g transform="translate(${tx.toFixed(4)},${ty.toFixed(4)}) scale(${scale1.toFixed(8)})">`,
+                    );
+                    parts.push(`<g ${hatchGAttrs}>`);
+                    let n = 0;
+                    forEachHatchLineSegment(
+                        snap.labels,
+                        snap.means,
+                        snap.labelCounts,
+                        snap.sFit,
+                        snap.ox,
+                        snap.oy,
+                        (a, b) => {
+                            n++;
+                            parts.push(
+                                `<line x1="${a[0].toFixed(3)}" y1="${a[1].toFixed(3)}" x2="${b[0].toFixed(3)}" y2="${b[1].toFixed(3)}"/>`,
+                            );
+                        },
+                        snap.styleEma,
+                    );
+                    parts.push(`</g></g></g>`);
+
+                    const textSa = `stroke="${strokeHex}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="0.22"`;
+                    const capSizeMm = 2.75;
+                    const maxCapW = innerW - 6;
+                    const capLines = captionLinesFromText(
+                        captionText || "",
+                        maxCapW,
+                        capSizeMm,
+                        font,
+                    );
+                    parts.push(
+                        `<g id="layer-caption" inkscape:label="Caption" inkscape:groupmode="layer">`,
+                    );
+                    if (font) {
+                        const bandTop = innerY + innerH - capBandH;
+                        const lineStep = capSizeMm * 1.38;
+                        const nonEmpty = capLines.filter((l) => l.trim()).length;
+                        const totalTextH = Math.max(1, nonEmpty) * lineStep;
+                        let yCursor =
+                            bandTop +
+                            (capBandH - totalTextH) / 2 +
+                            capSizeMm * 0.85;
+                        for (const line of capLines) {
+                            const t = line.trim();
+                            if (!t) {
+                                yCursor += lineStep * 0.35;
+                                continue;
+                            }
+                            const { width } = renderHersheyText(
+                                t,
+                                0,
+                                0,
+                                capSizeMm,
+                                font,
+                                textSa,
+                                maxCapW,
+                            );
+                            const x0 = innerX + (innerW - width) / 2;
+                            const { paths } = renderHersheyText(
+                                t,
+                                x0,
+                                yCursor,
+                                capSizeMm,
+                                font,
+                                textSa,
+                                maxCapW,
+                            );
+                            parts.push(paths);
+                            yCursor += lineStep;
+                        }
+                    }
+                    parts.push(`</g>`);
+
+                    parts.push(`</svg>`);
+                    return { svg: parts.join("\n"), lineCount: n };
+                }
+
                 function buildAndDraw() {
+                    fitPreviewToStage();
                     if (!maskBin || !rgbBuf || !detailBuf) return;
+
+                    const outW = preview.width;
+                    const outH = preview.height;
+                    if (outW < 16 || outH < 16) return;
 
                     computeDetail(detailBuf);
                     const nDet = detailBuf.length;
@@ -1760,6 +2235,37 @@
                     mapSy = sFit;
                     mapOx = ox;
                     mapOy = oy;
+
+                    lastExportSnapshot = {
+                        outW,
+                        outH,
+                        sFit,
+                        ox,
+                        oy,
+                        labels: new Int32Array(labels),
+                        labelCounts: Uint32Array.from(labelCounts),
+                        means: means.map((m) => ({
+                            r: m.r,
+                            g: m.g,
+                            b: m.b,
+                            n: m.n,
+                        })),
+                        styleEma:
+                            styleEmaRgb &&
+                            styleEmaRgb.length === means.length * 3
+                                ? new Float64Array(styleEmaRgb)
+                                : null,
+                    };
+                    lastExportLineCount = countHatchLineSegments(
+                        lastExportSnapshot.labels,
+                        lastExportSnapshot.means,
+                        lastExportSnapshot.labelCounts,
+                        lastExportSnapshot.sFit,
+                        lastExportSnapshot.ox,
+                        lastExportSnapshot.oy,
+                        lastExportSnapshot.styleEma,
+                    );
+                    btnSvg.disabled = lastExportLineCount === 0;
 
                     const view = params.debugView;
                     pctx.fillStyle = "#080808";
@@ -1931,7 +2437,7 @@
                         if (labelCounts[i]) activeCells++;
                     }
                     readoutEl.textContent = [
-                        `Video: ${vw}×${vh} · analysis: ${analysisW}×${analysisH}`,
+                        `Preview: ${preview.width}×${preview.height} · video: ${vw}×${vh} · analysis: ${analysisW}×${analysisH}`,
                         `Foreground px: ${maskN} (${((100 * maskN) / maskBin.length).toFixed(1)}%)`,
                         `Seeds: ${seeds.length} · Voronoi cells (used): ${activeCells}`,
                         `ML throttle: ~${params.targetFps} Hz`,
@@ -2029,6 +2535,11 @@
                             params.debugView = e.target.value;
                             if (maskBin) buildAndDraw();
                         });
+                    document
+                        .getElementById("svgPageSize")
+                        .addEventListener("change", (e) => {
+                            params.svgPageSize = e.target.value;
+                        });
                 }
 
                 btnPause.addEventListener("click", () => {
@@ -2043,6 +2554,47 @@
                     }
                 });
 
+                btnSvg.addEventListener("click", async () => {
+                    if (!lastExportSnapshot || lastExportLineCount === 0)
+                        return;
+                    const key = params.svgPageSize;
+                    const capEl = document.getElementById("svgCaption");
+                    const caption = capEl ? capEl.value : "";
+                    setStatus("Exporting SVG…");
+                    try {
+                        const font = await ensureHersheySansFont();
+                        const { svg } = buildA3LayoutHatchSvg(
+                            lastExportSnapshot,
+                            key,
+                            caption,
+                            font,
+                            "#101010",
+                        );
+                        const blob = new Blob([svg], { type: "image/svg+xml" });
+                        const a = document.createElement("a");
+                        a.href = URL.createObjectURL(blob);
+                        a.download = `adaptive-voronoi-hatch-${key}-${Date.now()}.svg`;
+                        a.click();
+                        setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+                        setStatus(`Live · ~${params.targetFps} FPS ML`);
+                    } catch (e) {
+                        console.error(e);
+                        setStatus("SVG export failed (Hershey font or build error).");
+                    }
+                });
+
+                function onStageResize() {
+                    fitPreviewToStage();
+                    if (maskBin) buildAndDraw();
+                }
+                if (stageEl && typeof ResizeObserver !== "undefined") {
+                    new ResizeObserver(onStageResize).observe(stageEl);
+                }
+                window.addEventListener("load", () => {
+                    onStageResize();
+                    ensureHersheySansFont().catch(() => {});
+                });
+
                 bindControls();
 
                 window.setup = function setup() {
@@ -2050,6 +2602,13 @@
                     captureVideo = createCapture(VIDEO, () => {
                         captureVideo.size(320, 240);
                         captureVideo.hide();
+                        const vel = captureVideo.elt;
+                        if (vel) {
+                            vel.addEventListener("loadeddata", () => {
+                                fitPreviewToStage();
+                                if (maskBin) buildAndDraw();
+                            });
+                        }
                         setStatus("Loading BodyPix…");
                         bodyPixModel = ml5.bodyPix(
                             {
