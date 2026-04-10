@@ -667,16 +667,16 @@
                 }
 
                 /**
-                 * backgroundMask: bright = background, person darker.
-                 * personMask (if used): bright = person.
-                 * Higher threshold → tighter silhouette.
+                 * ml5 BodyPix: backgroundMask = seg * video (person bright);
+                 * personMask = (1 - seg) * video (person dark).
+                 * Higher threshold → tighter silhouette on the person.
                  */
                 function fillMaskFromImageData(img, thr, source) {
                     resizeAnalysis();
                     const sw = img.width;
                     const sh = img.height;
                     const data = img.data;
-                    const isPerson = source === "person";
+                    const isPersonMask = source === "person";
                     const cutBg = Math.max(0, Math.min(255, 255 * (1 - thr)));
                     const cutFg = Math.max(0, Math.min(255, thr * 255));
                     let i = 0;
@@ -685,9 +685,12 @@
                         for (let x = 0; x < analysisW; x++) {
                             const sx = Math.min(sw - 1, ((x + 0.5) / analysisW) * sw) | 0;
                             const ix = (sy * sw + sx) << 2;
-                            const g = data[ix];
-                            maskBin[i++] =
-                                isPerson ? (g >= cutFg ? 1 : 0) : g <= cutBg ? 1 : 0;
+                            const lum =
+                                (data[ix] + data[ix + 1] + data[ix + 2]) / 3;
+                            const isFg = isPersonMask
+                                ? lum <= cutBg
+                                : lum >= cutFg;
+                            maskBin[i++] = isFg ? 1 : 0;
                         }
                     }
                 }

@@ -1,0 +1,2074 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <!-- tool-meta: {"name":"Webcam adaptive Voronoi hatch","slug":"webcam-adaptive-voronoi-hatch","description":"Webcam → ml5 BodyPix foreground → detail-weighted Voronoi → per-cell hatching from local color. ~8 FPS ML budget, debug pipeline + tunables.","tags":["webcam","ml5","p5","body-pix","voronoi","hatching","generative"]} -->
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Webcam adaptive Voronoi hatch</title>
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500&display=swap");
+
+            :root {
+                --bg: #0c0c0c;
+                --panel: #131313;
+                --border: #2a2a2a;
+                --text: #ddd;
+                --muted: #7a7a7a;
+                --accent: #7dd3fc;
+                --accent2: #c4f07a;
+                --mono: "IBM Plex Mono", monospace;
+            }
+
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                font-family: var(--mono);
+                font-size: 12px;
+                background: var(--bg);
+                color: var(--text);
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            header {
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 10px 16px;
+                border-bottom: 1px solid var(--border);
+                background: var(--panel);
+            }
+
+            .logo {
+                font-size: 10px;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+                color: var(--accent2);
+                font-weight: 500;
+                white-space: nowrap;
+            }
+
+            .tagline {
+                color: var(--muted);
+                font-size: 11px;
+                max-width: 58ch;
+            }
+
+            .status {
+                margin-left: auto;
+                font-size: 11px;
+                color: var(--accent);
+                white-space: nowrap;
+            }
+
+            .layout {
+                flex: 1;
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) 340px;
+                min-height: 0;
+            }
+
+            .stage {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 14px;
+                background: #070707;
+            }
+
+            #preview {
+                max-width: 100%;
+                max-height: calc(100vh - 52px);
+                background: #000;
+                box-shadow: 0 0 0 1px var(--border);
+            }
+
+            aside {
+                border-left: 1px solid var(--border);
+                background: var(--panel);
+                overflow: auto;
+                padding: 12px 14px 20px;
+            }
+
+            h2 {
+                font-size: 10px;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                color: var(--muted);
+                margin: 14px 0 8px;
+            }
+
+            h2:first-child {
+                margin-top: 0;
+            }
+
+            label.row {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                gap: 8px;
+                align-items: center;
+                margin-bottom: 8px;
+            }
+
+            label.row span {
+                color: var(--muted);
+            }
+
+            label.row .val {
+                color: var(--accent);
+                font-variant-numeric: tabular-nums;
+                min-width: 3.2ch;
+                text-align: right;
+            }
+
+            input[type="range"] {
+                width: 100%;
+                grid-column: 1 / -1;
+                accent-color: var(--accent2);
+            }
+
+            select {
+                width: 100%;
+                margin-bottom: 10px;
+                background: #1a1a1a;
+                color: var(--text);
+                border: 1px solid var(--border);
+                padding: 6px 8px;
+                font-family: inherit;
+                font-size: 12px;
+            }
+
+            .btn-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 12px;
+            }
+
+            button {
+                font-family: inherit;
+                font-size: 11px;
+                padding: 8px 12px;
+                border: 1px solid var(--border);
+                background: #1e1e1e;
+                color: var(--text);
+                cursor: pointer;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+
+            button.primary {
+                border-color: var(--accent2);
+                color: var(--accent2);
+            }
+
+            button:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+            }
+
+            .hint {
+                margin-top: 12px;
+                font-size: 10px;
+                line-height: 1.5;
+                color: var(--muted);
+            }
+
+            #p5-hidden {
+                position: absolute;
+                width: 0;
+                height: 0;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+            }
+
+            .readout {
+                font-size: 10px;
+                line-height: 1.45;
+                margin-top: 10px;
+                padding: 10px;
+                background: #0f0f0f;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                color: var(--muted);
+                white-space: pre-wrap;
+                word-break: break-word;
+                max-height: 200px;
+                overflow: auto;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <span class="logo">Adaptive Voronoi hatch</span>
+            <span class="tagline"
+                >Foreground (ml5 BodyPix) → detail map → Voronoi cell count from
+                local detail → hatching angle/spacing from mean cell
+                colour.</span
+            >
+            <span class="status" id="status">Starting…</span>
+        </header>
+        <div class="layout">
+            <div class="stage">
+                <canvas id="preview" width="720" height="720"></canvas>
+            </div>
+            <aside>
+                <h2>Debug view</h2>
+                <select id="debugView">
+                    <option value="pipeline">Pipeline (numbered)</option>
+                    <option value="final" selected>Final hatch</option>
+                    <option value="rgb">RGB (analysis)</option>
+                    <option value="mask">Mask</option>
+                    <option value="detail">Detail heatmap</option>
+                    <option value="seeds">Seeds on RGB</option>
+                    <option value="regions">Voronoi regions</option>
+                    <option value="hatchOnly">Hatch only (clip)</option>
+                </select>
+
+                <h2>Performance</h2>
+                <label class="row"
+                    ><span>ML target FPS</span><span class="val" id="v-fps"
+                        >8</span
+                    >
+                    <input
+                        type="range"
+                        id="targetFps"
+                        min="4"
+                        max="15"
+                        step="1"
+                        value="8"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Analysis width (px)</span
+                    ><span class="val" id="v-aw">96</span>
+                    <input
+                        type="range"
+                        id="analysisW"
+                        min="48"
+                        max="140"
+                        step="8"
+                        value="96"
+                    />
+                </label>
+
+                <h2>Segmentation</h2>
+                <label class="row"
+                    ><span>Mask threshold</span
+                    ><span class="val" id="v-thresh">0.65</span>
+                    <input
+                        type="range"
+                        id="thresh"
+                        min="0.35"
+                        max="0.92"
+                        step="0.01"
+                        value="0.65"
+                    />
+                </label>
+
+                <h2>Voronoi / detail</h2>
+                <label class="row"
+                    ><span>Target seeds</span
+                    ><span class="val" id="v-seeds">72</span>
+                    <input
+                        type="range"
+                        id="seedCount"
+                        min="20"
+                        max="140"
+                        step="2"
+                        value="72"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Stratification grid</span
+                    ><span class="val" id="v-grid">20</span>
+                    <input
+                        type="range"
+                        id="gridDiv"
+                        min="10"
+                        max="36"
+                        step="1"
+                        value="20"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Detail weight (γ)</span
+                    ><span class="val" id="v-gamma">1.15</span>
+                    <input
+                        type="range"
+                        id="detailGamma"
+                        min="0.35"
+                        max="2.8"
+                        step="0.05"
+                        value="1.15"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Detail gain</span
+                    ><span class="val" id="v-dgain">1.4</span>
+                    <input
+                        type="range"
+                        id="detailGain"
+                        min="0.4"
+                        max="3.5"
+                        step="0.05"
+                        value="1.4"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Detail smooth (px)</span
+                    ><span class="val" id="v-smooth">1</span>
+                    <input
+                        type="range"
+                        id="detailSmooth"
+                        min="0"
+                        max="4"
+                        step="1"
+                        value="1"
+                    />
+                </label>
+
+                <h2>Hatching</h2>
+                <label class="row"
+                    ><span>Base spacing</span
+                    ><span class="val" id="v-bspace">4</span>
+                    <input
+                        type="range"
+                        id="baseSpacing"
+                        min="2"
+                        max="12"
+                        step="0.25"
+                        value="4"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Luminance → density</span
+                    ><span class="val" id="v-lum">0.75</span>
+                    <input
+                        type="range"
+                        id="lumDensityAmt"
+                        min="0"
+                        max="1.35"
+                        step="0.05"
+                        value="0.75"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Hue → angle (×°)</span
+                    ><span class="val" id="v-hue">1.1</span>
+                    <input
+                        type="range"
+                        id="hueAngleScale"
+                        min="0"
+                        max="2.5"
+                        step="0.05"
+                        value="1.1"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Angle offset (°)</span
+                    ><span class="val" id="v-angoff">12</span>
+                    <input
+                        type="range"
+                        id="angleOffset"
+                        min="-45"
+                        max="45"
+                        step="1"
+                        value="12"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Saturation → angle</span
+                    ><span class="val" id="v-satang">22</span>
+                    <input
+                        type="range"
+                        id="satAngleAmt"
+                        min="0"
+                        max="55"
+                        step="1"
+                        value="22"
+                    />
+                </label>
+
+                <div class="btn-row">
+                    <button type="button" id="btnPause">Pause camera</button>
+                </div>
+                <p class="hint">
+                    Camera requires HTTPS or localhost. ML runs on a fixed
+                    interval (~target FPS); sliders re-run geometry on the last
+                    frame. “Pipeline” shows steps ①–⑥ (Voronoi + hatch bottom row).
+                </p>
+                <pre class="readout" id="readout"></pre>
+            </aside>
+        </div>
+        <div id="p5-hidden"></div>
+        <script src="https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/ml5@0.12.2/dist/ml5.min.js"></script>
+        <script>
+            (function () {
+                "use strict";
+
+                const statusEl = document.getElementById("status");
+                const readoutEl = document.getElementById("readout");
+                const preview = document.getElementById("preview");
+                const pctx = preview.getContext("2d", { alpha: false });
+                const btnPause = document.getElementById("btnPause");
+
+                const params = {
+                    debugView: "final",
+                    targetFps: 8,
+                    analysisW: 96,
+                    thresh: 0.65,
+                    seedCount: 72,
+                    gridDiv: 20,
+                    detailGamma: 1.15,
+                    detailGain: 1.4,
+                    detailSmooth: 1,
+                    baseSpacing: 4,
+                    lumDensityAmt: 0.75,
+                    hueAngleScale: 1.1,
+                    angleOffset: 12,
+                    satAngleAmt: 22,
+                };
+
+                let bodyPixModel = null;
+                let captureVideo = null;
+                let paused = false;
+                let lastSegMs = 0;
+                let maskBin = null;
+                let rgbBuf = null;
+                let detailBuf = null;
+                let analysisW = 96;
+                let analysisH = 72;
+                let seeds = [];
+                let labels = null;
+                /** Low-pass detail for seed weights (reduces allocation flicker). */
+                let stratDetailSmooth = null;
+                /** RGB EMA per seed index for stable hatch angle/spacing. */
+                let styleEmaRgb = null;
+
+                const outW = 720;
+                const outH = 720;
+                let mapSx = 1;
+                let mapSy = 1;
+                let mapOx = 0;
+                let mapOy = 0;
+
+                function setStatus(t) {
+                    statusEl.textContent = t;
+                }
+
+                function captureFramePixelSize() {
+                    if (!captureVideo) return [320, 240];
+                    const el = captureVideo.elt;
+                    if (el && el.videoWidth > 0 && el.videoHeight > 0) {
+                        return [el.videoWidth, el.videoHeight];
+                    }
+                    return [
+                        captureVideo.width || 320,
+                        captureVideo.height || 240,
+                    ];
+                }
+
+                function ratioHeight(w, vw, vh) {
+                    return Math.max(8, Math.round((w * vh) / vw));
+                }
+
+                function resizeAnalysis() {
+                    if (!captureVideo || !captureVideo.width) return;
+                    analysisW = params.analysisW;
+                    const [vw, vh] = captureFramePixelSize();
+                    analysisH = ratioHeight(analysisW, vw, vh);
+                    const n = analysisW * analysisH;
+                    if (!maskBin || maskBin.length !== n) {
+                        maskBin = new Uint8Array(n);
+                        rgbBuf = new Uint8Array(n * 3);
+                        detailBuf = new Float32Array(n);
+                    }
+                }
+
+                /**
+                 * ml5 BodyPix segmentInternal (see ml5 src/BodyPix):
+                 * backgroundMask = segmentation * video  → person pixels are bright.
+                 * personMask     = (1 - seg) * video    → person pixels are dark.
+                 * Threshold on luminance so any channel bias is reduced.
+                 */
+                function fillMaskFromImageData(img, thr, source) {
+                    resizeAnalysis();
+                    const sw = img.width;
+                    const sh = img.height;
+                    const data = img.data;
+                    const isPersonMask = source === "person";
+                    const cutBg = Math.max(0, Math.min(255, 255 * (1 - thr)));
+                    const cutFg = Math.max(0, Math.min(255, thr * 255));
+                    let i = 0;
+                    for (let y = 0; y < analysisH; y++) {
+                        const sy = Math.min(
+                            sh - 1,
+                            ((y + 0.5) / analysisH) * sh | 0,
+                        );
+                        for (let x = 0; x < analysisW; x++) {
+                            const sx = Math.min(
+                                sw - 1,
+                                ((x + 0.5) / analysisW) * sw | 0,
+                            );
+                            const ix = (sy * sw + sx) << 2;
+                            const lum =
+                                (data[ix] + data[ix + 1] + data[ix + 2]) / 3;
+                            const isFg = isPersonMask
+                                ? lum <= cutBg
+                                : lum >= cutFg;
+                            maskBin[i++] = isFg ? 1 : 0;
+                        }
+                    }
+                }
+
+                /** RGB from video element (same mapping as mask). */
+                function fillRgbFromVideo() {
+                    const el = captureVideo && captureVideo.elt;
+                    if (!el || !rgbBuf) return;
+                    const sw = el.videoWidth || el.width;
+                    const sh = el.videoHeight || el.height;
+                    if (sw < 2 || sh < 2) return;
+                    let t = 0;
+                    const tmp = document.createElement("canvas");
+                    tmp.width = sw;
+                    tmp.height = sh;
+                    const tctx = tmp.getContext("2d", { alpha: false });
+                    tctx.drawImage(el, 0, 0);
+                    const snap = tctx.getImageData(0, 0, sw, sh);
+                    const data = snap.data;
+                    for (let y = 0; y < analysisH; y++) {
+                        const sy = Math.min(
+                            sh - 1,
+                            ((y + 0.5) / analysisH) * sh | 0,
+                        );
+                        for (let x = 0; x < analysisW; x++) {
+                            const sx = Math.min(
+                                sw - 1,
+                                ((x + 0.5) / analysisW) * sw | 0,
+                            );
+                            const ix = (sy * sw + sx) << 2;
+                            rgbBuf[t++] = data[ix];
+                            rgbBuf[t++] = data[ix + 1];
+                            rgbBuf[t++] = data[ix + 2];
+                        }
+                    }
+                }
+
+                function maskAt(x, y) {
+                    if (x < 0 || y < 0 || x >= analysisW || y >= analysisH)
+                        return 0;
+                    return maskBin[y * analysisW + x];
+                }
+
+                function rgbAt(px, py, out) {
+                    const i = (py * analysisW + px) * 3;
+                    out[0] = rgbBuf[i];
+                    out[1] = rgbBuf[i + 1];
+                    out[2] = rgbBuf[i + 2];
+                }
+
+                function luminance(r, g, b) {
+                    return (
+                        0.2126 * (r / 255) +
+                        0.7152 * (g / 255) +
+                        0.0722 * (b / 255)
+                    );
+                }
+
+                /** @param {Float32Array} dst */
+                function computeDetail(dst) {
+                    dst.fill(0);
+                    const w = analysisW;
+                    const h = analysisH;
+                    const L = new Float32Array(w * h);
+                    const c = [0, 0, 0];
+                    for (let y = 0; y < h; y++) {
+                        for (let x = 0; x < w; x++) {
+                            if (!maskAt(x, y)) {
+                                L[y * w + x] = 0;
+                                continue;
+                            }
+                            rgbAt(x, y, c);
+                            L[y * w + x] = luminance(c[0], c[1], c[2]);
+                        }
+                    }
+
+                    const blurPass = params.detailSmooth | 0;
+                    let src = L;
+                    let tmp = new Float32Array(w * h);
+                    for (let pass = 0; pass < blurPass; pass++) {
+                        boxBlurFloat(src, tmp, w, h, maskBin, 1);
+                        const swap = src;
+                        src = tmp;
+                        tmp = swap;
+                    }
+
+                    const gxK = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
+                    const gyK = [-1, -2, -1, 0, 0, 0, 1, 2, 1];
+                    let dmax = 1e-6;
+                    for (let y = 1; y < h - 1; y++) {
+                        for (let x = 1; x < w - 1; x++) {
+                            const p = y * w + x;
+                            if (!maskBin[p]) {
+                                dst[p] = 0;
+                                continue;
+                            }
+                            let gx = 0;
+                            let gy = 0;
+                            let ki = 0;
+                            for (let j = -1; j <= 1; j++) {
+                                for (let i = -1; i <= 1; i++) {
+                                    const v = src[p + j * w + i];
+                                    gx += v * gxK[ki];
+                                    gy += v * gyK[ki];
+                                    ki++;
+                                }
+                            }
+                            const mag = Math.hypot(gx, gy) * params.detailGain;
+                            dst[p] = mag;
+                            dmax = Math.max(dmax, mag);
+                        }
+                    }
+                    const inv = 1 / dmax;
+                    for (let y = 1; y < h - 1; y++) {
+                        for (let x = 1; x < w - 1; x++) {
+                            const p = y * w + x;
+                            if (!maskBin[p]) dst[p] = 0;
+                            else dst[p] = Math.min(1, dst[p] * inv);
+                        }
+                    }
+                }
+
+                function boxBlurFloat(src, dst, w, h, mask, r) {
+                    const tmp = new Float32Array(w * h);
+                    for (let y = 0; y < h; y++) {
+                        for (let x = 0; x < w; x++) {
+                            let s = 0;
+                            let n = 0;
+                            for (let dx = -r; dx <= r; dx++) {
+                                const xx = x + dx;
+                                if (xx < 0 || xx >= w) continue;
+                                const p = y * w + xx;
+                                if (!mask[p]) continue;
+                                s += src[p];
+                                n++;
+                            }
+                            tmp[y * w + x] = n > 0 ? s / n : 0;
+                        }
+                    }
+                    for (let y = 0; y < h; y++) {
+                        for (let x = 0; x < w; x++) {
+                            let s = 0;
+                            let n = 0;
+                            for (let dy = -r; dy <= r; dy++) {
+                                const yy = y + dy;
+                                if (yy < 0 || yy >= h) continue;
+                                const p = yy * w + x;
+                                if (!mask[p]) continue;
+                                s += tmp[p];
+                                n++;
+                            }
+                            dst[y * w + x] = n > 0 ? s / n : 0;
+                        }
+                    }
+                }
+
+                function hslFromRgb(r, g, b) {
+                    r /= 255;
+                    g /= 255;
+                    b /= 255;
+                    const mx = Math.max(r, g, b);
+                    const mn = Math.min(r, g, b);
+                    let h = 0;
+                    let s = 0;
+                    const l = (mx + mn) / 2;
+                    const d = mx - mn;
+                    if (d > 1e-6) {
+                        s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+                        switch (mx) {
+                            case r:
+                                h = (g - b) / d + (g < b ? 6 : 0);
+                                break;
+                            case g:
+                                h = (b - r) / d + 2;
+                                break;
+                            default:
+                                h = (r - g) / d + 4;
+                        }
+                        h /= 6;
+                    }
+                    return { h, s, l };
+                }
+
+                /**
+                 * Largest-remainder allocation of integers summing to target.
+                 */
+                function allocateByWeight(weights, target) {
+                    const n = weights.length;
+                    const out = new Array(n).fill(0);
+                    if (target <= 0 || n === 0) return out;
+                    let tw = 0;
+                    for (let i = 0; i < n; i++) tw += weights[i];
+                    if (tw <= 0) return out;
+                    const raw = new Float64Array(n);
+                    const frac = new Float64Array(n);
+                    let assigned = 0;
+                    for (let i = 0; i < n; i++) {
+                        raw[i] = (weights[i] / tw) * target;
+                        out[i] = Math.floor(raw[i]);
+                        frac[i] = raw[i] - out[i];
+                        assigned += out[i];
+                    }
+                    let rem = target - assigned;
+                    const order = Array.from({ length: n }, (_, i) => i);
+                    order.sort((a, b) => {
+                        const d = frac[b] - frac[a];
+                        if (d !== 0) return d > 0 ? 1 : -1;
+                        return a - b;
+                    });
+                    for (let k = 0; k < rem; k++) out[order[k % n]]++;
+                    return out;
+                }
+
+                /** Unit interval quasi-random in [0,1); stable for fixed index. */
+                function halton(i, base) {
+                    let f = 1;
+                    let r = 0;
+                    let k = Math.max(1, i | 0);
+                    while (k > 0) {
+                        f /= base;
+                        r += f * (k % base);
+                        k = (k / base) | 0;
+                    }
+                    return r;
+                }
+
+                /** t-th masked pixel centre in cell (row-major); deterministic. */
+                function tThMaskedInCell(cell, t) {
+                    const tm = Math.max(0, t | 0);
+                    let seen = 0;
+                    for (let y = cell.y0; y < cell.y1; y++) {
+                        for (let x = cell.x0; x < cell.x1; x++) {
+                            if (!maskAt(x, y)) continue;
+                            if (seen === tm) return [x + 0.5, y + 0.5];
+                            seen++;
+                        }
+                    }
+                    return null;
+                }
+
+                function buildAdaptiveSeeds(stratDetail) {
+                    const sd = stratDetail || detailBuf;
+                    const gw = Math.max(
+                        4,
+                        Math.min(60, Math.round(params.gridDiv)),
+                    );
+                    const gh = Math.max(
+                        4,
+                        Math.min(60, Math.round((gw * analysisH) / analysisW)),
+                    );
+                    const cells = [];
+                    const weights = [];
+                    for (let j = 0; j < gh; j++) {
+                        const y0 = Math.floor((j / gh) * analysisH);
+                        const y1 = Math.floor(((j + 1) / gh) * analysisH);
+                        for (let i = 0; i < gw; i++) {
+                            const x0 = Math.floor((i / gw) * analysisW);
+                            const x1 = Math.floor(((i + 1) / gw) * analysisW);
+                            let cnt = 0;
+                            let dsum = 0;
+                            for (let y = y0; y < y1; y++) {
+                                for (let x = x0; x < x1; x++) {
+                                    const p = y * analysisW + x;
+                                    if (!maskBin[p]) continue;
+                                    cnt++;
+                                    dsum += sd[p];
+                                }
+                            }
+                            if (cnt < 3) continue;
+                            const avgD = dsum / cnt;
+                            const wgt =
+                                cnt *
+                                Math.pow(
+                                    Math.max(0.02, avgD),
+                                    params.detailGamma,
+                                );
+                            cells.push({
+                                x0,
+                                x1,
+                                y0,
+                                y1,
+                                cnt,
+                                avgD,
+                            });
+                            weights.push(wgt);
+                        }
+                    }
+                    const target = Math.max(
+                        8,
+                        Math.min(200, Math.round(params.seedCount)),
+                    );
+                    const alloc = allocateByWeight(weights, target);
+                    const out = [];
+                    for (let c = 0; c < cells.length; c++) {
+                        const k = alloc[c];
+                        const cell = cells[c];
+                        const cw = Math.max(1e-6, cell.x1 - cell.x0);
+                        const ch = Math.max(1e-6, cell.y1 - cell.y0);
+                        const cnt = Math.max(1, cell.cnt | 0);
+                        for (let t = 0; t < k; t++) {
+                            const haltonIdx = (c + 1) * 9973 + (t + 1) * 199;
+                            const u = halton(haltonIdx, 2);
+                            const v = halton(haltonIdx, 3);
+                            let x = cell.x0 + u * cw;
+                            let y = cell.y0 + v * ch;
+                            const xi = Math.min(
+                                analysisW - 1,
+                                Math.max(0, x | 0),
+                            );
+                            const yi = Math.min(
+                                analysisH - 1,
+                                Math.max(0, y | 0),
+                            );
+                            if (!maskAt(xi, yi)) {
+                                const p = tThMaskedInCell(cell, t % cnt);
+                                if (!p) continue;
+                                x = p[0];
+                                y = p[1];
+                            }
+                            out.push([x, y]);
+                        }
+                    }
+                    if (out.length < 6) {
+                        let hop = Math.max(
+                            1,
+                            ((analysisW * analysisH) / (target * 8)) | 0,
+                        );
+                        let acc = 0;
+                        for (
+                            let y = 0;
+                            y < analysisH && out.length < target;
+                            y++
+                        ) {
+                            for (
+                                let x = 0;
+                                x < analysisW && out.length < target;
+                                x++
+                            ) {
+                                if (!maskAt(x, y)) continue;
+                                if ((acc++ % hop) !== 0) continue;
+                                out.push([x + 0.5, y + 0.5]);
+                            }
+                        }
+                    }
+                    return out;
+                }
+
+                function labelMapVoronoi(seedList) {
+                    const labs = new Int32Array(analysisW * analysisH);
+                    labs.fill(-1);
+                    if (seedList.length === 0) return labs;
+                    for (let y = 0; y < analysisH; y++) {
+                        const fy = y + 0.5;
+                        for (let x = 0; x < analysisW; x++) {
+                            if (!maskAt(x, y)) continue;
+                            const fx = x + 0.5;
+                            let best = 0;
+                            let bestD = Infinity;
+                            for (let s = 0; s < seedList.length; s++) {
+                                const dx = seedList[s][0] - fx;
+                                const dy = seedList[s][1] - fy;
+                                const d = dx * dx + dy * dy;
+                                if (d < bestD) {
+                                    bestD = d;
+                                    best = s;
+                                }
+                            }
+                            labs[y * analysisW + x] = best;
+                        }
+                    }
+                    return labs;
+                }
+
+                function clipLineToRect(px, py, dx, dy, x0, y0, x1, y1) {
+                    const eps = 1e-9;
+                    let t0 = -Infinity;
+                    let t1 = Infinity;
+                    const clips = [
+                        [1, 0, -x0],
+                        [-1, 0, x1],
+                        [0, 1, -y0],
+                        [0, -1, y1],
+                    ];
+                    for (let i = 0; i < clips.length; i++) {
+                        const clip = clips[i];
+                        const nx = clip[0];
+                        const ny = clip[1];
+                        const b = clip[2];
+                        const denom = nx * dx + ny * dy;
+                        const num = nx * px + ny * py + b;
+                        if (Math.abs(denom) < eps) {
+                            if (num < 0) return null;
+                            continue;
+                        }
+                        const t = -num / denom;
+                        if (denom > 0) t0 = Math.max(t0, t);
+                        else t1 = Math.min(t1, t);
+                    }
+                    if (t0 > t1) return null;
+                    return [
+                        [px + t0 * dx, py + t0 * dy],
+                        [px + t1 * dx, py + t1 * dy],
+                    ];
+                }
+
+                function sampleOk(px, py, lid, labs) {
+                    const ax = ((px - mapOx) / mapSx) | 0;
+                    const ay = ((py - mapOy) / mapSy) | 0;
+                    if (
+                        ax < 0 ||
+                        ay < 0 ||
+                        ax >= analysisW ||
+                        ay >= analysisH
+                    )
+                        return false;
+                    return (
+                        labs[ay * analysisW + ax] === lid && maskAt(ax, ay)
+                    );
+                }
+
+                function segmentSubparts(x0, y0, x1, y1, lid, labs, steps) {
+                    const out = [];
+                    let runStart = -1;
+                    for (let i = 0; i <= steps; i++) {
+                        const t = i / steps;
+                        const px = x0 + t * (x1 - x0);
+                        const py = y0 + t * (y1 - y0);
+                        const ok = sampleOk(px, py, lid, labs);
+                        if (ok && runStart < 0) runStart = t;
+                        if (!ok && runStart >= 0) {
+                            out.push([runStart, (i - 1) / steps]);
+                            runStart = -1;
+                        }
+                    }
+                    if (runStart >= 0) out.push([runStart, 1]);
+                    return out.map(([ts, te]) => [
+                        [x0 + ts * (x1 - x0), y0 + ts * (y1 - y0)],
+                        [x0 + te * (x1 - x0), y0 + te * (y1 - y0)],
+                    ]);
+                }
+
+                function regionHatchLines(
+                    lid,
+                    labs,
+                    angleDeg,
+                    spacing,
+                    sFit,
+                    ox,
+                    oy,
+                ) {
+                    const lines = [];
+                    let minX = Infinity;
+                    let minY = Infinity;
+                    let maxX = -Infinity;
+                    let maxY = -Infinity;
+                    for (let y = 0; y < analysisH; y++) {
+                        for (let x = 0; x < analysisW; x++) {
+                            const ix = y * analysisW + x;
+                            if (labs[ix] !== lid || !maskAt(x, y)) continue;
+                            minX = Math.min(minX, x);
+                            minY = Math.min(minY, y);
+                            maxX = Math.max(maxX, x + 1);
+                            maxY = Math.max(maxY, y + 1);
+                        }
+                    }
+                    if (minX === Infinity) return lines;
+
+                    const ax0 = ox + minX * sFit;
+                    const ay0 = oy + minY * sFit;
+                    const ax1 = ox + maxX * sFit;
+                    const ay1 = oy + maxY * sFit;
+                    const pad = spacing * 4;
+                    const rx0 = ax0 - pad;
+                    const ry0 = ay0 - pad;
+                    const rx1 = ax1 + pad;
+                    const ry1 = ay1 + pad;
+
+                    const rad = (angleDeg * Math.PI) / 180;
+                    const ux = Math.cos(rad);
+                    const uy = Math.sin(rad);
+                    const nx = -uy;
+                    const ny = ux;
+                    const cx = (rx0 + rx1) / 2;
+                    const cy = (ry0 + ry1) / 2;
+                    const corners = [
+                        [rx0, ry0],
+                        [rx1, ry0],
+                        [rx1, ry1],
+                        [rx0, ry1],
+                    ];
+                    let vmin = Infinity;
+                    let vmax = -Infinity;
+                    for (let i = 0; i < corners.length; i++) {
+                        const px = corners[i][0];
+                        const py = corners[i][1];
+                        const v = (px - cx) * nx + (py - cy) * ny;
+                        vmin = Math.min(vmin, v);
+                        vmax = Math.max(vmax, v);
+                    }
+                    for (
+                        let v = Math.floor(vmin / spacing) * spacing;
+                        v <= vmax;
+                        v += spacing
+                    ) {
+                        const bx = cx + nx * v;
+                        const by = cy + ny * v;
+                        const clip = clipLineToRect(
+                            bx,
+                            by,
+                            ux,
+                            uy,
+                            rx0,
+                            ry0,
+                            rx1,
+                            ry1,
+                        );
+                        if (!clip) continue;
+                        const p0 = clip[0];
+                        const p1 = clip[1];
+                        const chord = Math.hypot(
+                            p1[0] - p0[0],
+                            p1[1] - p0[1],
+                        );
+                        const steps = Math.min(
+                            256,
+                            Math.max(24, chord | 0),
+                        );
+                        const subs = segmentSubparts(
+                            p0[0],
+                            p0[1],
+                            p1[0],
+                            p1[1],
+                            lid,
+                            labs,
+                            steps,
+                        );
+                        for (let si = 0; si < subs.length; si++) {
+                            lines.push(subs[si]);
+                        }
+                    }
+                    return lines;
+                }
+
+                /** When parallel hatch misses (thin cells / numerical chops), still draw through the masked centroid. */
+                function fallbackHatchLinesForLabel(
+                    lid,
+                    labs,
+                    angleDeg,
+                    spacing,
+                    sFit,
+                    ox,
+                    oy,
+                ) {
+                    let cx = 0;
+                    let cy = 0;
+                    let n = 0;
+                    for (let y = 0; y < analysisH; y++) {
+                        for (let x = 0; x < analysisW; x++) {
+                            const ix = y * analysisW + x;
+                            if (labs[ix] !== lid || !maskAt(x, y))
+                                continue;
+                            cx += x + 0.5;
+                            cy += y + 0.5;
+                            n++;
+                        }
+                    }
+                    if (n === 0) return [];
+                    cx /= n;
+                    cy /= n;
+                    const rad = (angleDeg * Math.PI) / 180;
+                    const ux = Math.cos(rad);
+                    const uy = Math.sin(rad);
+                    const half = Math.max(spacing * sFit * 8, sFit * 14);
+                    const px0 = ox + cx * sFit - ux * half;
+                    const py0 = oy + cy * sFit - uy * half;
+                    const px1 = ox + cx * sFit + ux * half;
+                    const py1 = oy + cy * sFit + uy * half;
+                    const steps = Math.min(256, Math.max(48, (2 * half) | 0));
+                    return segmentSubparts(
+                        px0,
+                        py0,
+                        px1,
+                        py1,
+                        lid,
+                        labs,
+                        steps,
+                    );
+                }
+
+                /** d3-contour marching-squares cases. */
+                const MS_CASES = [
+                    [],
+                    [
+                        [
+                            [1.0, 1.5],
+                            [0.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.5, 1.0],
+                            [1.0, 1.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.5, 1.0],
+                            [0.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 0.5],
+                            [1.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 1.5],
+                            [0.5, 1.0],
+                        ],
+                        [
+                            [1.0, 0.5],
+                            [1.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 0.5],
+                            [1.0, 1.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 0.5],
+                            [0.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [0.5, 1.0],
+                            [1.0, 0.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 1.5],
+                            [1.0, 0.5],
+                        ],
+                        [
+                            [0.5, 1.0],
+                            [1.0, 0.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [0.5, 1.0],
+                            [1.0, 0.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.5, 1.0],
+                            [1.0, 0.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [0.5, 1.0],
+                            [1.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 1.5],
+                            [1.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [0.5, 1.0],
+                            [1.0, 1.5],
+                        ],
+                    ],
+                    [],
+                ];
+
+                function ringAreaAbs(pts) {
+                    if (pts.length < 3) return 0;
+                    let a = 0;
+                    const n = pts.length;
+                    for (let i = 0; i < n; i++) {
+                        const j = (i + 1) % n;
+                        a += pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1];
+                    }
+                    return Math.abs(a * 0.5);
+                }
+
+                function marchingSquaresOuterPolyline(maskArr, dx, dy) {
+                    const above = (i) =>
+                        i >= 0 &&
+                        i < maskArr.length &&
+                        (maskArr[i] | 0) >= 1;
+                    const rings = [];
+                    const fragmentByStart = Object.create(null);
+                    const fragmentByEnd = Object.create(null);
+
+                    function pointIndex(p) {
+                        return p[0] * 2 + p[1] * (dx + 1) * 4;
+                    }
+
+                    function stitch(line, x, y) {
+                        const start = [line[0][0] + x, line[0][1] + y];
+                        const end = [line[1][0] + x, line[1][1] + y];
+                        const startIndex = pointIndex(start);
+                        const endIndex = pointIndex(end);
+                        let f;
+                        let g;
+                        if ((f = fragmentByEnd[startIndex])) {
+                            if ((g = fragmentByStart[endIndex])) {
+                                delete fragmentByEnd[f.end];
+                                delete fragmentByStart[g.start];
+                                if (f === g) {
+                                    f.ring.push(end);
+                                    rings.push(f.ring);
+                                } else {
+                                    fragmentByStart[f.start] = fragmentByEnd[
+                                        g.end
+                                    ] = {
+                                        start: f.start,
+                                        end: g.end,
+                                        ring: f.ring.concat(g.ring),
+                                    };
+                                }
+                            } else {
+                                delete fragmentByEnd[f.end];
+                                f.ring.push(end);
+                                fragmentByEnd[(f.end = endIndex)] = f;
+                            }
+                        } else if ((f = fragmentByStart[endIndex])) {
+                            if ((g = fragmentByEnd[startIndex])) {
+                                delete fragmentByStart[f.start];
+                                delete fragmentByEnd[g.end];
+                                if (f === g) {
+                                    f.ring.push(end);
+                                    rings.push(f.ring);
+                                } else {
+                                    fragmentByStart[g.start] = fragmentByEnd[
+                                        f.end
+                                    ] = {
+                                        start: g.start,
+                                        end: f.end,
+                                        ring: g.ring.concat(f.ring),
+                                    };
+                                }
+                            } else {
+                                delete fragmentByStart[f.start];
+                                f.ring.unshift(start);
+                                fragmentByStart[(f.start = startIndex)] = f;
+                            }
+                        } else {
+                            fragmentByStart[startIndex] = fragmentByEnd[
+                                endIndex
+                            ] = {
+                                start: startIndex,
+                                end: endIndex,
+                                ring: [start, end],
+                            };
+                        }
+                    }
+
+                    let x;
+                    let y;
+                    let t0;
+                    let t1;
+                    let t2;
+                    let t3;
+                    x = -1;
+                    y = -1;
+                    t1 = above(0);
+                    MS_CASES[t1 << 1].forEach((ln) => stitch(ln, x, y));
+                    while (++x < dx - 1) {
+                        t0 = t1;
+                        t1 = above(x + 1);
+                        MS_CASES[t0 | (t1 << 1)].forEach((ln) =>
+                            stitch(ln, x, y),
+                        );
+                    }
+                    MS_CASES[t1 << 0].forEach((ln) => stitch(ln, x, y));
+
+                    while (++y < dy - 1) {
+                        x = -1;
+                        t1 = above(y * dx + dx);
+                        t2 = above(y * dx);
+                        MS_CASES[(t1 << 1) | (t2 << 2)].forEach((ln) =>
+                            stitch(ln, x, y),
+                        );
+                        while (++x < dx - 1) {
+                            t0 = t1;
+                            t1 = above(y * dx + dx + x + 1);
+                            t3 = t2;
+                            t2 = above(y * dx + x + 1);
+                            MS_CASES[
+                                t0 | (t1 << 1) | (t2 << 2) | (t3 << 3)
+                            ].forEach((ln) => stitch(ln, x, y));
+                        }
+                        MS_CASES[t1 | (t2 << 3)].forEach((ln) =>
+                            stitch(ln, x, y),
+                        );
+                    }
+
+                    x = -1;
+                    t2 = maskArr[y * dx] >= 1;
+                    MS_CASES[t2 << 2].forEach((ln) => stitch(ln, x, y));
+                    while (++x < dx - 1) {
+                        t3 = t2;
+                        t2 = above(y * dx + x + 1);
+                        MS_CASES[(t2 << 2) | (t3 << 3)].forEach((ln) =>
+                            stitch(ln, x, y),
+                        );
+                    }
+                    MS_CASES[t2 << 3].forEach((ln) => stitch(ln, x, y));
+
+                    if (rings.length === 0) return [];
+                    let best = rings[0];
+                    let bestA = ringAreaAbs(best);
+                    for (let ri = 1; ri < rings.length; ri++) {
+                        const ar = ringAreaAbs(rings[ri]);
+                        if (ar > bestA) {
+                            bestA = ar;
+                            best = rings[ri];
+                        }
+                    }
+                    return best;
+                }
+
+                function contourPolylineFromMask() {
+                    return marchingSquaresOuterPolyline(
+                        maskBin,
+                        analysisW,
+                        analysisH,
+                    );
+                }
+
+                function collectCellMeans(labs) {
+                    const nseed = seeds.length;
+                    const rs = new Float64Array(nseed);
+                    const gs = new Float64Array(nseed);
+                    const bs = new Float64Array(nseed);
+                    const cnt = new Uint32Array(nseed);
+                    const c = [0, 0, 0];
+                    for (let y = 0; y < analysisH; y++) {
+                        for (let x = 0; x < analysisW; x++) {
+                            const p = y * analysisW + x;
+                            if (!maskBin[p]) continue;
+                            const lid = labs[p];
+                            if (lid < 0 || lid >= nseed) continue;
+                            rgbAt(x, y, c);
+                            rs[lid] += c[0];
+                            gs[lid] += c[1];
+                            bs[lid] += c[2];
+                            cnt[lid]++;
+                        }
+                    }
+                    const means = [];
+                    const labelCounts = new Uint32Array(nseed);
+                    for (let i = 0; i < nseed; i++) {
+                        labelCounts[i] = cnt[i];
+                        if (cnt[i] > 0) {
+                            means.push({
+                                r: rs[i] / cnt[i],
+                                g: gs[i] / cnt[i],
+                                b: bs[i] / cnt[i],
+                                n: cnt[i],
+                            });
+                            continue;
+                        }
+                        const s = seeds[i];
+                        const xi = Math.min(
+                            analysisW - 1,
+                            Math.max(0, s[0] | 0),
+                        );
+                        const yi = Math.min(
+                            analysisH - 1,
+                            Math.max(0, s[1] | 0),
+                        );
+                        if (maskAt(xi, yi)) {
+                            rgbAt(xi, yi, c);
+                            means.push({
+                                r: c[0],
+                                g: c[1],
+                                b: c[2],
+                                n: 0,
+                            });
+                        } else {
+                            means.push({
+                                r: 128,
+                                g: 128,
+                                b: 128,
+                                n: 0,
+                            });
+                        }
+                    }
+                    return { means, labelCounts };
+                }
+
+                function cellStyleFromMean(m) {
+                    const hsl = hslFromRgb(m.r, m.g, m.b);
+                    let angle =
+                        params.angleOffset +
+                        hsl.h * 360 * params.hueAngleScale +
+                        hsl.s * params.satAngleAmt;
+                    const lum = hsl.l;
+                    const dens = Math.max(
+                        0.25,
+                        1 - lum * params.lumDensityAmt,
+                    );
+                    let spacing = Math.max(
+                        1.25,
+                        params.baseSpacing * dens,
+                    );
+                    angle = Math.round(angle * 2) / 2;
+                    spacing = Math.round(spacing * 4) / 4;
+                    return { angle, spacing };
+                }
+
+                function updateStyleEma(means) {
+                    const n = means.length;
+                    if (n === 0) return;
+                    const na = n * 3;
+                    if (!styleEmaRgb || styleEmaRgb.length !== na) {
+                        styleEmaRgb = new Float64Array(na);
+                        for (let i = 0; i < n; i++) {
+                            styleEmaRgb[i * 3] = means[i].r;
+                            styleEmaRgb[i * 3 + 1] = means[i].g;
+                            styleEmaRgb[i * 3 + 2] = means[i].b;
+                        }
+                        return;
+                    }
+                    const a = 0.16;
+                    const om = 1 - a;
+                    for (let i = 0; i < n; i++) {
+                        const b = i * 3;
+                        styleEmaRgb[b] = om * styleEmaRgb[b] + a * means[i].r;
+                        styleEmaRgb[b + 1] =
+                            om * styleEmaRgb[b + 1] + a * means[i].g;
+                        styleEmaRgb[b + 2] =
+                            om * styleEmaRgb[b + 2] + a * means[i].b;
+                    }
+                }
+
+                function meanForStyle(lid, means) {
+                    const b = lid * 3;
+                    return {
+                        r: styleEmaRgb[b],
+                        g: styleEmaRgb[b + 1],
+                        b: styleEmaRgb[b + 2],
+                        n: means[lid].n,
+                    };
+                }
+
+                function drawRgbPreview(px, py, pw, ph) {
+                    const id = pctx.createImageData(analysisW, analysisH);
+                    const d = id.data;
+                    let j = 0;
+                    let t = 0;
+                    for (let y = 0; y < analysisH; y++) {
+                        for (let x = 0; x < analysisW; x++) {
+                            d[j++] = rgbBuf[t++];
+                            d[j++] = rgbBuf[t++];
+                            d[j++] = rgbBuf[t++];
+                            d[j++] = 255;
+                        }
+                    }
+                    const c = document.createElement("canvas");
+                    c.width = analysisW;
+                    c.height = analysisH;
+                    c.getContext("2d").putImageData(id, 0, 0);
+                    pctx.imageSmoothingEnabled = false;
+                    pctx.drawImage(c, px, py, pw, ph);
+                }
+
+                function drawDetailHeat(px, py, pw, ph) {
+                    const id = pctx.createImageData(analysisW, analysisH);
+                    const d = id.data;
+                    let j = 0;
+                    for (let y = 0; y < analysisH; y++) {
+                        for (let x = 0; x < analysisW; x++) {
+                            const v = detailBuf[y * analysisW + x];
+                            const hue = (1 - v) * 0.72;
+                            const rgb = hslToRgb(hue, 0.95, 0.35 + v * 0.45);
+                            d[j++] = rgb[0];
+                            d[j++] = rgb[1];
+                            d[j++] = rgb[2];
+                            d[j++] = maskAt(x, y) ? 255 : 40;
+                        }
+                    }
+                    const c = document.createElement("canvas");
+                    c.width = analysisW;
+                    c.height = analysisH;
+                    c.getContext("2d").putImageData(id, 0, 0);
+                    pctx.imageSmoothingEnabled = false;
+                    pctx.drawImage(c, px, py, pw, ph);
+                }
+
+                function hslToRgb(h, s, l) {
+                    let r;
+                    let g;
+                    let b;
+                    if (s === 0) {
+                        r = g = b = l;
+                    } else {
+                        const hue2rgb = (p, q, t) => {
+                            if (t < 0) t += 1;
+                            if (t > 1) t -= 1;
+                            if (t < 1 / 6) return p + (q - p) * 6 * t;
+                            if (t < 1 / 2) return q;
+                            if (t < 2 / 3)
+                                return p + (q - p) * (2 / 3 - t) * 6;
+                            return p;
+                        };
+                        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                        const p = 2 * l - q;
+                        r = hue2rgb(p, q, h + 1 / 3);
+                        g = hue2rgb(p, q, h);
+                        b = hue2rgb(p, q, h - 1 / 3);
+                    }
+                    return [
+                        Math.round(r * 255),
+                        Math.round(g * 255),
+                        Math.round(b * 255),
+                    ];
+                }
+
+                function drawMaskGray(px, py, pw, ph) {
+                    const id = pctx.createImageData(analysisW, analysisH);
+                    const d = id.data;
+                    let j = 0;
+                    for (let i = 0; i < maskBin.length; i++) {
+                        const v = maskBin[i] ? 255 : 0;
+                        d[j++] = v;
+                        d[j++] = v;
+                        d[j++] = v;
+                        d[j++] = 255;
+                    }
+                    const c = document.createElement("canvas");
+                    c.width = analysisW;
+                    c.height = analysisH;
+                    c.getContext("2d").putImageData(id, 0, 0);
+                    pctx.imageSmoothingEnabled = false;
+                    pctx.drawImage(c, px, py, pw, ph);
+                }
+
+                function drawVoronoiRegionsPanel(px, py, pw, ph, labs) {
+                    drawRegions(px, py, pw, ph, labs);
+                    const sx = pw / analysisW;
+                    const sy = ph / analysisH;
+                    pctx.save();
+                    pctx.strokeStyle = "rgba(255,255,255,0.42)";
+                    pctx.lineWidth = Math.max(0.75, Math.min(sx, sy) * 0.35);
+                    pctx.beginPath();
+                    const w = analysisW;
+                    const h = analysisH;
+                    for (let y = 0; y < h; y++) {
+                        for (let x = 0; x < w; x++) {
+                            const p = y * w + x;
+                            if (!maskBin[p]) continue;
+                            const L = labs[p];
+                            if (
+                                x + 1 < w &&
+                                maskBin[p + 1] &&
+                                labs[p + 1] !== L
+                            ) {
+                                const x0 = px + (x + 1) * sx;
+                                const y0 = py + y * sy;
+                                pctx.moveTo(x0, y0);
+                                pctx.lineTo(x0, y0 + sy);
+                            }
+                            if (
+                                y + 1 < h &&
+                                maskBin[p + w] &&
+                                labs[p + w] !== L
+                            ) {
+                                const x0 = px + x * sx;
+                                const y0 = py + (y + 1) * sy;
+                                pctx.moveTo(x0, y0);
+                                pctx.lineTo(x0 + sx, y0);
+                            }
+                        }
+                    }
+                    pctx.stroke();
+                    pctx.restore();
+                }
+
+                function drawRegions(px, py, pw, ph, labs) {
+                    const id = pctx.createImageData(analysisW, analysisH);
+                    const d = id.data;
+                    const rng = (s) => {
+                        let x = Math.sin(s * 12.9898) * 43758.5453;
+                        return x - Math.floor(x);
+                    };
+                    let j = 0;
+                    for (let y = 0; y < analysisH; y++) {
+                        for (let x = 0; x < analysisW; x++) {
+                            const p = y * analysisW + x;
+                            if (!maskBin[p]) {
+                                d[j++] = 20;
+                                d[j++] = 20;
+                                d[j++] = 22;
+                                d[j++] = 255;
+                                continue;
+                            }
+                            const lid = labs[p];
+                            const rh = rng(lid * 3.1 + 1);
+                            const rgb = hslToRgb(rh, 0.55, 0.5);
+                            d[j++] = rgb[0];
+                            d[j++] = rgb[1];
+                            d[j++] = rgb[2];
+                            d[j++] = 255;
+                        }
+                    }
+                    const c = document.createElement("canvas");
+                    c.width = analysisW;
+                    c.height = analysisH;
+                    c.getContext("2d").putImageData(id, 0, 0);
+                    pctx.imageSmoothingEnabled = false;
+                    pctx.drawImage(c, px, py, pw, ph);
+                }
+
+                function drawSeedsOverlay(px, py, pw, ph, scaleX, scaleY) {
+                    drawRgbPreview(px, py, pw, ph);
+                    pctx.save();
+                    pctx.strokeStyle = "rgba(255,255,80,0.9)";
+                    pctx.lineWidth = Math.max(1, (pw / analysisW) * 1.2);
+                    for (let i = 0; i < seeds.length; i++) {
+                        const sx = px + seeds[i][0] * scaleX;
+                        const sy = py + seeds[i][1] * scaleY;
+                        pctx.beginPath();
+                        pctx.arc(sx, sy, 2.2 * (pw / analysisW), 0, Math.PI * 2);
+                        pctx.stroke();
+                    }
+                    pctx.restore();
+                }
+
+                function drawHatchFinal(
+                    labs,
+                    means,
+                    labelCounts,
+                    sFit,
+                    ox,
+                    oy,
+                    strokeRgb,
+                ) {
+                    pctx.save();
+                    pctx.strokeStyle = strokeRgb || "#e8e8e8";
+                    pctx.lineWidth = Math.max(0.35, sFit * 0.08);
+                    pctx.lineCap = "round";
+                    const nseed = seeds.length;
+                    for (let lid = 0; lid < nseed; lid++) {
+                        if (!labelCounts[lid]) continue;
+                        const m =
+                            styleEmaRgb &&
+                            styleEmaRgb.length === nseed * 3
+                                ? meanForStyle(lid, means)
+                                : means[lid];
+                        const st = cellStyleFromMean(m);
+                        let lines = regionHatchLines(
+                            lid,
+                            labs,
+                            st.angle,
+                            st.spacing,
+                            sFit,
+                            ox,
+                            oy,
+                        );
+                        if (lines.length === 0) {
+                            lines = fallbackHatchLinesForLabel(
+                                lid,
+                                labs,
+                                st.angle,
+                                st.spacing,
+                                sFit,
+                                ox,
+                                oy,
+                            );
+                        }
+                        for (let li = 0; li < lines.length; li++) {
+                            const seg = lines[li];
+                            const a = seg[0];
+                            const b = seg[1];
+                            pctx.beginPath();
+                            pctx.moveTo(a[0], a[1]);
+                            pctx.lineTo(b[0], b[1]);
+                            pctx.stroke();
+                        }
+                    }
+                    pctx.restore();
+                }
+
+                function buildAndDraw() {
+                    if (!maskBin || !rgbBuf || !detailBuf) return;
+
+                    computeDetail(detailBuf);
+                    const nDet = detailBuf.length;
+                    if (
+                        !stratDetailSmooth ||
+                        stratDetailSmooth.length !== nDet
+                    ) {
+                        stratDetailSmooth = new Float32Array(detailBuf);
+                    } else {
+                        const beta = 0.17;
+                        const om = 1 - beta;
+                        for (let i = 0; i < nDet; i++) {
+                            stratDetailSmooth[i] =
+                                om * stratDetailSmooth[i] +
+                                beta * detailBuf[i];
+                        }
+                    }
+                    seeds = buildAdaptiveSeeds(stratDetailSmooth);
+                    labels = labelMapVoronoi(seeds);
+                    const { means, labelCounts } = collectCellMeans(labels);
+                    updateStyleEma(means);
+
+                    const bw = Math.max(1, analysisW);
+                    const bh = Math.max(1, analysisH);
+                    const sFit = Math.min(outW / bw, outH / bh);
+                    const ox = (outW - bw * sFit) / 2;
+                    const oy = (outH - bh * sFit) / 2;
+                    mapSx = sFit;
+                    mapSy = sFit;
+                    mapOx = ox;
+                    mapOy = oy;
+
+                    const view = params.debugView;
+                    pctx.fillStyle = "#080808";
+                    pctx.fillRect(0, 0, outW, outH);
+
+                    if (view === "pipeline") {
+                        const gap = 10;
+                        const cellH = (outH - 4 * gap) / 3;
+                        const cellW = (outW - 3 * gap) / 2;
+                        const scaleX = cellW / analysisW;
+                        const scaleY = cellH / analysisH;
+                        pctx.fillStyle = "#fff";
+                        pctx.font = "11px IBM Plex Mono, monospace";
+                        const places = [
+                            [gap, gap],
+                            [gap * 2 + cellW, gap],
+                            [gap, gap * 2 + cellH],
+                            [gap * 2 + cellW, gap * 2 + cellH],
+                        ];
+                        drawRgbPreview(
+                            places[0][0],
+                            places[0][1],
+                            cellW,
+                            cellH,
+                        );
+                        pctx.fillText(
+                            "① RGB",
+                            places[0][0] + 6,
+                            places[0][1] + 16,
+                        );
+                        drawMaskGray(
+                            places[1][0],
+                            places[1][1],
+                            cellW,
+                            cellH,
+                        );
+                        pctx.fillText(
+                            "② Mask",
+                            places[1][0] + 6,
+                            places[1][1] + 16,
+                        );
+                        drawDetailHeat(
+                            places[2][0],
+                            places[2][1],
+                            cellW,
+                            cellH,
+                        );
+                        pctx.fillText(
+                            "③ Detail",
+                            places[2][0] + 6,
+                            places[2][1] + 16,
+                        );
+                        drawSeedsOverlay(
+                            places[3][0],
+                            places[3][1],
+                            cellW,
+                            cellH,
+                            scaleX,
+                            scaleY,
+                        );
+                        pctx.fillText(
+                            "④ Seeds",
+                            places[3][0] + 6,
+                            places[3][1] + 16,
+                        );
+                        const row3y = gap * 3 + cellH * 2;
+                        const vorX = gap;
+                        const vorY = row3y;
+                        drawVoronoiRegionsPanel(
+                            vorX,
+                            vorY,
+                            cellW,
+                            cellH,
+                            labels,
+                        );
+                        pctx.fillStyle = "#fff";
+                        pctx.fillText("⑤ Voronoi", vorX + 6, vorY + 16);
+                        const hatchX = gap * 2 + cellW;
+                        const hatchY = row3y;
+                        const sFit6 = Math.min(cellW / bw, cellH / bh);
+                        const hx = hatchX + (cellW - bw * sFit6) / 2;
+                        const hy = hatchY + (cellH - bh * sFit6) / 2;
+                        pctx.fillStyle = "#0a0a0a";
+                        pctx.fillRect(hatchX, hatchY, cellW, cellH);
+                        const pmx = mapSx;
+                        const pmy = mapSy;
+                        const pox = mapOx;
+                        const poy = mapOy;
+                        mapSx = mapSy = sFit6;
+                        mapOx = hx;
+                        mapOy = hy;
+                        drawHatchFinal(
+                            labels,
+                            means,
+                            labelCounts,
+                            sFit6,
+                            hx,
+                            hy,
+                            "#dcdcdc",
+                        );
+                        mapSx = pmx;
+                        mapSy = pmy;
+                        mapOx = pox;
+                        mapOy = poy;
+                        pctx.fillStyle = "#fff";
+                        pctx.fillText(
+                            "⑥ Hatch",
+                            hatchX + 6,
+                            hatchY + 16,
+                        );
+                    } else if (view === "rgb") {
+                        drawRgbPreview(ox, oy, bw * sFit, bh * sFit);
+                    } else if (view === "mask") {
+                        drawMaskGray(ox, oy, bw * sFit, bh * sFit);
+                    } else if (view === "detail") {
+                        drawDetailHeat(ox, oy, bw * sFit, bh * sFit);
+                    } else if (view === "seeds") {
+                        drawSeedsOverlay(
+                            ox,
+                            oy,
+                            bw * sFit,
+                            bh * sFit,
+                            sFit,
+                            sFit,
+                        );
+                    } else if (view === "regions") {
+                        drawVoronoiRegionsPanel(
+                            ox,
+                            oy,
+                            bw * sFit,
+                            bh * sFit,
+                            labels,
+                        );
+                    } else if (view === "hatchOnly") {
+                        pctx.fillStyle = "#000";
+                        pctx.fillRect(ox, oy, bw * sFit, bh * sFit);
+                        drawHatchFinal(
+                            labels,
+                            means,
+                            labelCounts,
+                            sFit,
+                            ox,
+                            oy,
+                            "#f5f5f5",
+                        );
+                    } else {
+                        pctx.fillStyle = "#0c0c0c";
+                        pctx.fillRect(ox, oy, bw * sFit, bh * sFit);
+                        drawHatchFinal(
+                            labels,
+                            means,
+                            labelCounts,
+                            sFit,
+                            ox,
+                            oy,
+                            "#e6e6e6",
+                        );
+                    }
+
+                    updateReadout(labelCounts);
+                }
+
+                function updateReadout(labelCounts) {
+                    const [vw, vh] = captureFramePixelSize();
+                    let maskN = 0;
+                    for (let i = 0; i < maskBin.length; i++) maskN += maskBin[i];
+                    let activeCells = 0;
+                    for (let i = 0; i < labelCounts.length; i++) {
+                        if (labelCounts[i]) activeCells++;
+                    }
+                    readoutEl.textContent = [
+                        `Video: ${vw}×${vh} · analysis: ${analysisW}×${analysisH}`,
+                        `Foreground px: ${maskN} (${((100 * maskN) / maskBin.length).toFixed(1)}%)`,
+                        `Seeds: ${seeds.length} · Voronoi cells (used): ${activeCells}`,
+                        `ML throttle: ~${params.targetFps} Hz`,
+                    ].join("\n");
+                }
+
+                function applyMaskFromResult(result) {
+                    const bmBg = result && result.backgroundMask;
+                    const bmPe = result && result.personMask;
+                    const bm = bmBg || bmPe;
+                    if (!bm) {
+                        setStatus("No mask");
+                        return false;
+                    }
+                    const maskSource = bmBg ? "background" : "person";
+                    let canvas = bm.canvas;
+                    if (!canvas && bm.elt) canvas = bm.elt;
+                    if (!(canvas && canvas.getContext)) {
+                        setStatus("Bad mask");
+                        return false;
+                    }
+                    const ctx = canvas.getContext("2d");
+                    const idata = ctx.getImageData(
+                        0,
+                        0,
+                        canvas.width,
+                        canvas.height,
+                    );
+                    fillMaskFromImageData(
+                        idata,
+                        params.thresh,
+                        maskSource,
+                    );
+                    fillRgbFromVideo();
+                    return true;
+                }
+
+                function segmentLoop(ts) {
+                    requestAnimationFrame(segmentLoop);
+                    if (!bodyPixModel || !captureVideo || paused) return;
+                    const minDt = 1000 / Math.max(2, params.targetFps);
+                    if (ts - lastSegMs < minDt) return;
+                    lastSegMs = ts;
+
+                    bodyPixModel.segment(captureVideo, (err, result) => {
+                        if (err) {
+                            console.error(err);
+                            setStatus("Segment error");
+                            return;
+                        }
+                        if (applyMaskFromResult(result)) {
+                            buildAndDraw();
+                            setStatus(`Live · ~${params.targetFps} FPS ML`);
+                        }
+                    });
+                }
+
+                function bindControls() {
+                    const bindRange = (id, key, vid, parse) => {
+                        const el = document.getElementById(id);
+                        const vEl = document.getElementById("v-" + vid);
+                        el.addEventListener("input", () => {
+                            params[key] = parse(el.value);
+                            if (vEl) vEl.textContent = String(params[key]);
+                            if (maskBin) buildAndDraw();
+                        });
+                    };
+                    bindRange("targetFps", "targetFps", "fps", Number);
+                    bindRange("analysisW", "analysisW", "aw", Number);
+                    bindRange("thresh", "thresh", "thresh", Number);
+                    bindRange("seedCount", "seedCount", "seeds", Number);
+                    bindRange("gridDiv", "gridDiv", "grid", Number);
+                    bindRange("detailGamma", "detailGamma", "gamma", Number);
+                    bindRange("detailGain", "detailGain", "dgain", Number);
+                    bindRange("detailSmooth", "detailSmooth", "smooth", Number);
+                    bindRange("baseSpacing", "baseSpacing", "bspace", Number);
+                    bindRange(
+                        "lumDensityAmt",
+                        "lumDensityAmt",
+                        "lum",
+                        Number,
+                    );
+                    bindRange(
+                        "hueAngleScale",
+                        "hueAngleScale",
+                        "hue",
+                        Number,
+                    );
+                    bindRange("angleOffset", "angleOffset", "angoff", Number);
+                    bindRange("satAngleAmt", "satAngleAmt", "satang", Number);
+
+                    document
+                        .getElementById("debugView")
+                        .addEventListener("change", (e) => {
+                            params.debugView = e.target.value;
+                            if (maskBin) buildAndDraw();
+                        });
+                }
+
+                btnPause.addEventListener("click", () => {
+                    paused = !paused;
+                    btnPause.textContent = paused
+                        ? "Resume camera"
+                        : "Pause camera";
+                    const el = captureVideo && captureVideo.elt;
+                    if (el) {
+                        if (paused) el.pause();
+                        else el.play();
+                    }
+                });
+
+                bindControls();
+
+                window.setup = function setup() {
+                    createCanvas(320, 240).parent("p5-hidden");
+                    captureVideo = createCapture(VIDEO, () => {
+                        captureVideo.size(320, 240);
+                        captureVideo.hide();
+                        setStatus("Loading BodyPix…");
+                        bodyPixModel = ml5.bodyPix(
+                            {
+                                architecture: "MobileNetV1",
+                                outputStride: 16,
+                                multiplier: 0.75,
+                                quantBytes: 2,
+                            },
+                            () => {
+                                setStatus("Model ready");
+                                requestAnimationFrame(segmentLoop);
+                            },
+                        );
+                    });
+                    noLoop();
+                };
+
+                window.draw = function draw() {};
+            })();
+        </script>
+    </body>
+</html>
