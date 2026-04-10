@@ -788,6 +788,8 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     shadingAngleAmt: APP_SETTINGS.defaults.shadingAngleAmt,
                     shadingDensityAmt: APP_SETTINGS.defaults.shadingDensityAmt,
                 };
+                /** Mirror webcam processing/output so it behaves like a mirror. */
+                const MIRROR_CAMERA = true;
 
                 let foregroundSegmenter = null;
                 let segBusy = false;
@@ -1227,10 +1229,11 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                             ((y + 0.5) / analysisH) * sh | 0,
                         );
                         for (let x = 0; x < analysisW; x++) {
-                            const sx = Math.min(
+                            const sxRaw = Math.min(
                                 sw - 1,
                                 ((x + 0.5) / analysisW) * sw | 0,
                             );
+                            const sx = MIRROR_CAMERA ? sw - 1 - sxRaw : sxRaw;
                             const ix = (sy * sw + sx) << 2;
                             rgbBuf[t++] = data[ix];
                             rgbBuf[t++] = data[ix + 1];
@@ -1419,6 +1422,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                             const dm = await depthEstimator.estimateDepth(el, {
                                 minDepth: 0,
                                 maxDepth: 1,
+                                flipHorizontal: MIRROR_CAMERA,
                             });
                             /** DepthMap.toCanvasImageSource() returns a Promise (tfjs-models API). */
                             const src = await dm.toCanvasImageSource();
@@ -3257,7 +3261,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                             if (!el || el.readyState < 2) return;
                             const segmentations =
                                 await foregroundSegmenter.segmentPeople(el, {
-                                    flipHorizontal: false,
+                                    flipHorizontal: MIRROR_CAMERA,
                                 });
                             if (await applyMaskFromSegmentation(segmentations)) {
                                 buildAndDraw();
