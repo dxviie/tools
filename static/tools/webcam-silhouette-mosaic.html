@@ -1,0 +1,1204 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <!-- tool-meta: {"name":"Webcam Silhouette Mosaic","slug":"webcam-silhouette-mosaic","description":"Webcam + ml5 BodyPix person mask, grid or Voronoi planes, hatch pattern fills, and SVG export for pen plotters.","tags":["plotter","svg","ml5","webcam","body-pix","generative"]} -->
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Webcam Silhouette Mosaic · plotter SVG</title>
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500&display=swap");
+
+            :root {
+                --bg: #0e0e0e;
+                --panel: #141414;
+                --border: #2a2a2a;
+                --text: #d6d6d6;
+                --muted: #777;
+                --accent: #7dd3fc;
+                --accent2: #c8f060;
+                --mono: "IBM Plex Mono", monospace;
+            }
+
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                font-family: var(--mono);
+                font-size: 12px;
+                background: var(--bg);
+                color: var(--text);
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            header {
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                padding: 10px 18px;
+                border-bottom: 1px solid var(--border);
+                background: var(--panel);
+            }
+
+            .logo {
+                font-size: 10px;
+                letter-spacing: 0.18em;
+                text-transform: uppercase;
+                color: var(--accent2);
+                font-weight: 500;
+            }
+
+            .tagline {
+                color: var(--muted);
+                font-size: 11px;
+                max-width: 52ch;
+            }
+
+            .status {
+                margin-left: auto;
+                font-size: 11px;
+                color: var(--accent);
+            }
+
+            .layout {
+                flex: 1;
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) 320px;
+                min-height: 0;
+            }
+
+            .stage {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 16px;
+                background: #090909;
+            }
+
+            #preview {
+                max-width: 100%;
+                max-height: calc(100vh - 52px);
+                background: #000;
+                box-shadow: 0 0 0 1px var(--border);
+            }
+
+            aside {
+                border-left: 1px solid var(--border);
+                background: var(--panel);
+                overflow: auto;
+                padding: 14px 14px 20px;
+            }
+
+            h2 {
+                font-size: 10px;
+                letter-spacing: 0.14em;
+                text-transform: uppercase;
+                color: var(--muted);
+                margin: 16px 0 8px;
+            }
+
+            h2:first-child {
+                margin-top: 0;
+            }
+
+            label.row {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                gap: 8px;
+                align-items: center;
+                margin-bottom: 8px;
+            }
+
+            label.row span {
+                color: var(--muted);
+            }
+
+            label.row .val {
+                color: var(--accent);
+                font-variant-numeric: tabular-nums;
+                min-width: 3ch;
+                text-align: right;
+            }
+
+            input[type="range"] {
+                width: 100%;
+                grid-column: 1 / -1;
+                accent-color: var(--accent2);
+            }
+
+            select {
+                width: 100%;
+                margin-bottom: 10px;
+                background: #1a1a1a;
+                color: var(--text);
+                border: 1px solid var(--border);
+                padding: 6px 8px;
+                font-family: inherit;
+                font-size: 12px;
+            }
+
+            .btn-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 12px;
+            }
+
+            button {
+                font-family: inherit;
+                font-size: 11px;
+                padding: 8px 12px;
+                border: 1px solid var(--border);
+                background: #1e1e1e;
+                color: var(--text);
+                cursor: pointer;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+            }
+
+            button.primary {
+                border-color: var(--accent2);
+                color: var(--accent2);
+            }
+
+            button:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+            }
+
+            .hint {
+                margin-top: 14px;
+                font-size: 10px;
+                line-height: 1.55;
+                color: var(--muted);
+            }
+
+            #p5-hidden {
+                position: absolute;
+                width: 0;
+                height: 0;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <span class="logo">Silhouette Mosaic</span>
+            <span class="tagline"
+                >Webcam → ml5 BodyPix mask → planes → hatch fills →
+                plotter-friendly SVG (see
+                <a
+                    href="https://lostpixels.io/writings/building-interactive-plotter-art"
+                    style="color: var(--accent)"
+                    >Lost Pixels · interactive plotter art</a
+                >).</span
+            >
+            <span class="status" id="status">Starting…</span>
+        </header>
+        <div class="layout">
+            <div class="stage">
+                <canvas id="preview" width="720" height="720"></canvas>
+            </div>
+            <aside>
+                <h2>Segmentation</h2>
+                <label class="row"
+                    ><span>Mask threshold</span><span class="val" id="v-thresh"
+                        >0.65</span
+                    >
+                    <input
+                        type="range"
+                        id="thresh"
+                        min="0.35"
+                        max="0.95"
+                        step="0.01"
+                        value="0.65"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Analysis scale</span
+                    ><span class="val" id="v-aw">96</span>
+                    <input
+                        type="range"
+                        id="analysisW"
+                        min="48"
+                        max="160"
+                        step="8"
+                        value="96"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Process every N frames</span
+                    ><span class="val" id="v-skip">2</span>
+                    <input
+                        type="range"
+                        id="frameSkip"
+                        min="1"
+                        max="8"
+                        step="1"
+                        value="2"
+                    />
+                </label>
+
+                <h2>Planes</h2>
+                <select id="planeMode">
+                    <option value="grid">Rectangular grid</option>
+                    <option value="voronoi">Voronoi (seeds in silhouette)</option>
+                </select>
+                <label class="row"
+                    ><span>Columns / seeds</span
+                    ><span class="val" id="v-cols">14</span>
+                    <input
+                        type="range"
+                        id="cols"
+                        min="4"
+                        max="32"
+                        step="1"
+                        value="14"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Rows</span><span class="val" id="v-rows">18</span>
+                    <input
+                        type="range"
+                        id="rows"
+                        min="4"
+                        max="40"
+                        step="1"
+                        value="18"
+                    />
+                </label>
+
+                <h2>Patterns</h2>
+                <label class="row"
+                    ><span>Hatch spacing (SVG units)</span
+                    ><span class="val" id="v-space">4</span>
+                    <input
+                        type="range"
+                        id="spacing"
+                        min="1.5"
+                        max="10"
+                        step="0.25"
+                        value="4"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Angle spread (°)</span
+                    ><span class="val" id="v-spread">52</span>
+                    <input
+                        type="range"
+                        id="spread"
+                        min="0"
+                        max="90"
+                        step="1"
+                        value="52"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Contour simplify</span
+                    ><span class="val" id="v-eps">1.8</span>
+                    <input
+                        type="range"
+                        id="epsilon"
+                        min="0.2"
+                        max="6"
+                        step="0.1"
+                        value="1.8"
+                    />
+                </label>
+                <label class="row"
+                    ><span>Stroke outline</span
+                    ><span class="val" id="v-outline">0.35</span>
+                    <input
+                        type="range"
+                        id="outline"
+                        min="0"
+                        max="1.2"
+                        step="0.05"
+                        value="0.35"
+                    />
+                </label>
+
+                <div class="btn-row">
+                    <button type="button" class="primary" id="btnSvg" disabled>
+                        Download SVG
+                    </button>
+                    <button type="button" id="btnPause">Pause camera</button>
+                </div>
+                <p class="hint">
+                    Uses ml5 BodyPix (<code>backgroundMask</code> — person is
+                    darker). Camera needs localhost or HTTPS. SVG is black
+                    strokes. Pause stops new frames; sliders still re-render the
+                    last mask.
+                </p>
+            </aside>
+        </div>
+        <div id="p5-hidden"></div>
+
+        <script src="https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/ml5@0.12.2/dist/ml5.min.js"></script>
+        <script>
+            (function () {
+                "use strict";
+
+                /**
+                 * ml5 BodyPix uses p5 helpers (e.g. loadImage) and expects the
+                 * default/global p5 instance. Instance mode + segment(video.elt)
+                 * breaks that — use global setup()/draw() and pass the p5
+                 * capture to segment(), not the raw HTMLVideoElement.
+                 */
+
+                const statusEl = document.getElementById("status");
+                const preview = document.getElementById("preview");
+                const pctx = preview.getContext("2d", { alpha: false });
+                const btnSvg = document.getElementById("btnSvg");
+                const btnPause = document.getElementById("btnPause");
+
+                const params = {
+                    thresh: 0.65,
+                    analysisW: 96,
+                    frameSkip: 2,
+                    planeMode: "grid",
+                    cols: 14,
+                    rows: 18,
+                    spacing: 4,
+                    spread: 52,
+                    epsilon: 1.8,
+                    outline: 0.35,
+                };
+
+                let bodyPixModel = null;
+                let captureVideo = null;
+                let paused = false;
+                let frameCount = 0;
+                let maskBin = null;
+                let analysisW = 96;
+                let analysisH = 96;
+                let lastSvg = "";
+
+                const outW = 720;
+                const outH = 720;
+                let mapSx = 1;
+                let mapSy = 1;
+                let mapOx = 0;
+                let mapOy = 0;
+
+                function setStatus(t) {
+                    statusEl.textContent = t;
+                }
+
+                function bindRanges() {
+                    const rows = [
+                        ["thresh", "thresh", (v) => +v, "thresh"],
+                        ["analysisW", "analysisW", (v) => +v, "aw"],
+                        ["frameSkip", "frameSkip", (v) => +v, "skip"],
+                        ["cols", "cols", (v) => +v, "cols"],
+                        ["rows", "rows", (v) => +v, "rows"],
+                        ["spacing", "spacing", (v) => +v, "space"],
+                        ["spread", "spread", (v) => +v, "spread"],
+                        ["epsilon", "epsilon", (v) => +v, "eps"],
+                        ["outline", "outline", (v) => +v, "outline"],
+                    ];
+                    for (const [id, key, parse, vid] of rows) {
+                        const el = document.getElementById(id);
+                        const vEl = document.getElementById("v-" + vid);
+                        el.addEventListener("input", () => {
+                            params[key] = parse(el.value);
+                            if (vEl) vEl.textContent = String(params[key]);
+                            if (maskBin) buildAndDraw();
+                        });
+                    }
+                    document
+                        .getElementById("planeMode")
+                        .addEventListener("change", (e) => {
+                            params.planeMode = e.target.value;
+                            if (maskBin) buildAndDraw();
+                        });
+                }
+
+                function ratioHeight(w, vw, vh) {
+                    return Math.max(8, Math.round((w * vh) / vw));
+                }
+
+                function resizeAnalysis() {
+                    if (!captureVideo || !captureVideo.width) return;
+                    analysisW = params.analysisW;
+                    analysisH = ratioHeight(
+                        analysisW,
+                        captureVideo.width,
+                        captureVideo.height,
+                    );
+                    const n = analysisW * analysisH;
+                    if (!maskBin || maskBin.length !== n)
+                        maskBin = new Uint8Array(n);
+                }
+
+                /**
+                 * backgroundMask: bright = background, person darker.
+                 * personMask (if used): bright = person.
+                 * Higher threshold → tighter silhouette.
+                 */
+                function fillMaskFromImageData(img, thr, source) {
+                    resizeAnalysis();
+                    const sw = img.width;
+                    const sh = img.height;
+                    const data = img.data;
+                    const isPerson = source === "person";
+                    const cutBg = Math.max(0, Math.min(255, 255 * (1 - thr)));
+                    const cutFg = Math.max(0, Math.min(255, thr * 255));
+                    let i = 0;
+                    for (let y = 0; y < analysisH; y++) {
+                        const sy = Math.min(sh - 1, ((y + 0.5) / analysisH) * sh) | 0;
+                        for (let x = 0; x < analysisW; x++) {
+                            const sx = Math.min(sw - 1, ((x + 0.5) / analysisW) * sw) | 0;
+                            const ix = (sy * sw + sx) << 2;
+                            const g = data[ix];
+                            maskBin[i++] =
+                                isPerson ? (g >= cutFg ? 1 : 0) : g <= cutBg ? 1 : 0;
+                        }
+                    }
+                }
+
+                function maskAt(x, y) {
+                    if (x < 0 || y < 0 || x >= analysisW || y >= analysisH)
+                        return 0;
+                    return maskBin[y * analysisW + x];
+                }
+
+                /** Ordered outer contour in analysis coords (for clip + stroke). */
+                function contourPolylineFromMask() {
+                    return marchingSquaresOuterPolyline(
+                        maskBin,
+                        analysisW,
+                        analysisH,
+                    );
+                }
+
+                function perpDist(p, a, b) {
+                    const dx = b[0] - a[0];
+                    const dy = b[1] - a[1];
+                    if (dx === 0 && dy === 0)
+                        return Math.hypot(p[0] - a[0], p[1] - a[1]);
+                    const t =
+                        ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) /
+                        (dx * dx + dy * dy);
+                    const xx = a[0] + t * dx;
+                    const yy = a[1] + t * dy;
+                    return Math.hypot(p[0] - xx, p[1] - yy);
+                }
+
+                function rdp(points, eps) {
+                    if (points.length < 3) return points.slice();
+                    let dmax = 0;
+                    let idx = 0;
+                    const a = points[0];
+                    const b = points[points.length - 1];
+                    for (let i = 1; i < points.length - 1; i++) {
+                        const d = perpDist(points[i], a, b);
+                        if (d > dmax) {
+                            idx = i;
+                            dmax = d;
+                        }
+                    }
+                    if (dmax > eps) {
+                        const l = rdp(points.slice(0, idx + 1), eps);
+                        const r = rdp(points.slice(idx), eps);
+                        return l.slice(0, -1).concat(r);
+                    }
+                    return [a, b];
+                }
+
+                function svgPathFromPoly(pts, sx, sy, ox, oy) {
+                    if (pts.length < 2) return "";
+                    const p0 = pts[0];
+                    let d = `M ${(ox + p0[0] * sx).toFixed(3)} ${(oy + p0[1] * sy).toFixed(3)}`;
+                    for (let i = 1; i < pts.length; i++) {
+                        const p = pts[i];
+                        d += ` L ${(ox + p[0] * sx).toFixed(3)} ${(oy + p[1] * sy).toFixed(3)}`;
+                    }
+                    return d + " Z";
+                }
+
+                function hash2(i, j) {
+                    let h = i * 374761393 + j * 668265263;
+                    h = (h ^ (h >>> 13)) * 1274126177;
+                    return (h ^ (h >>> 16)) >>> 0;
+                }
+
+                function seededRandom(seed) {
+                    const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+                    return x - Math.floor(x);
+                }
+
+                function seedsInMask(nc, nr) {
+                    const seeds = [];
+                    if (params.planeMode === "grid") {
+                        for (let j = 0; j < nr; j++) {
+                            for (let i = 0; i < nc; i++) {
+                                const cx = ((i + 0.5) / nc) * analysisW;
+                                const cy = ((j + 0.5) / nr) * analysisH;
+                                const xi = Math.min(analysisW - 1, cx | 0);
+                                const yi = Math.min(analysisH - 1, cy | 0);
+                                if (maskAt(xi, yi))
+                                    seeds.push([cx, cy, i, j]);
+                            }
+                        }
+                        return seeds;
+                    }
+                    const target = Math.max(8, Math.min(400, nc * nr));
+                    let tries = 0;
+                    while (seeds.length < target && tries < target * 50) {
+                        tries++;
+                        const x = seededRandom(tries) * analysisW;
+                        const y = seededRandom(tries + 777) * analysisH;
+                        const xi = Math.min(analysisW - 1, x | 0);
+                        const yi = Math.min(analysisH - 1, y | 0);
+                        if (maskAt(xi, yi)) seeds.push([x, y, seeds.length, 0]);
+                    }
+                    return seeds;
+                }
+
+                function labelMapGrid(nc, nr) {
+                    const labs = new Int32Array(analysisW * analysisH);
+                    labs.fill(-1);
+                    for (let y = 0; y < analysisH; y++) {
+                        for (let x = 0; x < analysisW; x++) {
+                            if (!maskAt(x, y)) continue;
+                            const i = Math.min(nc - 1, ((x + 0.5) / analysisW) * nc | 0);
+                            const j = Math.min(nr - 1, ((y + 0.5) / analysisH) * nr | 0);
+                            labs[y * analysisW + x] = j * nc + i;
+                        }
+                    }
+                    return labs;
+                }
+
+                function labelMapVoronoi(seeds) {
+                    const labs = new Int32Array(analysisW * analysisH);
+                    labs.fill(-1);
+                    if (seeds.length === 0) return labs;
+                    for (let y = 0; y < analysisH; y++) {
+                        const fy = y + 0.5;
+                        for (let x = 0; x < analysisW; x++) {
+                            if (!maskAt(x, y)) continue;
+                            const fx = x + 0.5;
+                            let best = 0;
+                            let bestD = Infinity;
+                            for (let s = 0; s < seeds.length; s++) {
+                                const dx = seeds[s][0] - fx;
+                                const dy = seeds[s][1] - fy;
+                                const d = dx * dx + dy * dy;
+                                if (d < bestD) {
+                                    bestD = d;
+                                    best = s;
+                                }
+                            }
+                            labs[y * analysisW + x] = best;
+                        }
+                    }
+                    return labs;
+                }
+
+                /**
+                 * Infinite line (px,py) + t*(dx,dy), |dir|=1, clipped to [x0,x1]×[y0,y1].
+                 * Inside each half-plane: n·P + b >= 0. Parallel to edge: reject only if strictly outside.
+                 */
+                function clipLineToRect(px, py, dx, dy, x0, y0, x1, y1) {
+                    const eps = 1e-9;
+                    let t0 = -Infinity;
+                    let t1 = Infinity;
+                    const clips = [
+                        [1, 0, -x0],
+                        [-1, 0, x1],
+                        [0, 1, -y0],
+                        [0, -1, y1],
+                    ];
+                    for (const [nx, ny, b] of clips) {
+                        const denom = nx * dx + ny * dy;
+                        const num = nx * px + ny * py + b;
+                        if (Math.abs(denom) < eps) {
+                            if (num < 0) return null;
+                            continue;
+                        }
+                        const t = -num / denom;
+                        if (denom > 0) t0 = Math.max(t0, t);
+                        else t1 = Math.min(t1, t);
+                    }
+                    if (t0 > t1) return null;
+                    return [
+                        [px + t0 * dx, py + t0 * dy],
+                        [px + t1 * dx, py + t1 * dy],
+                    ];
+                }
+
+                /** d3-contour marching-squares cases (same geometry as d3-contour). */
+                const MS_CASES = [
+                    [],
+                    [
+                        [
+                            [1.0, 1.5],
+                            [0.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.5, 1.0],
+                            [1.0, 1.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.5, 1.0],
+                            [0.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 0.5],
+                            [1.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 1.5],
+                            [0.5, 1.0],
+                        ],
+                        [
+                            [1.0, 0.5],
+                            [1.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 0.5],
+                            [1.0, 1.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 0.5],
+                            [0.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [0.5, 1.0],
+                            [1.0, 0.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 1.5],
+                            [1.0, 0.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [0.5, 1.0],
+                            [1.0, 0.5],
+                        ],
+                        [
+                            [1.5, 1.0],
+                            [1.0, 1.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.5, 1.0],
+                            [1.0, 0.5],
+                        ],
+                    ],
+                    [
+                        [
+                            [0.5, 1.0],
+                            [1.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [1.0, 1.5],
+                            [1.5, 1.0],
+                        ],
+                    ],
+                    [
+                        [
+                            [0.5, 1.0],
+                            [1.0, 1.5],
+                        ],
+                    ],
+                    [],
+                ];
+
+                function ringAreaAbs(pts) {
+                    if (pts.length < 3) return 0;
+                    let a = 0;
+                    for (let i = 0, n = pts.length; i < n; i++) {
+                        const j = (i + 1) % n;
+                        a += pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1];
+                    }
+                    return Math.abs(a * 0.5);
+                }
+
+                /** One closed ring in mask pixel coordinates; picks largest area (outer body). */
+                function marchingSquaresOuterPolyline(maskArr, dx, dy) {
+                    const above = (i) =>
+                        i >= 0 &&
+                        i < maskArr.length &&
+                        (maskArr[i] | 0) >= 1;
+                    const rings = [];
+                    const fragmentByStart = Object.create(null);
+                    const fragmentByEnd = Object.create(null);
+
+                    function pointIndex(p) {
+                        return p[0] * 2 + p[1] * (dx + 1) * 4;
+                    }
+
+                    function stitch(line, x, y) {
+                        const start = [line[0][0] + x, line[0][1] + y];
+                        const end = [line[1][0] + x, line[1][1] + y];
+                        const startIndex = pointIndex(start);
+                        const endIndex = pointIndex(end);
+                        let f;
+                        let g;
+                        if ((f = fragmentByEnd[startIndex])) {
+                            if ((g = fragmentByStart[endIndex])) {
+                                delete fragmentByEnd[f.end];
+                                delete fragmentByStart[g.start];
+                                if (f === g) {
+                                    f.ring.push(end);
+                                    rings.push(f.ring);
+                                } else {
+                                    fragmentByStart[f.start] = fragmentByEnd[g.end] = {
+                                        start: f.start,
+                                        end: g.end,
+                                        ring: f.ring.concat(g.ring),
+                                    };
+                                }
+                            } else {
+                                delete fragmentByEnd[f.end];
+                                f.ring.push(end);
+                                fragmentByEnd[(f.end = endIndex)] = f;
+                            }
+                        } else if ((f = fragmentByStart[endIndex])) {
+                            if ((g = fragmentByEnd[startIndex])) {
+                                delete fragmentByStart[f.start];
+                                delete fragmentByEnd[g.end];
+                                if (f === g) {
+                                    f.ring.push(end);
+                                    rings.push(f.ring);
+                                } else {
+                                    fragmentByStart[g.start] = fragmentByEnd[f.end] = {
+                                        start: g.start,
+                                        end: f.end,
+                                        ring: g.ring.concat(f.ring),
+                                    };
+                                }
+                            } else {
+                                delete fragmentByStart[f.start];
+                                f.ring.unshift(start);
+                                fragmentByStart[(f.start = startIndex)] = f;
+                            }
+                        } else {
+                            fragmentByStart[startIndex] = fragmentByEnd[endIndex] = {
+                                start: startIndex,
+                                end: endIndex,
+                                ring: [start, end],
+                            };
+                        }
+                    }
+
+                    let x;
+                    let y;
+                    let t0;
+                    let t1;
+                    let t2;
+                    let t3;
+                    x = -1;
+                    y = -1;
+                    t1 = above(0);
+                    MS_CASES[t1 << 1].forEach((ln) => stitch(ln, x, y));
+                    while (++x < dx - 1) {
+                        t0 = t1;
+                        t1 = above(x + 1);
+                        MS_CASES[t0 | (t1 << 1)].forEach((ln) => stitch(ln, x, y));
+                    }
+                    MS_CASES[t1 << 0].forEach((ln) => stitch(ln, x, y));
+
+                    while (++y < dy - 1) {
+                        x = -1;
+                        t1 = above(y * dx + dx);
+                        t2 = above(y * dx);
+                        MS_CASES[(t1 << 1) | (t2 << 2)].forEach((ln) =>
+                            stitch(ln, x, y),
+                        );
+                        while (++x < dx - 1) {
+                            t0 = t1;
+                            t1 = above(y * dx + dx + x + 1);
+                            t3 = t2;
+                            t2 = above(y * dx + x + 1);
+                            MS_CASES[
+                                t0 | (t1 << 1) | (t2 << 2) | (t3 << 3)
+                            ].forEach((ln) => stitch(ln, x, y));
+                        }
+                        MS_CASES[t1 | (t2 << 3)].forEach((ln) => stitch(ln, x, y));
+                    }
+
+                    x = -1;
+                    t2 = maskArr[y * dx] >= 1;
+                    MS_CASES[t2 << 2].forEach((ln) => stitch(ln, x, y));
+                    while (++x < dx - 1) {
+                        t3 = t2;
+                        t2 = above(y * dx + x + 1);
+                        MS_CASES[(t2 << 2) | (t3 << 3)].forEach((ln) =>
+                            stitch(ln, x, y),
+                        );
+                    }
+                    MS_CASES[t2 << 3].forEach((ln) => stitch(ln, x, y));
+
+                    if (rings.length === 0) return [];
+                    let best = rings[0];
+                    let bestA = ringAreaAbs(best);
+                    for (let ri = 1; ri < rings.length; ri++) {
+                        const ar = ringAreaAbs(rings[ri]);
+                        if (ar > bestA) {
+                            bestA = ar;
+                            best = rings[ri];
+                        }
+                    }
+                    return best;
+                }
+
+                function sampleOk(px, py, lid, labs) {
+                    const ax = ((px - mapOx) / mapSx) | 0;
+                    const ay = ((py - mapOy) / mapSy) | 0;
+                    if (ax < 0 || ay < 0 || ax >= analysisW || ay >= analysisH)
+                        return false;
+                    return (
+                        labs[ay * analysisW + ax] === lid && maskAt(ax, ay)
+                    );
+                }
+
+                /** Split segment into subsegments where sampleOk is true. */
+                function segmentSubparts(x0, y0, x1, y1, lid, labs, steps) {
+                    const out = [];
+                    let runStart = -1;
+                    for (let i = 0; i <= steps; i++) {
+                        const t = i / steps;
+                        const px = x0 + t * (x1 - x0);
+                        const py = y0 + t * (y1 - y0);
+                        const ok = sampleOk(px, py, lid, labs);
+                        if (ok && runStart < 0) runStart = t;
+                        if (!ok && runStart >= 0) {
+                            out.push([runStart, (i - 1) / steps]);
+                            runStart = -1;
+                        }
+                    }
+                    if (runStart >= 0) out.push([runStart, 1]);
+                    return out.map(([ts, te]) => [
+                        [x0 + ts * (x1 - x0), y0 + ts * (y1 - y0)],
+                        [x0 + te * (x1 - x0), y0 + te * (y1 - y0)],
+                    ]);
+                }
+
+                function regionHatchLines(
+                    lid,
+                    labs,
+                    angleDeg,
+                    spacing,
+                    sFit,
+                    ox,
+                    oy,
+                ) {
+                    const lines = [];
+                    let minX = Infinity;
+                    let minY = Infinity;
+                    let maxX = -Infinity;
+                    let maxY = -Infinity;
+                    for (let y = 0; y < analysisH; y++) {
+                        for (let x = 0; x < analysisW; x++) {
+                            const ix = y * analysisW + x;
+                            if (labs[ix] !== lid || !maskAt(x, y)) continue;
+                            minX = Math.min(minX, x);
+                            minY = Math.min(minY, y);
+                            maxX = Math.max(maxX, x + 1);
+                            maxY = Math.max(maxY, y + 1);
+                        }
+                    }
+                    if (minX === Infinity) return lines;
+
+                    const ax0 = ox + minX * sFit;
+                    const ay0 = oy + minY * sFit;
+                    const ax1 = ox + maxX * sFit;
+                    const ay1 = oy + maxY * sFit;
+                    const pad = spacing * 4;
+                    const rx0 = ax0 - pad;
+                    const ry0 = ay0 - pad;
+                    const rx1 = ax1 + pad;
+                    const ry1 = ay1 + pad;
+
+                    const rad = (angleDeg * Math.PI) / 180;
+                    const ux = Math.cos(rad);
+                    const uy = Math.sin(rad);
+                    const nx = -uy;
+                    const ny = ux;
+                    const cx = (rx0 + rx1) / 2;
+                    const cy = (ry0 + ry1) / 2;
+                    const corners = [
+                        [rx0, ry0],
+                        [rx1, ry0],
+                        [rx1, ry1],
+                        [rx0, ry1],
+                    ];
+                    let vmin = Infinity;
+                    let vmax = -Infinity;
+                    for (const [px, py] of corners) {
+                        const v = (px - cx) * nx + (py - cy) * ny;
+                        vmin = Math.min(vmin, v);
+                        vmax = Math.max(vmax, v);
+                    }
+                    for (
+                        let v = Math.floor(vmin / spacing) * spacing;
+                        v <= vmax;
+                        v += spacing
+                    ) {
+                        const bx = cx + nx * v;
+                        const by = cy + ny * v;
+                        const clip = clipLineToRect(bx, by, ux, uy, rx0, ry0, rx1, ry1);
+                        if (!clip) continue;
+                        const [p0, p1] = clip;
+                        const chord = Math.hypot(
+                            p1[0] - p0[0],
+                            p1[1] - p0[1],
+                        );
+                        const steps = Math.min(
+                            256,
+                            Math.max(24, chord | 0),
+                        );
+                        const subs = segmentSubparts(
+                            p0[0],
+                            p0[1],
+                            p1[0],
+                            p1[1],
+                            lid,
+                            labs,
+                            steps,
+                        );
+                        for (const seg of subs) lines.push(seg);
+                    }
+                    return lines;
+                }
+
+                function buildAndDraw() {
+                    if (!maskBin) return;
+
+                    const nc = Math.max(2, params.cols | 0);
+                    const nr = Math.max(2, params.rows | 0);
+                    const seeds = seedsInMask(nc, nr);
+                    const labs =
+                        params.planeMode === "grid"
+                            ? labelMapGrid(nc, nr)
+                            : labelMapVoronoi(seeds);
+
+                    const used = new Set();
+                    for (let i = 0; i < labs.length; i++) {
+                        if (labs[i] >= 0) used.add(labs[i]);
+                    }
+                    const ids = Array.from(used).sort((a, b) => a - b);
+
+                    const bw = Math.max(1, analysisW);
+                    const bh = Math.max(1, analysisH);
+                    const sFit = Math.min(outW / bw, outH / bh);
+                    const ox = (outW - bw * sFit) / 2;
+                    const oy = (outH - bh * sFit) / 2;
+                    mapSx = sFit;
+                    mapSy = sFit;
+                    mapOx = ox;
+                    mapOy = oy;
+
+                    const contour = contourPolylineFromMask();
+                    let outlinePath = "";
+                    if (contour.length > 12) {
+                        const simp = rdp(contour, params.epsilon);
+                        if (simp.length > 2) outlinePath = svgPathFromPoly(simp, sFit, sFit, ox, oy);
+                    }
+
+                    pctx.fillStyle = "#0a0a0a";
+                    pctx.fillRect(0, 0, outW, outH);
+
+                    const baseDeg = 18;
+                    const spread = params.spread;
+
+                    const svgParts = [];
+                    svgParts.push('<?xml version="1.0" encoding="UTF-8"?>');
+                    svgParts.push(
+                        `<svg xmlns="http://www.w3.org/2000/svg" width="${outW}" height="${outH}" viewBox="0 0 ${outW} ${outH}">`,
+                    );
+                    if (outlinePath) {
+                        svgParts.push("<defs>");
+                        svgParts.push(
+                            `<clipPath id="silhouetteClip"><path d="${outlinePath}"/></clipPath>`,
+                        );
+                        svgParts.push("</defs>");
+                    }
+                    svgParts.push(
+                        `<g fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round"${outlinePath ? ' clip-path="url(#silhouetteClip)"' : ""}>`,
+                    );
+
+                    let canvasClipped = false;
+                    if (outlinePath) {
+                        try {
+                            pctx.save();
+                            pctx.clip(new Path2D(outlinePath));
+                            canvasClipped = true;
+                        } catch (_) {}
+                    }
+
+                    pctx.strokeStyle = "#cfcfcf";
+                    pctx.lineWidth = 0.55;
+
+                    for (const lid of ids) {
+                        const ang =
+                            baseDeg +
+                            spread * (seededRandom(hash2(lid, 0)) - 0.5) * 2;
+                        const lines = regionHatchLines(
+                            lid,
+                            labs,
+                            ang,
+                            params.spacing,
+                            sFit,
+                            ox,
+                            oy,
+                        );
+                        for (const [[xa, ya], [xb, yb]] of lines) {
+                            if (Math.hypot(xb - xa, yb - ya) < 0.8) continue;
+                            pctx.beginPath();
+                            pctx.moveTo(xa, ya);
+                            pctx.lineTo(xb, yb);
+                            pctx.stroke();
+                            svgParts.push(
+                                `<line x1="${xa.toFixed(3)}" y1="${ya.toFixed(3)}" x2="${xb.toFixed(3)}" y2="${yb.toFixed(3)}" stroke-width="0.3"/>`,
+                            );
+                        }
+                    }
+
+                    if (canvasClipped) pctx.restore();
+
+                    svgParts.push("</g>");
+
+                    if (outlinePath && params.outline > 0) {
+                        try {
+                            const p2 = new Path2D(outlinePath);
+                            pctx.strokeStyle = "#fafafa";
+                            pctx.lineWidth = Math.max(0.5, params.outline * 1.75);
+                            pctx.stroke(p2);
+                        } catch (_) {}
+                        svgParts.push(
+                            `<path d="${outlinePath}" fill="none" stroke="#000000" stroke-width="${params.outline.toFixed(2)}"/>`,
+                        );
+                    }
+
+                    svgParts.push("</svg>");
+                    lastSvg = svgParts.join("\n");
+                    btnSvg.disabled = ids.length === 0;
+                }
+
+                function segmentLoop() {
+                    requestAnimationFrame(segmentLoop);
+                    if (!bodyPixModel || !captureVideo || paused) return;
+                    frameCount++;
+                    if (frameCount % params.frameSkip !== 0) return;
+                    bodyPixModel.segment(captureVideo, (err, result) => {
+                        if (err) {
+                            console.error(err);
+                            setStatus("Segment error — see console");
+                            return;
+                        }
+                        const bmBg = result && result.backgroundMask;
+                        const bmPe = result && result.personMask;
+                        const bm = bmBg || bmPe;
+                        if (!bm) {
+                            setStatus("No mask on result");
+                            return;
+                        }
+                        const maskSource = bmBg ? "background" : "person";
+                        let canvas = bm.canvas;
+                        if (!canvas && bm.elt) canvas = bm.elt;
+                        if (canvas && canvas.getContext) {
+                            const ctx = canvas.getContext("2d");
+                            const idata = ctx.getImageData(
+                                0,
+                                0,
+                                canvas.width,
+                                canvas.height,
+                            );
+                            fillMaskFromImageData(
+                                idata,
+                                params.thresh,
+                                maskSource,
+                            );
+                            buildAndDraw();
+                            setStatus("Live · BodyPix");
+                        } else if (result.raw && result.raw.dataSync) {
+                            setStatus("Mask is tensor — needs canvas");
+                        } else {
+                            setStatus("Unexpected mask format");
+                        }
+                    });
+                }
+
+                btnSvg.addEventListener("click", () => {
+                    if (!lastSvg) return;
+                    const blob = new Blob([lastSvg], { type: "image/svg+xml" });
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `silhouette-mosaic-${Date.now()}.svg`;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+                });
+
+                btnPause.addEventListener("click", () => {
+                    paused = !paused;
+                    btnPause.textContent = paused ? "Resume camera" : "Pause camera";
+                    const el = captureVideo && captureVideo.elt;
+                    if (el) {
+                        if (paused) el.pause();
+                        else el.play();
+                    }
+                });
+
+                bindRanges();
+
+                window.setup = function setup() {
+                    createCanvas(320, 240).parent("p5-hidden");
+                    captureVideo = createCapture(VIDEO, () => {
+                        captureVideo.size(320, 240);
+                        captureVideo.hide();
+                        setStatus("Loading BodyPix…");
+                        bodyPixModel = ml5.bodyPix(
+                            {
+                                architecture: "MobileNetV1",
+                                outputStride: 16,
+                                multiplier: 0.75,
+                                quantBytes: 2,
+                            },
+                            () => {
+                                setStatus("Model ready");
+                                segmentLoop();
+                            },
+                        );
+                    });
+                    noLoop();
+                };
+
+                window.draw = function draw() {};
+            })();
+        </script>
+    </body>
+</html>
