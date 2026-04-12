@@ -244,6 +244,71 @@
                 border-color: var(--accent2);
             }
 
+            body.midi-learn-active aside .midi-learn-host {
+                position: relative;
+                outline-offset: 2px;
+            }
+
+            body.midi-learn-active aside .midi-learn-host-mapped {
+                outline: 1px dashed rgba(196, 240, 122, 0.55);
+            }
+
+            body.midi-learn-active aside .midi-learn-host-unmapped {
+                outline: 1px dashed rgba(251, 191, 36, 0.85);
+            }
+
+            .midi-learn-overlay {
+                position: absolute;
+                top: 2px;
+                right: 2px;
+                z-index: 3;
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 4px;
+                max-width: calc(100% - 8px);
+                pointer-events: auto;
+            }
+
+            .midi-learn-overlay .midi-learn-tag {
+                font-size: 9px;
+                line-height: 1.2;
+                padding: 4px 6px;
+                background: rgba(10, 10, 10, 0.92);
+                font-family: var(--mono);
+                text-transform: none;
+                letter-spacing: 0;
+            }
+
+            .midi-learn-overlay--mapped .midi-learn-tag {
+                border: 1px solid var(--accent2);
+                color: var(--accent2);
+            }
+
+            .midi-learn-overlay--unmapped .midi-learn-tag {
+                border: 1px solid rgba(252, 211, 77, 0.95);
+                color: #fcd34d;
+            }
+
+            .midi-learn-overlay--unmapped .midi-learn-tag .midi-map {
+                color: #fbbf24;
+                font-weight: 500;
+            }
+
+            .midi-learn-overlay .midi-learn-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 4px;
+                justify-content: flex-end;
+            }
+
+            .midi-learn-overlay button {
+                font-size: 9px;
+                padding: 4px 8px;
+                text-transform: none;
+                letter-spacing: 0;
+            }
+
             body.stage-only header,
             body.stage-only aside {
                 display: none;
@@ -624,6 +689,9 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     <button type="button" id="btnMidiLearn" class="conference-only">
                         MIDI learn
                     </button>
+                    <button type="button" id="btnMidiClearAll" class="conference-only">
+                        Clear MIDI maps
+                    </button>
                     <button type="button" id="btnStageMode" class="conference-only">
                         Stage mode
                     </button>
@@ -668,6 +736,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 const btnReset = document.getElementById("btnReset");
                 const btnMidiConnect = document.getElementById("btnMidiConnect");
                 const btnMidiLearn = document.getElementById("btnMidiLearn");
+                const btnMidiClearAll = document.getElementById("btnMidiClearAll");
                 const btnStageMode = document.getElementById("btnStageMode");
                 const btnFullscreen = document.getElementById("btnFullscreen");
                 const midiFeedbackEl = document.getElementById("midiFeedback");
@@ -941,6 +1010,15 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 let midiRxPulseTimer = null;
                 let midiConnectedInputsLabel = "none";
                 let midiLastRxLabel = "none";
+                /** Latest CC value per controller number (0–127); applied on hatch frame, not per RX. */
+                const midiCcLatest = new Map();
+                /** Previous CC value for action edge detection (press = low→high). */
+                const midiCcPrev = new Map();
+                let lastHatchDrawMs = 0;
+                let midiRxFeedbackTimer = null;
+                let midiRxFeedbackPending = null;
+                /** Persist empty map as explicit clear (not “merge with defaults”). */
+                let midiStorageExplicitEmpty = false;
                 /** ISO 216, landscape (long × short mm). */
                 const SVG_PAGE_LANDSCAPE_MM = {
                     a6: [148, 105],
@@ -1188,9 +1266,13 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 }
 
                 function normalizeMidiBindings(raw) {
+                    if (raw && typeof raw === "object" && raw.__cleared === true) {
+                        return {};
+                    }
                     const out = defaultMidiBindings();
                     if (!raw || typeof raw !== "object") return out;
                     for (const [ccRaw, b] of Object.entries(raw)) {
+                        if (ccRaw === "__cleared") continue;
                         const cc = Number(ccRaw);
                         if (!Number.isFinite(cc) || cc < 0 || cc > 127) continue;
                         if (!b || typeof b !== "object") continue;
@@ -1261,6 +1343,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                             setStatus("MIDI learn: click a slider/button, then move a MIDI control");
                         }
                     }
+                    updateMidiLearnOverlays();
                 }
 
                 function armMidiLearnTarget(target) {
@@ -1279,6 +1362,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 function assignMidiBinding(cc, target) {
                     if (!target) return;
                     const key = String(cc | 0);
+                    midiStorageExplicitEmpty = false;
                     for (const [k, b] of Object.entries(midiBindings)) {
                         if (k === key) continue;
                         if (!b || b.type !== target.type || b.key !== target.key)
@@ -1290,6 +1374,180 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     setStatus(`MIDI mapped CC ${key} → ${bindingLabel(target)}`);
                     setMidiFeedback(`MIDI map CC${key} → ${bindingLabel(target)}`);
                     midiLearnTarget = null;
+                    updateMidiLearnOverlays();
+                }
+
+                function findCcForBinding(type, key) {
+                    for (const [cc, b] of Object.entries(midiBindings)) {
+                        if (b && b.type === type && b.key === key) return cc;
+                    }
+                    return null;
+                }
+
+                function clearMidiMappingForTarget(target) {
+                    if (!target) return;
+                    let removed = 0;
+                    for (const [cc, b] of Object.entries(midiBindings)) {
+                        if (b && b.type === target.type && b.key === target.key) {
+                            delete midiBindings[cc];
+                            removed++;
+                        }
+                    }
+                    if (!removed) return;
+                    persistSettings();
+                    setStatus(`MIDI: cleared map for ${bindingLabel(target)}`);
+                    updateMidiLearnOverlays();
+                }
+
+                function clearAllMidiMappings() {
+                    if (!MIDI_CONFIG.enabled) return;
+                    midiBindings = {};
+                    midiStorageExplicitEmpty = true;
+                    midiCcLatest.clear();
+                    midiCcPrev.clear();
+                    persistSettings();
+                    setStatus("All MIDI mappings cleared");
+                    setMidiFeedback("MIDI: all maps cleared");
+                    updateMidiLearnOverlays();
+                }
+
+                function scheduleMidiRxFeedback(msg) {
+                    midiRxFeedbackPending = msg;
+                    if (midiRxFeedbackTimer != null) return;
+                    midiRxFeedbackTimer = setTimeout(() => {
+                        midiRxFeedbackTimer = null;
+                        const t = midiRxFeedbackPending;
+                        midiRxFeedbackPending = null;
+                        if (t) setMidiFeedback(t, true);
+                    }, 85);
+                }
+
+                function tearDownMidiLearnOverlays() {
+                    document
+                        .querySelectorAll(".midi-learn-overlay")
+                        .forEach((n) => n.remove());
+                    document.querySelectorAll(".midi-learn-host").forEach((h) => {
+                        h.classList.remove(
+                            "midi-learn-host",
+                            "midi-learn-host-mapped",
+                            "midi-learn-host-unmapped",
+                        );
+                    });
+                    document.body.classList.remove("midi-learn-active");
+                }
+
+                function updateMidiLearnOverlays() {
+                    if (!IS_CONFERENCE_MODE) return;
+                    tearDownMidiLearnOverlays();
+                    if (!midiLearnEnabled) return;
+                    document.body.classList.add("midi-learn-active");
+
+                    function attachOverlay(hostEl, target) {
+                        if (!hostEl) return;
+                        const cc = findCcForBinding(target.type, target.key);
+                        const mapped = cc != null;
+                        hostEl.classList.add(
+                            "midi-learn-host",
+                            mapped
+                                ? "midi-learn-host-mapped"
+                                : "midi-learn-host-unmapped",
+                        );
+                        const ov = document.createElement("div");
+                        ov.className = mapped
+                            ? "midi-learn-overlay midi-learn-overlay--mapped"
+                            : "midi-learn-overlay midi-learn-overlay--unmapped";
+                        const mapStr = mapped ? `CC ${cc}` : "Unmapped";
+                        const line = bindingLabel(target);
+                        ov.innerHTML = `<div class="midi-learn-tag"><strong>MIDI</strong> · ${line}<br/><span class="midi-map">${mapStr}</span></div><div class="midi-learn-actions"><button type="button" class="midi-map-btn">Map</button><button type="button" class="midi-clear-btn">Clear</button></div>`;
+                        ov.querySelector(".midi-map-btn").addEventListener(
+                            "click",
+                            (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                armMidiLearnTarget(target);
+                            },
+                        );
+                        ov.querySelector(".midi-clear-btn").addEventListener(
+                            "click",
+                            (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                clearMidiMappingForTarget(target);
+                            },
+                        );
+                        hostEl.appendChild(ov);
+                    }
+
+                    for (const key of Object.keys(APP_SETTINGS.ranges)) {
+                        const spec = APP_SETTINGS.ranges[key];
+                        const el = document.getElementById(spec.id);
+                        if (!el) continue;
+                        const host =
+                            el.closest(".dri-row") || el.closest("label.row");
+                        attachOverlay(host, { type: "range", key });
+                    }
+
+                    const actionPairs = [
+                        [btnStageMode, "toggleStageMode"],
+                        [btnFullscreen, "toggleFullscreen"],
+                        [btnSvg, "exportSvg"],
+                    ];
+                    for (const [btn, key] of actionPairs) {
+                        if (!btn) continue;
+                        attachOverlay(btn, { type: "action", key });
+                    }
+                }
+
+                function flushMidiRangeToParams() {
+                    if (midiLearnEnabled) return false;
+                    let dirty = false;
+                    for (const [ccStr, bind] of Object.entries(midiBindings)) {
+                        if (!bind || bind.type !== "range") continue;
+                        const cc = Number(ccStr);
+                        if (!Number.isFinite(cc) || !midiCcLatest.has(cc)) continue;
+                        const value = midiCcLatest.get(cc);
+                        const spec = APP_SETTINGS.ranges[bind.key];
+                        if (!spec) continue;
+                        const t = Math.max(0, Math.min(127, value)) / 127;
+                        const raw = spec.min + t * (spec.max - spec.min);
+                        const nextVal = clampParamValue(bind.key, raw);
+                        const cur = params[bind.key];
+                        const changed = spec.integer
+                            ? nextVal !== cur
+                            : Math.abs(nextVal - cur) > 1e-7;
+                        if (!changed) continue;
+                        setNumericParamFromExternal(bind.key, nextVal, false);
+                        dirty = true;
+                    }
+                    return dirty;
+                }
+
+                function tryMidiActionEdge(cc, value) {
+                    const bind = midiBindings[String(cc)] || midiBindings[cc];
+                    if (!bind || bind.type !== "action") return false;
+                    const prev = midiCcPrev.has(cc) ? midiCcPrev.get(cc) : -1;
+                    midiCcPrev.set(cc, value);
+                    if (prev >= 64 || value < 64) return true;
+                    if (bind.key === "toggleStageMode") {
+                        setStageOnlyMode(!stageOnlyMode);
+                    } else if (bind.key === "toggleFullscreen") {
+                        toggleFullscreenStage();
+                    } else if (bind.key === "exportSvg") {
+                        if (!btnSvg.disabled) btnSvg.click();
+                    }
+                    return true;
+                }
+
+                function ingestMidiControlChange(cc, value) {
+                    midiCcLatest.set(cc, value);
+                    if (midiLearnEnabled && midiLearnTarget) {
+                        assignMidiBinding(cc, midiLearnTarget);
+                        return;
+                    }
+                    const bind = midiBindings[String(cc)] || midiBindings[cc];
+                    if (bind && bind.type === "action") {
+                        tryMidiActionEdge(cc, value);
+                    }
                 }
 
                 function readPersistedSettings() {
@@ -1327,16 +1585,23 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         typeof snapshot.midiBindings === "object"
                     ) {
                         midiBindings = normalizeMidiBindings(snapshot.midiBindings);
+                        midiStorageExplicitEmpty =
+                            snapshot.midiBindings.__cleared === true;
                     }
                 }
 
                 function persistSettings() {
                     try {
                         const capEl = document.getElementById("svgCaption");
+                        const midiStored =
+                            midiStorageExplicitEmpty &&
+                            Object.keys(midiBindings).length === 0
+                                ? { __cleared: true }
+                                : { ...midiBindings };
                         const payload = {
                             params: { ...params },
                             svgCaption: capEl ? capEl.value : "",
-                            midiBindings,
+                            midiBindings: midiStored,
                         };
                         localStorage.setItem(
                             APP_SETTINGS.storageKey,
@@ -1440,34 +1705,6 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     }
                 }
 
-                function applyMidiCc(cc, value) {
-                    if (midiLearnEnabled && midiLearnTarget) {
-                        assignMidiBinding(cc, midiLearnTarget);
-                        return;
-                    }
-                    const bind = midiBindings[String(cc)] || midiBindings[cc];
-                    if (!bind) return;
-                    if (bind.type === "action") {
-                        if (value < 64) return;
-                        if (bind.key === "toggleStageMode") {
-                            setStageOnlyMode(!stageOnlyMode);
-                        } else if (bind.key === "toggleFullscreen") {
-                            toggleFullscreenStage();
-                        } else if (bind.key === "exportSvg") {
-                            if (!btnSvg.disabled) btnSvg.click();
-                        }
-                        return;
-                    }
-                    if (bind.type === "range") {
-                        const spec = APP_SETTINGS.ranges[bind.key];
-                        if (!spec) return;
-                        const t = Math.max(0, Math.min(127, value)) / 127;
-                        const raw = spec.min + t * (spec.max - spec.min);
-                        setNumericParamFromExternal(bind.key, raw, true);
-                        return;
-                    }
-                }
-
                 async function initMidiController() {
                     if (!MIDI_CONFIG.enabled) return;
                     if (typeof navigator.requestMIDIAccess !== "function") {
@@ -1534,12 +1771,11 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                                         typ,
                                         [b0, b1, b2],
                                     );
-                                    setMidiFeedback(
+                                    scheduleMidiRxFeedback(
                                         `MIDI RX ${input.name || "in"} ${typ} [${b0},${b1},${b2}]`,
-                                        true,
                                     );
                                     if ((b0 & 0xf0) !== 0xb0 || d.length < 3) return;
-                                    applyMidiCc(b1, b2);
+                                    ingestMidiControlChange(b1, b2);
                                 };
                             }
 
@@ -3736,10 +3972,27 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
 
                 function segmentLoop(ts) {
                     requestAnimationFrame(segmentLoop);
-                    if (!foregroundSegmenter || !captureVideo || paused) return;
-                    if (segBusy) return;
                     const minDt = 1000 / Math.max(2, params.targetFps);
-                    if (ts - lastSegMs < minDt) return;
+                    const midiDirty = flushMidiRangeToParams();
+                    const tryMidiOnlyRedraw = () => {
+                        if (!midiDirty || !maskBin) return;
+                        if (ts - lastHatchDrawMs < minDt) return;
+                        buildAndDraw();
+                        lastHatchDrawMs = ts;
+                    };
+
+                    if (!foregroundSegmenter || !captureVideo || paused) {
+                        tryMidiOnlyRedraw();
+                        return;
+                    }
+                    if (segBusy) {
+                        tryMidiOnlyRedraw();
+                        return;
+                    }
+                    if (ts - lastSegMs < minDt) {
+                        tryMidiOnlyRedraw();
+                        return;
+                    }
                     lastSegMs = ts;
                     segBusy = true;
                     (async () => {
@@ -3750,8 +4003,10 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                                 await foregroundSegmenter.segmentPeople(el, {
                                     flipHorizontal: MIRROR_CAMERA,
                                 });
+                            flushMidiRangeToParams();
                             if (await applyMaskFromSegmentation(segmentations)) {
                                 buildAndDraw();
+                                lastHatchDrawMs = performance.now();
                                 setStatus(`Live · ~${params.targetFps} FPS ML`);
                                 maybeRunDepthEstimate(ts);
                             }
@@ -3883,6 +4138,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     );
                     syncHatchSpacingDualRange(false, null);
                     syncHatchSpacingDualRangeFn = syncHatchSpacingDualRange;
+                    updateMidiLearnOverlays();
                 }
 
                 btnPause.addEventListener("click", () => {
@@ -3910,6 +4166,11 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 if (btnMidiLearn) {
                     btnMidiLearn.addEventListener("click", () => {
                         setMidiLearnEnabled(!midiLearnEnabled);
+                    });
+                }
+                if (btnMidiClearAll) {
+                    btnMidiClearAll.addEventListener("click", () => {
+                        clearAllMidiMappings();
                     });
                 }
                 if (btnStageMode) {
