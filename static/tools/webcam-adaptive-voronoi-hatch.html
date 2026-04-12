@@ -231,6 +231,19 @@
                 display: inline-block;
             }
 
+            .midi-feedback {
+                font-size: 10px;
+                color: var(--muted);
+                border: 1px solid var(--border);
+                padding: 6px 8px;
+                line-height: 1;
+            }
+
+            .midi-feedback.rx {
+                color: var(--accent2);
+                border-color: var(--accent2);
+            }
+
             body.stage-only header,
             body.stage-only aside {
                 display: none;
@@ -605,12 +618,19 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         Export SVG
                     </button>
                     <button type="button" id="btnReset">Reset defaults</button>
+                    <button type="button" id="btnMidiConnect" class="conference-only">
+                        Connect nanoKONTROL2
+                    </button>
+                    <button type="button" id="btnMidiLearn" class="conference-only">
+                        MIDI learn
+                    </button>
                     <button type="button" id="btnStageMode" class="conference-only">
                         Stage mode
                     </button>
                     <button type="button" id="btnFullscreen" class="conference-only">
                         Fullscreen
                     </button>
+                    <span id="midiFeedback" class="conference-only midi-feedback">MIDI: disconnected</span>
                 </div>
                 <p class="hint">
                     Camera requires HTTPS or localhost. Export is always A3
@@ -646,8 +666,11 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 const btnPause = document.getElementById("btnPause");
                 const btnSvg = document.getElementById("btnSvg");
                 const btnReset = document.getElementById("btnReset");
+                const btnMidiConnect = document.getElementById("btnMidiConnect");
+                const btnMidiLearn = document.getElementById("btnMidiLearn");
                 const btnStageMode = document.getElementById("btnStageMode");
                 const btnFullscreen = document.getElementById("btnFullscreen");
+                const midiFeedbackEl = document.getElementById("midiFeedback");
                 const query = new URLSearchParams(window.location.search);
                 const IS_CONFERENCE_MODE = query.get("conference") === "1";
                 if (IS_CONFERENCE_MODE) document.body.classList.add("conference");
@@ -858,7 +881,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                      * Easy MIDI mapping table (CC -> binding). Edit this object to
                      * remap controls quickly.
                      */
-                    ccBindings: Object.freeze({
+                    defaultCcBindings: Object.freeze({
                         0: Object.freeze({ type: "range", key: "thresh" }),
                         1: Object.freeze({ type: "range", key: "seedCount" }),
                         2: Object.freeze({ type: "range", key: "gridDiv" }),
@@ -877,6 +900,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         23: Object.freeze({ type: "range", key: "analysisW" }),
                         41: Object.freeze({ type: "action", key: "toggleStageMode" }),
                         45: Object.freeze({ type: "action", key: "toggleFullscreen" }),
+                        46: Object.freeze({ type: "action", key: "exportSvg" }),
                     }),
                 });
 
@@ -910,6 +934,13 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 let stageOnlyMode = false;
                 let preStageDebugView = "final";
                 let syncHatchSpacingDualRangeFn = null;
+                let midiBindings = {};
+                let midiLearnEnabled = false;
+                let midiLearnTarget = null;
+                let midiAccess = null;
+                let midiRxPulseTimer = null;
+                let midiConnectedInputsLabel = "none";
+                let midiLastRxLabel = "none";
                 /** ISO 216, landscape (long × short mm). */
                 const SVG_PAGE_LANDSCAPE_MM = {
                     a6: [148, 105],
@@ -1146,6 +1177,121 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     params.svgPageSize = APP_SETTINGS.defaults.svgPageSize;
                 }
 
+                function defaultMidiBindings() {
+                    const out = {};
+                    for (const [cc, b] of Object.entries(
+                        MIDI_CONFIG.defaultCcBindings,
+                    )) {
+                        out[String(cc)] = { type: b.type, key: b.key };
+                    }
+                    return out;
+                }
+
+                function normalizeMidiBindings(raw) {
+                    const out = defaultMidiBindings();
+                    if (!raw || typeof raw !== "object") return out;
+                    for (const [ccRaw, b] of Object.entries(raw)) {
+                        const cc = Number(ccRaw);
+                        if (!Number.isFinite(cc) || cc < 0 || cc > 127) continue;
+                        if (!b || typeof b !== "object") continue;
+                        const type = b.type;
+                        const key = b.key;
+                        if (type !== "range" && type !== "action") continue;
+                        if (typeof key !== "string" || !key) continue;
+                        if (type === "range" && !APP_SETTINGS.ranges[key]) continue;
+                        out[String(cc)] = { type, key };
+                    }
+                    return out;
+                }
+
+                function bindingLabel(bind) {
+                    if (!bind) return "";
+                    if (bind.type === "range") return `slider:${bind.key}`;
+                    if (bind.type === "action") return `action:${bind.key}`;
+                    return "";
+                }
+
+                function setMidiFeedback(text, pulse = false) {
+                    if (!midiFeedbackEl) return;
+                    midiFeedbackEl.textContent = text;
+                    if (pulse) midiLastRxLabel = text;
+                    if (!pulse) return;
+                    midiFeedbackEl.classList.add("rx");
+                    if (midiRxPulseTimer) clearTimeout(midiRxPulseTimer);
+                    midiRxPulseTimer = setTimeout(() => {
+                        midiFeedbackEl.classList.remove("rx");
+                    }, 180);
+                }
+
+                function setMidiConnectButtonState(text) {
+                    if (!btnMidiConnect) return;
+                    btnMidiConnect.textContent = text;
+                }
+
+                function logMidiDebug(...args) {
+                    console.info("[MIDI]", ...args);
+                }
+
+                function midiStatusType(byte0) {
+                    const st = byte0 & 0xf0;
+                    if (st === 0x80) return "noteOff";
+                    if (st === 0x90) return "noteOn";
+                    if (st === 0xa0) return "polyAftertouch";
+                    if (st === 0xb0) return "cc";
+                    if (st === 0xc0) return "program";
+                    if (st === 0xd0) return "chAftertouch";
+                    if (st === 0xe0) return "pitchBend";
+                    if (byte0 === 0xf0) return "sysex";
+                    return "other";
+                }
+
+                function setMidiLearnEnabled(on) {
+                    midiLearnEnabled = !!on && MIDI_CONFIG.enabled;
+                    midiLearnTarget = null;
+                    if (btnMidiLearn) {
+                        btnMidiLearn.textContent = midiLearnEnabled
+                            ? "MIDI learn: on"
+                            : "MIDI learn";
+                    }
+                    if (midiLearnEnabled) {
+                        if (!midiAccess) {
+                            setStatus("MIDI learn: connect controller first");
+                            setMidiFeedback("MIDI: not connected");
+                        } else {
+                            setStatus("MIDI learn: click a slider/button, then move a MIDI control");
+                        }
+                    }
+                }
+
+                function armMidiLearnTarget(target) {
+                    if (!midiLearnEnabled || !target) return;
+                    if (!midiAccess) {
+                        setStatus("MIDI learn: connect controller first");
+                        setMidiFeedback("MIDI: not connected");
+                        return;
+                    }
+                    midiLearnTarget = target;
+                    setStatus(
+                        `MIDI learn armed for ${bindingLabel(target)} · move a MIDI CC`,
+                    );
+                }
+
+                function assignMidiBinding(cc, target) {
+                    if (!target) return;
+                    const key = String(cc | 0);
+                    for (const [k, b] of Object.entries(midiBindings)) {
+                        if (k === key) continue;
+                        if (!b || b.type !== target.type || b.key !== target.key)
+                            continue;
+                        delete midiBindings[k];
+                    }
+                    midiBindings[key] = { type: target.type, key: target.key };
+                    persistSettings();
+                    setStatus(`MIDI mapped CC ${key} → ${bindingLabel(target)}`);
+                    setMidiFeedback(`MIDI map CC${key} → ${bindingLabel(target)}`);
+                    midiLearnTarget = null;
+                }
+
                 function readPersistedSettings() {
                     try {
                         const raw = localStorage.getItem(APP_SETTINGS.storageKey);
@@ -1176,6 +1322,12 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                                 params[key] = v;
                         }
                     }
+                    if (
+                        snapshot.midiBindings &&
+                        typeof snapshot.midiBindings === "object"
+                    ) {
+                        midiBindings = normalizeMidiBindings(snapshot.midiBindings);
+                    }
                 }
 
                 function persistSettings() {
@@ -1184,6 +1336,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         const payload = {
                             params: { ...params },
                             svgCaption: capEl ? capEl.value : "",
+                            midiBindings,
                         };
                         localStorage.setItem(
                             APP_SETTINGS.storageKey,
@@ -1288,7 +1441,11 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 }
 
                 function applyMidiCc(cc, value) {
-                    const bind = MIDI_CONFIG.ccBindings[String(cc)] || MIDI_CONFIG.ccBindings[cc];
+                    if (midiLearnEnabled && midiLearnTarget) {
+                        assignMidiBinding(cc, midiLearnTarget);
+                        return;
+                    }
+                    const bind = midiBindings[String(cc)] || midiBindings[cc];
                     if (!bind) return;
                     if (bind.type === "action") {
                         if (value < 64) return;
@@ -1296,6 +1453,8 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                             setStageOnlyMode(!stageOnlyMode);
                         } else if (bind.key === "toggleFullscreen") {
                             toggleFullscreenStage();
+                        } else if (bind.key === "exportSvg") {
+                            if (!btnSvg.disabled) btnSvg.click();
                         }
                         return;
                     }
@@ -1313,33 +1472,105 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     if (!MIDI_CONFIG.enabled) return;
                     if (typeof navigator.requestMIDIAccess !== "function") {
                         setStatus("MIDI unavailable (Web MIDI not supported)");
+                        setMidiFeedback("MIDI: unavailable");
+                        setMidiConnectButtonState("MIDI unavailable");
                         return;
                     }
+                    setMidiFeedback("MIDI: click connect");
+                    setMidiConnectButtonState("Connect nanoKONTROL2");
+                }
+
+                async function connectMidiController() {
+                    if (!MIDI_CONFIG.enabled) return;
+                    if (typeof navigator.requestMIDIAccess !== "function") return;
                     try {
-                        const access = await navigator.requestMIDIAccess();
+                        setMidiConnectButtonState("Connecting...");
+                        midiAccess = await navigator.requestMIDIAccess({
+                            sysex: false,
+                        });
                         const attachInputs = () => {
-                            for (const input of access.inputs.values()) {
+                            if (!midiAccess) return;
+                            const allInputs = Array.from(midiAccess.inputs.values());
+                            const allOutputs = Array.from(
+                                midiAccess.outputs.values(),
+                            );
+                            const preferred = allInputs.filter((input) => {
                                 const nm = String(input.name || "").toLowerCase();
-                                if (
-                                    MIDI_CONFIG.inputNameIncludes &&
-                                    !nm.includes(MIDI_CONFIG.inputNameIncludes)
-                                ) {
-                                    continue;
-                                }
+                                if (!MIDI_CONFIG.inputNameIncludes) return true;
+                                return nm.includes(MIDI_CONFIG.inputNameIncludes);
+                            });
+                            const chosen =
+                                preferred.length > 0 ? preferred : allInputs;
+                            const usedFallback =
+                                preferred.length === 0 && allInputs.length > 0;
+
+                            logMidiDebug(
+                                "attachInputs",
+                                "inputs:",
+                                allInputs.map(
+                                    (i) =>
+                                        `${i.name || "(unnamed)"} [${i.manufacturer || "?"}] (${i.state}/${i.connection})`,
+                                ),
+                                "outputs:",
+                                allOutputs.map(
+                                    (o) =>
+                                        `${o.name || "(unnamed)"} [${o.manufacturer || "?"}] (${o.state}/${o.connection})`,
+                                ),
+                            );
+
+                            for (const input of allInputs) input.onmidimessage = null;
+                            // Listen on all inputs so we can debug unexpected port names.
+                            for (const input of allInputs) {
                                 input.onmidimessage = (ev) => {
                                     const d = ev.data;
-                                    if (!d || d.length < 3) return;
-                                    const st = d[0] & 0xf0;
-                                    if (st !== 0xb0) return;
-                                    applyMidiCc(d[1], d[2]);
+                                    if (!d || d.length < 1) return;
+                                    const b0 = d[0] | 0;
+                                    const b1 = d.length > 1 ? d[1] | 0 : 0;
+                                    const b2 = d.length > 2 ? d[2] | 0 : 0;
+                                    const typ = midiStatusType(b0);
+                                    logMidiDebug(
+                                        "rx",
+                                        input.name || "(unnamed)",
+                                        typ,
+                                        [b0, b1, b2],
+                                    );
+                                    setMidiFeedback(
+                                        `MIDI RX ${input.name || "in"} ${typ} [${b0},${b1},${b2}]`,
+                                        true,
+                                    );
+                                    if ((b0 & 0xf0) !== 0xb0 || d.length < 3) return;
+                                    applyMidiCc(b1, b2);
                                 };
+                            }
+
+                            if (chosen.length > 0) {
+                                const names = chosen
+                                    .map((i) => i.name || "(unnamed)")
+                                    .join(", ");
+                                midiConnectedInputsLabel = names;
+                                const msg = usedFallback
+                                    ? `MIDI: connected ${chosen.length} input(s) fallback`
+                                    : `MIDI: connected ${chosen.length} input(s)`;
+                                setMidiFeedback(msg);
+                                setMidiConnectButtonState("Reconnect MIDI");
+                                setStatus(`MIDI ready: ${names}`);
+                            } else {
+                                midiConnectedInputsLabel = "none";
+                                setMidiFeedback("MIDI: no inputs found");
+                                setMidiConnectButtonState("Connect nanoKONTROL2");
+                                setStatus("MIDI connected, no controller input");
                             }
                         };
                         attachInputs();
-                        access.onstatechange = () => attachInputs();
-                        setStatus("MIDI ready");
+                        midiAccess.onstatechange = (ev) => {
+                            logMidiDebug("statechange", ev.port);
+                            attachInputs();
+                        };
                     } catch (e) {
                         console.error(e);
+                        logMidiDebug("connect failed", e);
+                        setMidiFeedback("MIDI: connect failed");
+                        setMidiConnectButtonState("Connect nanoKONTROL2");
                         setStatus("MIDI init failed");
                     }
                 }
@@ -3470,6 +3701,9 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         `Spacing scale: ${mmPx.toFixed(4)} mm/px @ export ${params.svgPageSize} · range ${params.hatchSpacingMinMm.toFixed(2)}–${params.hatchSpacingMaxMm.toFixed(2)} mm · drive ${params.hatchDensityChannel}`,
                         `Line width: ${params.hatchLineWidthMm.toFixed(2)} mm (${hatchStrokeWidthPreviewPx().toFixed(2)} px preview)`,
                         `Shading: ${params.shadingMode} · angle×${params.shadingAngleAmt.toFixed(2)} · density×${params.shadingDensityAmt.toFixed(2)} · depth ~${params.depthFps} Hz`,
+                        IS_CONFERENCE_MODE
+                            ? `MIDI: inputs ${midiConnectedInputsLabel} · last ${midiLastRxLabel}`
+                            : "",
                     ].join("\n");
                 }
 
@@ -3531,6 +3765,7 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 }
 
                 function bindControls() {
+                    midiBindings = defaultMidiBindings();
                     const saved = readPersistedSettings();
                     setFactoryParams();
                     applyPersistedSettings(saved);
@@ -3561,6 +3796,11 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                         params[key] = clampParamValue(key, params[key]);
                         el.value = String(params[key]);
                         updateRangeReadoutByKey(key);
+                        el.addEventListener("pointerdown", (ev) => {
+                            if (!midiLearnEnabled) return;
+                            ev.preventDefault();
+                            armMidiLearnTarget({ type: "range", key });
+                        });
                         el.addEventListener("input", () => {
                             setNumericParamFromExternal(key, el.value, true);
                         });
@@ -3619,6 +3859,22 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     const driMax = document.getElementById("hatchSpacingMax");
                     driMin.value = String(params.hatchSpacingMinMm);
                     driMax.value = String(params.hatchSpacingMaxMm);
+                    driMin.addEventListener("pointerdown", (ev) => {
+                        if (!midiLearnEnabled) return;
+                        ev.preventDefault();
+                        armMidiLearnTarget({
+                            type: "range",
+                            key: "hatchSpacingMinMm",
+                        });
+                    });
+                    driMax.addEventListener("pointerdown", (ev) => {
+                        if (!midiLearnEnabled) return;
+                        ev.preventDefault();
+                        armMidiLearnTarget({
+                            type: "range",
+                            key: "hatchSpacingMaxMm",
+                        });
+                    });
                     driMin.addEventListener("input", (e) =>
                         syncHatchSpacingDualRange(true, e.target),
                     );
@@ -3646,6 +3902,16 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     window.location.reload();
                 });
 
+                if (btnMidiConnect) {
+                    btnMidiConnect.addEventListener("click", () => {
+                        connectMidiController();
+                    });
+                }
+                if (btnMidiLearn) {
+                    btnMidiLearn.addEventListener("click", () => {
+                        setMidiLearnEnabled(!midiLearnEnabled);
+                    });
+                }
                 if (btnStageMode) {
                     btnStageMode.addEventListener("click", () =>
                         setStageOnlyMode(!stageOnlyMode),
@@ -3668,6 +3934,10 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                 });
 
                 btnSvg.addEventListener("click", async () => {
+                    if (midiLearnEnabled) {
+                        armMidiLearnTarget({ type: "action", key: "exportSvg" });
+                        return;
+                    }
                     if (!lastExportSnapshot || lastExportLineCount === 0)
                         return;
                     const key = params.svgPageSize;
@@ -3708,6 +3978,10 @@ CCA @ SmashConf26 - art by D17E - https://cca.codes - https://d17e.dev</textarea
                     ensureHersheySansFont().catch(() => {});
                     if (IS_CONFERENCE_MODE && btnStageMode) {
                         btnStageMode.textContent = "Stage mode";
+                    }
+                    if (IS_CONFERENCE_MODE) {
+                        setMidiFeedback("MIDI: click connect");
+                        setMidiConnectButtonState("Connect nanoKONTROL2");
                     }
                 });
 
