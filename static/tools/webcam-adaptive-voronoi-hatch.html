@@ -3801,6 +3801,12 @@ Creative Coding Amsterdam @ SmashConf26 - https://cca.codes - concept by D17E - 
                     const sFit = Math.min(outW / bw, outH / bh);
                     const ox = (outW - bw * sFit) / 2;
                     const oy = (outH - bh * sFit) / 2;
+                    /**
+                     * Keep export geometry in the hatch's native frame (video aspect),
+                     * then fit that frame into the target SVG layout.
+                     */
+                    const exportW = bw * sFit;
+                    const exportH = bh * sFit;
                     mapSx = sFit;
                     mapSy = sFit;
                     mapOx = ox;
@@ -3821,11 +3827,11 @@ Creative Coding Amsterdam @ SmashConf26 - https://cca.codes - concept by D17E - 
                             : null;
 
                     lastExportSnapshot = {
-                        outW,
-                        outH,
+                        outW: exportW,
+                        outH: exportH,
                         sFit,
-                        ox,
-                        oy,
+                        ox: 0,
+                        oy: 0,
                         hatchLineWidthMm: params.hatchLineWidthMm,
                         labels: new Int32Array(labels),
                         labelCounts: Uint32Array.from(labelCounts),
@@ -4385,8 +4391,17 @@ Creative Coding Amsterdam @ SmashConf26 - https://cca.codes - concept by D17E - 
 
                 window.setup = function setup() {
                     createCanvas(320, 240).parent("p5-hidden");
-                    captureVideo = createCapture(VIDEO, () => {
-                        captureVideo.size(320, 240);
+                    captureVideo = createCapture(
+                        {
+                            video: {
+                                width: { ideal: 1280 },
+                                height: { ideal: 720 },
+                                aspectRatio: { ideal: 16 / 9 },
+                                facingMode: "user",
+                            },
+                            audio: false,
+                        },
+                        () => {
                         captureVideo.hide();
                         const vel = captureVideo.elt;
                         if (vel) {
@@ -4415,7 +4430,8 @@ Creative Coding Amsterdam @ SmashConf26 - https://cca.codes - concept by D17E - 
                                 setStatus("Segmenter init failed");
                             }
                         })();
-                    });
+                        },
+                    );
                     noLoop();
                 };
 
