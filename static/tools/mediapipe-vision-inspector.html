@@ -1,0 +1,1061 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <!-- tool-meta: {"name":"MediaPipe Vision inspector","slug":"mediapipe-vision-inspector","description":"Webcam sandbox for Google MediaPipe Tasks Vision — face, hands, pose, holistic, gestures, selfie multiclass segmentation, timing and JSON summaries. Uses @mediapipe/tasks-vision from CDN.","tags":["mediapipe","webcam","face","hands","pose","segmentation","inspector"]} -->
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>MediaPipe Vision inspector</title>
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500&display=swap");
+
+            :root {
+                --bg: #0c0c0c;
+                --panel: #131313;
+                --border: #2a2a2a;
+                --text: #ddd;
+                --muted: #7a7a7a;
+                --accent: #7dd3fc;
+                --accent2: #c4f07a;
+                --danger: #f87171;
+                --mono: "IBM Plex Mono", monospace;
+            }
+
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                font-family: var(--mono);
+                font-size: 12px;
+                background: var(--bg);
+                color: var(--text);
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            header {
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 10px 16px;
+                border-bottom: 1px solid var(--border);
+                background: var(--panel);
+            }
+
+            .logo {
+                font-size: 10px;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+                color: var(--accent2);
+                font-weight: 500;
+                white-space: nowrap;
+            }
+
+            .tagline {
+                color: var(--muted);
+                font-size: 11px;
+                max-width: 52ch;
+            }
+
+            .status {
+                margin-left: auto;
+                font-size: 11px;
+                color: var(--accent);
+                white-space: nowrap;
+                max-width: 36ch;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .layout {
+                flex: 1;
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) min(380px, 38vw);
+                min-height: 0;
+            }
+
+            .stage {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 14px;
+                background: #070707;
+                min-width: 0;
+                min-height: 0;
+                position: relative;
+            }
+
+            .mirror-stack {
+                position: relative;
+                max-width: 100%;
+                max-height: 100%;
+                transform: scaleX(-1);
+            }
+
+            .mirror-stack video {
+                display: block;
+                max-width: 100%;
+                max-height: calc(100vh - 120px);
+                width: auto;
+                height: auto;
+                visibility: hidden;
+                pointer-events: none;
+            }
+
+            .mirror-stack canvas {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background: #000;
+                box-shadow: 0 0 0 1px var(--border);
+            }
+
+            aside {
+                border-left: 1px solid var(--border);
+                background: var(--panel);
+                overflow: auto;
+                padding: 12px 14px 20px;
+            }
+
+            h2 {
+                font-size: 10px;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                color: var(--muted);
+                margin: 14px 0 8px;
+            }
+
+            h2:first-child {
+                margin-top: 0;
+            }
+
+            label.row {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                gap: 8px;
+                align-items: center;
+                margin-bottom: 8px;
+            }
+
+            label.row span {
+                color: var(--muted);
+            }
+
+            label.row.indent {
+                padding-left: 10px;
+            }
+
+            aside fieldset[disabled] label.row span {
+                opacity: 0.45;
+            }
+
+            aside fieldset[disabled] {
+                opacity: 0.7;
+            }
+
+            .hint {
+                font-size: 10px;
+                color: var(--muted);
+                line-height: 1.45;
+                margin: 6px 0 10px;
+            }
+
+            .metrics {
+                font-variant-numeric: tabular-nums;
+                font-size: 11px;
+                color: var(--accent);
+                line-height: 1.5;
+            }
+
+            button {
+                font-family: var(--mono);
+                font-size: 11px;
+                padding: 6px 10px;
+                border: 1px solid var(--border);
+                background: #1a1a1a;
+                color: var(--text);
+                cursor: pointer;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+            }
+
+            button:hover {
+                border-color: var(--accent);
+                color: var(--accent2);
+            }
+
+            button.secondary {
+                margin-top: 6px;
+                width: 100%;
+            }
+
+            .presets {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+                margin-top: 6px;
+            }
+
+            .presets button {
+                flex: 1 1 auto;
+                min-width: 0;
+            }
+
+            #jsonPanel {
+                width: 100%;
+                min-height: 140px;
+                max-height: 220px;
+                margin-top: 6px;
+                padding: 8px;
+                font-size: 10px;
+                line-height: 1.35;
+                background: #0a0a0a;
+                border: 1px solid var(--border);
+                color: var(--muted);
+                resize: vertical;
+                overflow: auto;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+
+            footer.note {
+                flex-shrink: 0;
+                padding: 8px 16px;
+                border-top: 1px solid var(--border);
+                font-size: 10px;
+                color: var(--muted);
+            }
+
+            .err {
+                color: var(--danger);
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <span class="logo">DXVIIE / TOOL</span>
+            <span class="tagline">MediaPipe Tasks Vision — explore models, overlays, and frame cost in one place.</span>
+            <span class="status" id="status">Idle</span>
+        </header>
+
+        <div class="layout">
+            <div class="stage">
+                <div class="mirror-stack" id="mirrorStack">
+                    <video id="video" playsinline autoplay muted></video>
+                    <canvas id="canvas"></canvas>
+                </div>
+            </div>
+
+            <aside>
+                <h2>Camera</h2>
+                <button type="button" id="btnCam">Start camera</button>
+                <button type="button" id="btnPause" class="secondary" disabled>Pause</button>
+                <p class="hint">Mirror is CSS-only (landmarks match the raw frame). Requires HTTPS or localhost.</p>
+
+                <h2>Models</h2>
+                <p class="hint">Heavy combinations raise frame time. Holistic replaces the separate face / hand / pose / gesture graph below.</p>
+
+                <label class="row">
+                    <span>Holistic landmarker</span>
+                    <input type="checkbox" id="chkHolistic" />
+                </label>
+                <label class="row indent" id="rowHolPoseSeg">
+                    <span>Holistic · pose segmentation mask</span>
+                    <input type="checkbox" id="chkHolPoseSeg" />
+                </label>
+                <label class="row indent">
+                    <span>Holistic · face blendshapes</span>
+                    <input type="checkbox" id="chkHolFaceBlend" />
+                </label>
+
+                <fieldset id="atomicTasks" style="border: none">
+                    <label class="row">
+                        <span>Face detector (boxes)</span>
+                        <input type="checkbox" id="chkFaceDet" />
+                    </label>
+                    <label class="row">
+                        <span>Face landmarker</span>
+                        <input type="checkbox" id="chkFaceLm" />
+                    </label>
+                    <label class="row indent">
+                        <span>Face blendshapes</span>
+                        <input type="checkbox" id="chkFaceBlend" />
+                    </label>
+                    <label class="row">
+                        <span>Hand landmarker</span>
+                        <input type="checkbox" id="chkHand" />
+                    </label>
+                    <label class="row">
+                        <span>Pose landmarker</span>
+                        <input type="checkbox" id="chkPose" />
+                    </label>
+                    <label class="row indent">
+                        <span>Pose segmentation mask</span>
+                        <input type="checkbox" id="chkPoseSeg" />
+                    </label>
+                    <label class="row">
+                        <span>Gesture recognizer</span>
+                        <input type="checkbox" id="chkGesture" />
+                    </label>
+                </fieldset>
+
+                <label class="row">
+                    <span>Image segmenter · selfie multiclass</span>
+                    <input type="checkbox" id="chkImgSeg" />
+                </label>
+                <label class="row indent">
+                    <span class="muted">Shows category-colored overlay · calls <code>.close()</code> on prior mask each frame.</span>
+                </label>
+
+                <h2>Presets</h2>
+                <div class="presets">
+                    <button type="button" id="presetPose">Pose</button>
+                    <button type="button" id="presetFaceHands">Face+Hands</button>
+                    <button type="button" id="presetHolistic">Holistic</button>
+                    <button type="button" id="presetClear">Clear</button>
+                </div>
+
+                <h2>Timing</h2>
+                <div class="metrics" id="metrics">Inference: — · FPS: — · Rolling p95: —</div>
+
+                <h2>Last result (summary)</h2>
+                <textarea id="jsonPanel" readonly spellcheck="false"></textarea>
+            </aside>
+        </div>
+
+        <footer class="note">
+            <code>@mediapipe/tasks-vision@0.10.35</code> · WASM/jsDelivr · weights from MediaPipe storage · Inference
+            uses <code>delegate: &quot;CPU&quot;</code>; segmentation mask compositing uses a hidden WebGL2 canvas for
+            <code>DrawingUtils</code> (pose confidence overlays need WebGL · category masks fall back to CPU tint if not).
+        </footer>
+
+        <script type="module">
+            const MP_VER = "0.10.35";
+            const WASM_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}/wasm`;
+
+            const MODELS = {
+                faceDetector:
+                    "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+                faceLandmarker:
+                    "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                handLandmarker:
+                    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+                poseLandmarker:
+                    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+                gestureRecognizer:
+                    "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+                holistic:
+                    "https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task",
+                imageSegmenter:
+                    "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite",
+            };
+
+            /** All vision tasks use CPU delegate unless we pass a WebGL canvas (see VisionTaskOptions). */
+            function cpuModel(modelAssetPath) {
+                return { modelAssetPath, delegate: "CPU" };
+            }
+
+            const {
+                DrawingUtils,
+                FaceDetector,
+                FaceLandmarker,
+                FilesetResolver,
+                GestureRecognizer,
+                HandLandmarker,
+                HolisticLandmarker,
+                ImageSegmenter,
+                PoseLandmarker,
+            } = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}/vision_bundle.mjs`);
+
+            const video = document.getElementById("video");
+            const canvas = document.getElementById("canvas");
+            const ctx = canvas.getContext("2d");
+            const statusEl = document.getElementById("status");
+            const metricsEl = document.getElementById("metrics");
+            const jsonPanel = document.getElementById("jsonPanel");
+            const atomicFieldset = document.getElementById("atomicTasks");
+
+            const chk = (id) => document.getElementById(id);
+
+            let vision = null;
+            let stream = null;
+            let running = false;
+            let paused = false;
+            let raf = 0;
+
+            let faceDetector = null;
+            let faceLandmarker = null;
+            let handLandmarker = null;
+            let poseLandmarker = null;
+            let gestureRecognizer = null;
+            let holisticLandmarker = null;
+            let imageSegmenter = null;
+
+            let faceLmBlendOn = false;
+            let poseSegOn = false;
+            let holisticSegOn = false;
+            let holisticFaceBlendOn = false;
+
+            const timings = [];
+            /** @type {any} */
+            let drawUtils = null;
+            /** Last size used to build DrawingUtils (recreate when video resolution changes). */
+            let drawUtilsDim = { w: 0, h: 0 };
+            /** WebGL canvas for DrawingUtils GPU mask ops (segmentation / pose mask). Inference can stay CPU. */
+            let maskGlCanvas = null;
+            /** @type {WebGL2RenderingContext | null} */
+            let maskGlCtx = null;
+
+            /** @type {string[] | null} */
+            let segLabels = null;
+            /** @type {Map<number, [number, number, number, number]> | null} */
+            let segColorMap = null;
+
+            function setStatus(text, err = false) {
+                statusEl.textContent = text;
+                statusEl.classList.toggle("err", err);
+            }
+
+            function teardownDrawingUtils() {
+                try {
+                    drawUtils?.close?.();
+                } catch (_) {
+                    /* noop */
+                }
+                drawUtils = null;
+                drawUtilsDim = { w: 0, h: 0 };
+            }
+
+            /**
+             * Segmentation masks are often GPU-backed MPMasks; DrawingUtils requires WebGL2 to composite them.
+             * Landmark drawing uses the 2D context only.
+             */
+            function ensureDrawingUtils(w, h) {
+                if (!w || !h) return null;
+
+                if (!maskGlCanvas) {
+                    maskGlCanvas = document.createElement("canvas");
+                    maskGlCtx = maskGlCanvas.getContext("webgl2", {
+                        alpha: true,
+                        antialias: false,
+                        depth: false,
+                        stencil: false,
+                        premultipliedAlpha: false,
+                    });
+                }
+
+                if (maskGlCanvas.width !== w || maskGlCanvas.height !== h) {
+                    maskGlCanvas.width = w;
+                    maskGlCanvas.height = h;
+                }
+
+                if (drawUtils && (drawUtilsDim.w !== w || drawUtilsDim.h !== h)) {
+                    teardownDrawingUtils();
+                }
+
+                if (!drawUtils) {
+                    drawUtils = maskGlCtx ? new DrawingUtils(ctx, maskGlCtx) : new DrawingUtils(ctx);
+                    drawUtilsDim = { w, h };
+                }
+
+                return drawUtils;
+            }
+
+            /** When WebGL2 is blocked, category masks may still expose Uint8 CPU data. */
+            function drawCategoryMaskCpu(cat, colorMap, destW, destH) {
+                if (!cat?.hasUint8Array?.()) return;
+                const mw = cat.width;
+                const mh = cat.height;
+                const u8 = cat.getAsUint8Array();
+                if (!mw || !mh || u8.length < mw * mh) return;
+
+                const tmp = document.createElement("canvas");
+                tmp.width = mw;
+                tmp.height = mh;
+                const tc = tmp.getContext("2d");
+                const img = tc.createImageData(mw, mh);
+                for (let i = 0; i < mw * mh; i++) {
+                    const cls = u8[i] ?? 0;
+                    const col = colorMap.get(cls) ?? [128, 128, 128, 90];
+                    const j = i * 4;
+                    img.data[j] = col[0];
+                    img.data[j + 1] = col[1];
+                    img.data[j + 2] = col[2];
+                    img.data[j + 3] = col[3];
+                }
+                tc.putImageData(img, 0, 0);
+                ctx.save();
+                ctx.drawImage(tmp, 0, 0, destW, destH);
+                ctx.restore();
+            }
+
+            function resizeCanvasToVideo() {
+                const vw = video.videoWidth;
+                const vh = video.videoHeight;
+                if (!vw || !vh) return;
+                canvas.width = vw;
+                canvas.height = vh;
+            }
+
+            function ensureVision() {
+                if (vision) return Promise.resolve(vision);
+                setStatus("Loading WASM…");
+                return FilesetResolver.forVisionTasks(WASM_BASE).then((v) => {
+                    vision = v;
+                    setStatus("WASM ready");
+                    return vision;
+                });
+            }
+
+            function closeQuietly(instance) {
+                try {
+                    instance?.close?.();
+                } catch (_) {
+                    /* noop */
+                }
+            }
+
+            function resetVisionTasks() {
+                closeQuietly(faceDetector);
+                closeQuietly(faceLandmarker);
+                closeQuietly(handLandmarker);
+                closeQuietly(poseLandmarker);
+                closeQuietly(gestureRecognizer);
+                closeQuietly(holisticLandmarker);
+                closeQuietly(imageSegmenter);
+                faceDetector = null;
+                faceLandmarker = null;
+                handLandmarker = null;
+                poseLandmarker = null;
+                gestureRecognizer = null;
+                holisticLandmarker = null;
+                imageSegmenter = null;
+                segLabels = null;
+                segColorMap = null;
+            }
+
+            async function syncTasksFromUI() {
+                await ensureVision();
+
+                const wantHolistic = chk("chkHolistic").checked;
+
+                chk("chkFaceBlend").disabled = wantHolistic || !chk("chkFaceLm").checked;
+                if (!wantHolistic && !chk("chkFaceLm").checked) chk("chkFaceBlend").checked = false;
+
+                chk("chkPoseSeg").disabled = !chk("chkPose").checked;
+                if (!chk("chkPose").checked) chk("chkPoseSeg").checked = false;
+
+                atomicFieldset.disabled = wantHolistic;
+
+                const blend = chk("chkFaceBlend").checked;
+                const holFaceBlend = chk("chkHolFaceBlend").checked;
+                const wantFaceDet = !wantHolistic && chk("chkFaceDet").checked;
+                const wantFaceLm = !wantHolistic && chk("chkFaceLm").checked;
+                const wantHand = !wantHolistic && chk("chkHand").checked;
+                const wantPose = !wantHolistic && chk("chkPose").checked;
+                const wantGest = !wantHolistic && chk("chkGesture").checked;
+
+                const wantImgSeg = chk("chkImgSeg").checked;
+                const wantPoseSeg = wantPose && chk("chkPoseSeg").checked;
+                const holisticPoseSeg = wantHolistic && chk("chkHolPoseSeg").checked;
+
+                document.getElementById("rowHolPoseSeg").style.display = wantHolistic ? "" : "none";
+                chk("chkHolFaceBlend").closest("label.row").style.display = wantHolistic ? "" : "none";
+
+                /*
+                 Recreate Face landmarker when blendshapes flag changes — output shape differs.
+                */
+                if (faceLandmarker && faceLmBlendOn !== blend) {
+                    closeQuietly(faceLandmarker);
+                    faceLandmarker = null;
+                }
+                faceLmBlendOn = blend;
+
+                if (poseLandmarker && poseSegOn !== wantPoseSeg) {
+                    closeQuietly(poseLandmarker);
+                    poseLandmarker = null;
+                }
+                poseSegOn = wantPoseSeg;
+
+                if (
+                    holisticLandmarker &&
+                    (holisticSegOn !== holisticPoseSeg || holisticFaceBlendOn !== holFaceBlend)
+                ) {
+                    closeQuietly(holisticLandmarker);
+                    holisticLandmarker = null;
+                }
+                holisticSegOn = holisticPoseSeg;
+                holisticFaceBlendOn = holFaceBlend;
+
+                const baseVideo = { runningMode: "VIDEO" };
+
+                if (!wantHolistic && !faceDetector && wantFaceDet) {
+                    faceDetector = await FaceDetector.createFromOptions(vision, {
+                        ...baseVideo,
+                        baseOptions: cpuModel(MODELS.faceDetector),
+                        minDetectionConfidence: 0.5,
+                        minSuppressionThreshold: 0.3,
+                    });
+                } else if (!wantFaceDet || wantHolistic) {
+                    closeQuietly(faceDetector);
+                    faceDetector = null;
+                }
+
+                if (!wantHolistic && !faceLandmarker && wantFaceLm) {
+                    faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+                        ...baseVideo,
+                        baseOptions: cpuModel(MODELS.faceLandmarker),
+                        outputFaceBlendshapes: blend,
+                        numFaces: 2,
+                    });
+                } else if (!wantFaceLm) {
+                    closeQuietly(faceLandmarker);
+                    faceLandmarker = null;
+                }
+
+                if (!wantHolistic && !handLandmarker && wantHand) {
+                    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                        ...baseVideo,
+                        baseOptions: cpuModel(MODELS.handLandmarker),
+                        numHands: 2,
+                    });
+                } else if (!wantHand) {
+                    closeQuietly(handLandmarker);
+                    handLandmarker = null;
+                }
+
+                if (!wantHolistic && !poseLandmarker && wantPose) {
+                    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+                        ...baseVideo,
+                        baseOptions: cpuModel(MODELS.poseLandmarker),
+                        numPoses: 1,
+                        outputSegmentationMasks: wantPoseSeg,
+                    });
+                } else if (!wantPose) {
+                    closeQuietly(poseLandmarker);
+                    poseLandmarker = null;
+                }
+
+                if (!wantHolistic && !gestureRecognizer && wantGest) {
+                    gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
+                        ...baseVideo,
+                        baseOptions: cpuModel(MODELS.gestureRecognizer),
+                        numHands: 2,
+                    });
+                } else if (!wantGest) {
+                    closeQuietly(gestureRecognizer);
+                    gestureRecognizer = null;
+                }
+
+                if (!holisticLandmarker && wantHolistic) {
+                    holisticLandmarker = await HolisticLandmarker.createFromOptions(vision, {
+                        ...baseVideo,
+                        baseOptions: cpuModel(MODELS.holistic),
+                        outputPoseSegmentationMasks: holisticPoseSeg,
+                        outputFaceBlendshapes: holFaceBlend,
+                    });
+                } else if (!wantHolistic) {
+                    closeQuietly(holisticLandmarker);
+                    holisticLandmarker = null;
+                }
+
+                if (!imageSegmenter && wantImgSeg) {
+                    imageSegmenter = await ImageSegmenter.createFromOptions(vision, {
+                        ...baseVideo,
+                        baseOptions: cpuModel(MODELS.imageSegmenter),
+                        outputCategoryMask: true,
+                        outputConfidenceMasks: false,
+                    });
+                } else if (!wantImgSeg) {
+                    closeQuietly(imageSegmenter);
+                    imageSegmenter = null;
+                    segLabels = null;
+                    segColorMap = null;
+                }
+
+                if (imageSegmenter && !segLabels) {
+                    segLabels = imageSegmenter.getLabels();
+                    segColorMap = buildCategoryColorMap(Math.max(segLabels.length, 8));
+                }
+            }
+
+            function buildCategoryColorMap(numCats) {
+                const m = new Map();
+                const alpha = 110;
+                for (let i = 0; i < numCats; i++) {
+                    const hue = (i * 37) % 360;
+                    const c = hslToRgb(hue / 360, 0.55, 0.52);
+                    m.set(i, [c.r, c.g, c.b, alpha]);
+                }
+                return m;
+            }
+
+            function hslToRgb(h, s, l) {
+                const a = s * Math.min(l, 1 - l);
+                const f = (n) => {
+                    const k = (n + h * 12) % 12;
+                    return l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+                };
+                return { r: Math.round(f(0) * 255), g: Math.round(f(8) * 255), b: Math.round(f(4) * 255) };
+            }
+
+            /** @returns {unknown} */
+            function summarizeLandmarks(groups) {
+                if (!groups?.length) return { count: 0 };
+                return {
+                    count: groups.length,
+                    pointsPerGroup: groups.map((g) => g?.length ?? 0),
+                };
+            }
+
+            function summarizeFaceDet(res) {
+                const d = res?.detections ?? [];
+                return {
+                    faces: d.length,
+                    scores: d.map((x) => x.categories?.[0]?.score).filter((s) => s != null),
+                };
+            }
+
+            function summarizeGestures(res) {
+                const gs = res?.gestures ?? [];
+                return {
+                    hands: gs.length,
+                    labels: gs.map((g) => g?.[0]?.categoryName ?? "—"),
+                    scores: gs.map((g) => g?.[0]?.score).filter((s) => s != null),
+                };
+            }
+
+            function summarizeHolistic(h) {
+                if (!h) return null;
+                return {
+                    faceGroups: h.faceLandmarks?.length ?? 0,
+                    poseGroups: h.poseLandmarks?.length ?? 0,
+                    leftHands: h.leftHandLandmarks?.length ?? 0,
+                    rightHands: h.rightHandLandmarks?.length ?? 0,
+                    poseMasks: h.poseSegmentationMasks?.length ?? 0,
+                    blendshapeHeads: h.faceBlendshapes?.length ?? 0,
+                };
+            }
+
+            function releaseHolisticMasks(h) {
+                if (!h?.poseSegmentationMasks?.length) return;
+                for (const m of h.poseSegmentationMasks) {
+                    try {
+                        m.close();
+                    } catch (_) {
+                        /* noop */
+                    }
+                }
+            }
+
+            function drawFrame(tsRaf) {
+                if (!running || paused) return;
+                resizeCanvasToVideo();
+                const cw = canvas.width;
+                const ch = canvas.height;
+                if (!cw || !ch) {
+                    raf = requestAnimationFrame(drawFrame);
+                    return;
+                }
+
+                ensureDrawingUtils(cw, ch);
+                if (!drawUtils) {
+                    raf = requestAnimationFrame(drawFrame);
+                    return;
+                }
+
+                ctx.save();
+                ctx.clearRect(0, 0, cw, ch);
+                ctx.drawImage(video, 0, 0, cw, ch);
+
+                const tInf0 = performance.now();
+                const summary = {};
+                const timeMs = tsRaf;
+
+                try {
+                    if (imageSegmenter && segColorMap) {
+                        const seg = imageSegmenter.segmentForVideo(video, timeMs);
+                        const cat = seg.categoryMask;
+                        if (cat) {
+                            if (maskGlCtx) {
+                                drawUtils.drawCategoryMask(cat, segColorMap, [0, 0, 0, 0]);
+                            } else {
+                                drawCategoryMaskCpu(cat, segColorMap, cw, ch);
+                            }
+                        }
+                        summary.imageSegmenter = {
+                            labels: segLabels,
+                            qualityScores: seg.qualityScores,
+                            hasCategoryMask: !!cat,
+                        };
+                        seg.close();
+                    }
+
+                    if (holisticLandmarker) {
+                        const h = holisticLandmarker.detectForVideo(video, timeMs);
+                        summary.holistic = summarizeHolistic(h);
+
+                        const pMasks = h.poseSegmentationMasks;
+                        if (pMasks?.[0] && maskGlCtx) {
+                            drawUtils.drawConfidenceMask(pMasks[0], [0, 0, 0, 0], [125, 211, 252, 70]);
+                        }
+
+                        const faceStyle = { lineWidth: 1, color: "rgba(125,211,252,0.85)" };
+                        for (const lm of h.faceLandmarks ?? []) {
+                            drawUtils.drawConnectors(lm, HolisticLandmarker.FACE_LANDMARKS_FACE_OVAL, faceStyle);
+                            drawUtils.drawConnectors(lm, HolisticLandmarker.FACE_LANDMARKS_CONTOURS, {
+                                lineWidth: 1,
+                                color: "rgba(196,240,122,0.35)",
+                            });
+                        }
+                        const poseStyle = { lineWidth: 2, color: "rgba(125,211,252,0.9)" };
+                        for (const pl of h.poseLandmarks ?? []) {
+                            drawUtils.drawConnectors(pl, HolisticLandmarker.POSE_CONNECTIONS, poseStyle);
+                            drawUtils.drawLandmarks(pl, { lineWidth: 1, radius: 2, color: "rgba(125,211,252,0.7)" });
+                        }
+                        const handStyle = { lineWidth: 2, color: "rgba(196,240,122,0.95)" };
+                        for (const lm of h.leftHandLandmarks ?? []) {
+                            drawUtils.drawConnectors(lm, HolisticLandmarker.HAND_CONNECTIONS, handStyle);
+                            drawUtils.drawLandmarks(lm, { lineWidth: 1, radius: 2 });
+                        }
+                        for (const lm of h.rightHandLandmarks ?? []) {
+                            drawUtils.drawConnectors(lm, HolisticLandmarker.HAND_CONNECTIONS, handStyle);
+                            drawUtils.drawLandmarks(lm, { lineWidth: 1, radius: 2 });
+                        }
+
+                        releaseHolisticMasks(h);
+                    } else {
+                        if (faceDetector) {
+                            const fr = faceDetector.detectForVideo(video, timeMs);
+                            summary.faceDetector = summarizeFaceDet(fr);
+                            for (const d of fr.detections ?? []) {
+                                if (d.boundingBox) {
+                                    drawUtils.drawBoundingBox(d.boundingBox, {
+                                        color: "rgba(125,211,252,0.95)",
+                                        lineWidth: 2,
+                                    });
+                                }
+                            }
+                        }
+                        if (faceLandmarker) {
+                            const fr = faceLandmarker.detectForVideo(video, timeMs);
+                            summary.faceLandmarker = {
+                                faces: fr.faceLandmarks?.length ?? 0,
+                                blendshapes: fr.faceBlendshapes?.length ?? 0,
+                            };
+                            for (const lm of fr.faceLandmarks ?? []) {
+                                drawUtils.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, {
+                                    lineWidth: 1,
+                                    color: "rgba(125,211,252,0.75)",
+                                });
+                                drawUtils.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_CONTOURS, {
+                                    lineWidth: 1,
+                                    color: "rgba(125,211,252,0.45)",
+                                });
+                            }
+                        }
+                        if (handLandmarker) {
+                            const hr = handLandmarker.detectForVideo(video, timeMs);
+                            summary.handLandmarker = summarizeLandmarks(hr.landmarks);
+                            for (const lm of hr.landmarks ?? []) {
+                                drawUtils.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, {
+                                    lineWidth: 2,
+                                    color: "rgba(196,240,122,0.95)",
+                                });
+                                drawUtils.drawLandmarks(lm, { lineWidth: 1, radius: 2 });
+                            }
+                        }
+                        if (poseLandmarker) {
+                            const pr = poseLandmarker.detectForVideo(video, timeMs);
+                            summary.poseLandmarker = {
+                                poses: summarizeLandmarks(pr.landmarks),
+                                segMasks: pr.segmentationMasks?.length ?? 0,
+                            };
+                            const sm = pr.segmentationMasks;
+                            if (sm?.[0] && maskGlCtx) {
+                                drawUtils.drawConfidenceMask(sm[0], [0, 0, 0, 0], [196, 240, 122, 60]);
+                            }
+                            const lineStyle = { lineWidth: 2, color: "rgba(125,211,252,0.9)" };
+                            for (const pl of pr.landmarks ?? []) {
+                                drawUtils.drawConnectors(pl, PoseLandmarker.POSE_CONNECTIONS, lineStyle);
+                                drawUtils.drawLandmarks(pl, {
+                                    lineWidth: 1,
+                                    radius: 2,
+                                    color: "rgba(125,211,252,0.65)",
+                                });
+                            }
+                            pr.close();
+                        }
+                        if (gestureRecognizer) {
+                            const gr = gestureRecognizer.recognizeForVideo(video, timeMs);
+                            summary.gestureRecognizer = summarizeGestures(gr);
+                            for (const lm of gr.landmarks ?? []) {
+                                drawUtils.drawConnectors(lm, GestureRecognizer.HAND_CONNECTIONS, {
+                                    lineWidth: 2,
+                                    color: "rgba(250,204,21,0.9)",
+                                });
+                                drawUtils.drawLandmarks(lm, { lineWidth: 1, radius: 2, color: "rgba(250,204,21,0.75)" });
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(e);
+                    setStatus(String(e?.message ?? e), true);
+                }
+
+                ctx.restore();
+
+                const inferMs = performance.now() - tInf0;
+                timings.push(inferMs);
+                if (timings.length > 45) timings.shift();
+                const avg = timings.reduce((a, b) => a + b, 0) / timings.length;
+                const sorted = [...timings].sort((a, b) => a - b);
+                const p95 = sorted[Math.floor(0.95 * (sorted.length - 1))] ?? inferMs;
+                const fps = inferMs > 0 ? 1000 / inferMs : 0;
+                metricsEl.textContent = `Inference: ${inferMs.toFixed(1)} ms · est. ${fps.toFixed(0)} fps · rolling p95: ${p95.toFixed(1)} ms`;
+
+                jsonPanel.value = JSON.stringify(summary, null, 2);
+
+                raf = requestAnimationFrame(drawFrame);
+            }
+
+            async function startCamera() {
+                if (stream) return;
+                setStatus("Requesting camera…");
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+                        audio: false,
+                    });
+                    video.srcObject = stream;
+                    await video.play();
+                    resizeCanvasToVideo();
+                    document.getElementById("btnCam").textContent = "Camera on";
+                    document.getElementById("btnPause").disabled = false;
+                    setStatus("Camera running");
+                    running = true;
+                    paused = false;
+                    await syncTasksFromUI();
+                    cancelAnimationFrame(raf);
+                    raf = requestAnimationFrame(drawFrame);
+                } catch (e) {
+                    console.error(e);
+                    setStatus(String(e?.message ?? e), true);
+                }
+            }
+
+            function stopCamera() {
+                running = false;
+                cancelAnimationFrame(raf);
+                if (stream) {
+                    for (const t of stream.getTracks()) t.stop();
+                    stream = null;
+                }
+                video.srcObject = null;
+                document.getElementById("btnCam").textContent = "Start camera";
+                document.getElementById("btnPause").disabled = true;
+                document.getElementById("btnPause").textContent = "Pause";
+                paused = false;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                teardownDrawingUtils();
+                setStatus("Idle");
+            }
+
+            function togglePause() {
+                if (!stream) return;
+                paused = !paused;
+                document.getElementById("btnPause").textContent = paused ? "Resume" : "Pause";
+                if (!paused && running) {
+                    cancelAnimationFrame(raf);
+                    raf = requestAnimationFrame(drawFrame);
+                }
+                setStatus(paused ? "Paused" : "Camera running");
+            }
+
+            async function applyModelCheckboxes() {
+                try {
+                    await syncTasksFromUI();
+                } catch (e) {
+                    console.error(e);
+                    setStatus(String(e?.message ?? e), true);
+                }
+            }
+
+            document.getElementById("btnCam").addEventListener("click", async () => {
+                if (stream) stopCamera();
+                else await startCamera();
+            });
+            document.getElementById("btnPause").addEventListener("click", togglePause);
+
+            const checkboxIds = [
+                "chkHolistic",
+                "chkHolPoseSeg",
+                "chkHolFaceBlend",
+                "chkFaceDet",
+                "chkFaceLm",
+                "chkFaceBlend",
+                "chkHand",
+                "chkPose",
+                "chkPoseSeg",
+                "chkGesture",
+                "chkImgSeg",
+            ];
+            for (const id of checkboxIds) {
+                chk(id).addEventListener("change", () => {
+                    void applyModelCheckboxes();
+                });
+            }
+
+            document.getElementById("presetPose").addEventListener("click", () => {
+                chk("chkHolistic").checked = false;
+                chk("chkFaceDet").checked = false;
+                chk("chkFaceLm").checked = false;
+                chk("chkHand").checked = false;
+                chk("chkPose").checked = true;
+                chk("chkPoseSeg").checked = false;
+                chk("chkGesture").checked = false;
+                chk("chkImgSeg").checked = false;
+                void applyModelCheckboxes();
+            });
+            document.getElementById("presetFaceHands").addEventListener("click", () => {
+                chk("chkHolistic").checked = false;
+                chk("chkFaceDet").checked = true;
+                chk("chkFaceLm").checked = true;
+                chk("chkHand").checked = true;
+                chk("chkPose").checked = false;
+                chk("chkGesture").checked = false;
+                chk("chkImgSeg").checked = false;
+                void applyModelCheckboxes();
+            });
+            document.getElementById("presetHolistic").addEventListener("click", () => {
+                chk("chkHolistic").checked = true;
+                chk("chkHolPoseSeg").checked = false;
+                chk("chkHolFaceBlend").checked = false;
+                chk("chkImgSeg").checked = false;
+                void applyModelCheckboxes();
+            });
+            document.getElementById("presetClear").addEventListener("click", () => {
+                for (const id of checkboxIds) chk(id).checked = false;
+                void applyModelCheckboxes();
+            });
+
+            window.addEventListener("beforeunload", () => {
+                stopCamera();
+                resetVisionTasks();
+                teardownDrawingUtils();
+            });
+
+            document.getElementById("rowHolPoseSeg").style.display = "none";
+            chk("chkHolFaceBlend").closest("label.row").style.display = "none";
+        </script>
+    </body>
+</html>

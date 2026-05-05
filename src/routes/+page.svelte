@@ -212,7 +212,7 @@
     line-height: 1.7;
   }
 
-  .empty code, footer code {
+  .empty code {
     color: var(--text-dim);
     background: var(--panel);
     padding: 0 4px;
