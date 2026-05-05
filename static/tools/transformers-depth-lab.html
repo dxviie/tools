@@ -482,7 +482,7 @@
             }
             const TURBO_RGB = buildTurbo256();
 
-            const { pipeline } = await import(TF_MODULE);
+            const { pipeline, env } = await import(TF_MODULE);
 
             const mirrorStack = document.getElementById("mirrorStack");
             const video = document.getElementById("video");
@@ -564,6 +564,10 @@
             let inferBusy = false;
             /** @type {HTMLCanvasElement | null} */
             let depthScratch = null;
+            /** @type {CanvasRenderingContext2D | null} */
+            let depthScratchCtx = null;
+            /** @type {ImageData | null} */
+            let reusableImageData = null;
 
             function setStatus(text, err = false) {
                 statusEl.textContent = text;
@@ -607,7 +611,10 @@
             }
 
             function getDepthScratch(w, h) {
-                if (!depthScratch) depthScratch = document.createElement("canvas");
+                if (!depthScratch) {
+                    depthScratch = document.createElement("canvas");
+                    depthScratchCtx = depthScratch.getContext("2d");
+                }
                 if (depthScratch.width !== w || depthScratch.height !== h) {
                     depthScratch.width = w;
                     depthScratch.height = h;
@@ -634,7 +641,10 @@
                 const w = rgba.width;
                 const h = rgba.height;
                 const src = rgba.data;
-                const out = new ImageData(w, h);
+                if (!reusableImageData || reusableImageData.width !== w || reusableImageData.height !== h) {
+                    reusableImageData = new ImageData(w, h);
+                }
+                const out = reusableImageData;
                 const d = out.data;
                 if (cmap === "gray") {
                     for (let i = 0, j = 0; i < src.length; i += 4, j += 4) {
@@ -781,12 +791,12 @@
                     ctx.restore();
                 }
 
-                const tmp = getDepthScratch(imgData.width, imgData.height);
-                tmp.getContext("2d").putImageData(imgData, 0, 0);
+                getDepthScratch(imgData.width, imgData.height);
+                depthScratchCtx.putImageData(imgData, 0, 0);
 
                 ctx.save();
                 ctx.globalAlpha = 1;
-                ctx.drawImage(tmp, 0, 0, cw, ch);
+                ctx.drawImage(depthScratch, 0, 0, cw, ch);
                 ctx.restore();
             }
 
@@ -930,6 +940,27 @@
             if (!navigator.gpu) {
                 const o = selDevice.querySelector('option[value="webgpu"]');
                 if (o) o.disabled = true;
+            } else {
+                selDevice.value = "webgpu";
+                selDtype.value = "fp16";
+                // Tell ORT Web to request the high-performance (discrete) adapter.
+                // env.backends.onnx IS ort.env, so this propagates to the WebGPU EP.
+                env.backends.onnx.webgpu = env.backends.onnx.webgpu ?? {};
+                env.backends.onnx.webgpu.powerPreference = "high-performance";
+
+                // Probe which adapter the browser will actually hand us.
+                navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
+                    .then((adapter) => {
+                        if (!adapter) return;
+                        return adapter.requestAdapterInfo?.();
+                    })
+                    .then((info) => {
+                        if (!info) return;
+                        const gpu = [info.vendor, info.architecture, info.description]
+                            .filter(Boolean).join(" · ") || info.device || "unknown";
+                        setStatus(`WebGPU adapter: ${gpu}`);
+                    })
+                    .catch(() => {});
             }
 
             setStatus("Load a model to begin");
