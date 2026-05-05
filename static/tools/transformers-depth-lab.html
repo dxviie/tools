@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <!-- tool-meta: {"name":"Transformers depth lab","slug":"transformers-depth-lab","description":"Chrome laptop lab: webcam or image → monocular depth via Transformers.js (@huggingface/transformers). Swap HF Hub ONNX models (Xenova / onnx-community), WASM or WebGPU, timings and JSON summaries. Models load from Hugging Face CDN.","tags":["transformers.js","depth","webgpu","wasm","webcam","huggingface","inspector","onnx"]} -->
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Transformers depth lab</title>
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500&display=swap");
+
+            :root {
+                --bg: #0c0c0c;
+                --panel: #131313;
+                --border: #2a2a2a;
+                --text: #ddd;
+                --muted: #7a7a7a;
+                --accent: #7dd3fc;
+                --accent2: #c4f07a;
+                --danger: #f87171;
+                --mono: "IBM Plex Mono", monospace;
+            }
+
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                font-family: var(--mono);
+                font-size: 12px;
+                background: var(--bg);
+                color: var(--text);
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            header {
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 10px 16px;
+                border-bottom: 1px solid var(--border);
+                background: var(--panel);
+            }
+
+            .logo {
+                font-size: 10px;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+                color: var(--accent2);
+                font-weight: 500;
+                white-space: nowrap;
+            }
+
+            .tagline {
+                color: var(--muted);
+                font-size: 11px;
+                max-width: 56ch;
+            }
+
+            .status {
+                margin-left: auto;
+                font-size: 11px;
+                color: var(--accent);
+                white-space: nowrap;
+                max-width: 42ch;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .layout {
+                flex: 1;
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) min(400px, 40vw);
+                min-height: 0;
+            }
+
+            .stage {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 14px;
+                background: #070707;
+                min-width: 0;
+                min-height: 0;
+                position: relative;
+            }
+
+            /* Match MediaPipe inspector: video defines the box; canvas is absolutely stacked on top. */
+            .mirror-stack {
+                position: relative;
+                display: inline-block;
+                max-width: 100%;
+                max-height: calc(100vh - 120px);
+                transform: scaleX(-1);
+                vertical-align: middle;
+            }
+
+            .mirror-stack video {
+                display: block;
+                max-width: 100%;
+                max-height: calc(100vh - 120px);
+                width: auto;
+                height: auto;
+                visibility: hidden;
+                pointer-events: none;
+            }
+
+            /* Hide the webcam element entirely when sizing the stage from a still image — avoids phantom layout quirks. */
+            .mirror-stack.mode-file > video {
+                display: none;
+            }
+
+            .mirror-stack canvas {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background: #000;
+                box-shadow: 0 0 0 1px var(--border);
+            }
+
+            .callout {
+                font-size: 10px;
+                color: var(--muted);
+                line-height: 1.5;
+                padding: 10px 12px;
+                background: #0a0a0a;
+                border: 1px solid var(--border);
+                margin-bottom: 10px;
+            }
+
+            .callout strong {
+                color: var(--text);
+                font-weight: 500;
+            }
+
+            .model-ref {
+                font-size: 9px;
+                margin-top: 6px;
+            }
+
+            .model-ref a {
+                color: var(--accent);
+            }
+
+            aside {
+                border-left: 1px solid var(--border);
+                background: var(--panel);
+                overflow: auto;
+                padding: 12px 14px 20px;
+            }
+
+            h2 {
+                font-size: 10px;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                color: var(--muted);
+                margin: 14px 0 8px;
+            }
+
+            h2:first-child {
+                margin-top: 0;
+            }
+
+            label.row {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                gap: 8px;
+                align-items: center;
+                margin-bottom: 8px;
+            }
+
+            label.row.block {
+                grid-template-columns: 1fr;
+            }
+
+            label.row span {
+                color: var(--muted);
+            }
+
+            .hint {
+                font-size: 10px;
+                color: var(--muted);
+                line-height: 1.45;
+                margin: 6px 0 10px;
+            }
+
+            .metrics {
+                font-variant-numeric: tabular-nums;
+                font-size: 11px;
+                color: var(--accent);
+                line-height: 1.55;
+            }
+
+            button,
+            select {
+                font-family: var(--mono);
+                font-size: 11px;
+            }
+
+            button {
+                padding: 6px 10px;
+                border: 1px solid var(--border);
+                background: #1a1a1a;
+                color: var(--text);
+                cursor: pointer;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+            }
+
+            button:hover {
+                border-color: var(--accent);
+                color: var(--accent2);
+            }
+
+            button.secondary {
+                margin-top: 6px;
+                width: 100%;
+            }
+
+            button:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+            }
+
+            select {
+                width: 100%;
+                padding: 5px 8px;
+                background: #1a1a1a;
+                border: 1px solid var(--border);
+                color: var(--text);
+            }
+
+            input[type="range"] {
+                width: 100%;
+            }
+
+            #jsonPanel {
+                width: 100%;
+                min-height: 120px;
+                max-height: 200px;
+                margin-top: 6px;
+                padding: 8px;
+                font-size: 10px;
+                line-height: 1.35;
+                background: #0a0a0a;
+                border: 1px solid var(--border);
+                color: var(--muted);
+                resize: vertical;
+                overflow: auto;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+
+            footer.note {
+                flex-shrink: 0;
+                padding: 8px 16px;
+                border-top: 1px solid var(--border);
+                font-size: 10px;
+                color: var(--muted);
+                line-height: 1.45;
+            }
+
+            .err {
+                color: var(--danger);
+            }
+
+            input[type="file"] {
+                font-size: 10px;
+                color: var(--muted);
+                max-width: 100%;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <span class="logo">DXVIIE / TOOL</span>
+            <span class="tagline"
+                >Monocular depth via Transformers.js — compare HF Hub models, timings, and visual encodings in the browser.</span
+            >
+            <span class="status" id="status">Idle</span>
+        </header>
+
+        <div class="layout">
+            <div class="stage">
+                <div class="mirror-stack" id="mirrorStack">
+                    <video id="video" playsinline autoplay muted></video>
+                    <canvas id="canvas"></canvas>
+                </div>
+            </div>
+
+            <aside>
+                <div class="callout" id="calloutWhat">
+                    <strong>What you are looking at.</strong> The large frame is the <strong>depth map</strong> inferred from
+                    your camera or image (Transformers.js <code>depth-estimation</code> pipeline). Pale / bright usually means
+                    closer in relative terms—exact mapping depends on the model. It is <strong>not</strong> a live duplicate
+                    webcam view unless you enable <em>RGB underlay</em>. Start the camera, wait for “Ready”, then watch the
+                    depth update (rate depends on CPU/GPU and settings below).
+                </div>
+
+                <h2>Source</h2>
+                <button type="button" id="btnCam">Start camera</button>
+                <button type="button" id="btnPause" class="secondary" disabled>Pause</button>
+                <label class="row block" style="margin-top: 10px">
+                    <span>Or load image</span>
+                    <input type="file" id="fileImg" accept="image/*" />
+                </label>
+                <button type="button" id="btnClearFile" class="secondary" disabled>Clear file</button>
+                <p class="hint">
+                    HTTPS or localhost. First model download can take a while from the Hub. Optimized for desktop Chrome. If you
+                    load a file image, <strong>it overrides the webcam</strong> for depth until you clear the file.
+                </p>
+
+                <h2>Model</h2>
+                <label class="row block">
+                    <span>Preset (click card for Hub page)</span>
+                    <select id="selModel"></select>
+                </label>
+                <p class="model-ref" id="modelBlurb"></p>
+                <label class="row block">
+                    <span>Custom model id (Hub)</span>
+                    <input type="text" id="inpCustomModel" placeholder="org/model-id" style="font-family: var(--mono); font-size: 11px; padding: 5px 8px; background: #1a1a1a; border: 1px solid var(--border); color: var(--text); width: 100%" />
+                </label>
+                <button type="button" id="btnLoadModel">Load / reload model</button>
+                <p class="hint">
+                    Only models published with ONNX for <strong>Transformers.js</strong> work here. Filtered list:
+                    <a href="https://huggingface.co/models?pipeline_tag=depth-estimation&amp;library=transformers.js&amp;sort=trending" target="_blank" rel="noopener noreferrer">Hub · depth-estimation · transformers.js</a>. Heavier models need WebGPU or fewer updates per second.
+                </p>
+
+                <h2>Runtime</h2>
+                <label class="row block">
+                    <span>Device</span>
+                    <select id="selDevice">
+                        <option value="wasm" selected>WASM (CPU)</option>
+                        <option value="webgpu">WebGPU</option>
+                    </select>
+                </label>
+                <label class="row block">
+                    <span>dtype</span>
+                    <select id="selDtype">
+                        <option value="q8" selected>q8 (default for WASM)</option>
+                        <option value="fp16">fp16</option>
+                        <option value="fp32">fp32</option>
+                        <option value="q4">q4</option>
+                    </select>
+                </label>
+                <p class="hint">WebGPU often needs <code>fp16</code> or <code>fp32</code>. If init fails, switch back to WASM + q8.</p>
+
+                <h2>Inference</h2>
+                <p class="hint" style="margin-top: 0">
+                    Depth on CPU (WASM) is expensive. Use a <strong>smaller max side</strong>, <strong>higher throttle</strong>, or
+                    <strong>WebGPU</strong> if your GPU supports it.
+                </p>
+                <label class="row block">
+                    <span>Max input side (px) — <span id="lblMaxSide">384</span></span>
+                    <input type="range" id="rngMaxSide" min="256" max="768" step="32" value="384" />
+                </label>
+                <label class="row">
+                    <span>Min ms between depth frames</span>
+                    <input type="number" id="inpThrottle" min="0" step="50" value="200" style="width: 72px; font-family: var(--mono); background: #1a1a1a; border: 1px solid var(--border); color: var(--text); padding: 4px 6px" />
+                </label>
+                <label class="row">
+                    <span>Colormap</span>
+                    <select id="selCmap">
+                        <option value="gray" selected>Grayscale</option>
+                        <option value="turbo">Turbo</option>
+                    </select>
+                </label>
+                <label class="row">
+                    <span>Show RGB underlay</span>
+                    <input type="checkbox" id="chkUnderlay" />
+                </label>
+                <label class="row">
+                    <span>Underlay opacity</span>
+                    <input type="range" id="rngUnderlay" min="0" max="100" value="35" disabled />
+                </label>
+
+                <h2>Timing</h2>
+                <div class="metrics" id="metrics">
+                    Last infer: — · avg (20): — · FPS: —<br />
+                    Model load: — · Tensor: —
+                </div>
+
+                <h2>Last run (JSON)</h2>
+                <textarea id="jsonPanel" readonly spellcheck="false"></textarea>
+            </aside>
+        </div>
+
+        <footer class="note">
+            <code>@huggingface/transformers@4.2.0</code> (jsDelivr) · ONNX Runtime Web · Models and WASM shards from
+            <a href="https://huggingface.co/" style="color: var(--accent)">huggingface.co</a> CDN. Depth pipeline returns
+            <code>predicted_depth</code> tensor plus normalized uint8 <code>depth</code>
+            (<code>RawImage</code>) for visualization. Not metric depth unless the checkpoint is metric..
+        </footer>
+
+        <canvas id="work" hidden></canvas>
+
+        <script type="module">
+            const HF_TRANSFORMERS_VER = "4.2.0";
+            const TF_MODULE = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${HF_TRANSFORMERS_VER}`;
+
+            /**
+             * @typedef {{ id: string, label: string, tier: string, blurb: string }} ModelPreset
+             * `id` is the Hub repo id passed to pipeline().
+             */
+            /** @type {ModelPreset[]} */
+            const MODEL_PRESETS = [
+                {
+                    id: "Xenova/glpn-nyu",
+                    label: "GLPN · NYU (smallest — try WASM first)",
+                    tier: "Small",
+                    blurb: "Lightest Xenova depth preset; fastest on CPU. Indoor-style training (NYU).",
+                },
+                {
+                    id: "Xenova/glpn-kitti",
+                    label: "GLPN · KITTI",
+                    tier: "Small",
+                    blurb: "Same family as NYU; KITTI bias (outdoor / driving scenes).",
+                },
+                {
+                    id: "Xenova/depth-anything-small-hf",
+                    label: "Depth Anything · small (balanced default)",
+                    tier: "Medium",
+                    blurb: "Strong general monocular depth; heavier than GLPN. Good first “serious” model.",
+                },
+                {
+                    id: "Xenova/dpt-hybrid-midas",
+                    label: "DPT · hybrid MiDaS",
+                    tier: "Medium",
+                    blurb: "Classic DPT/MiDaS line; higher quality, slower than small DA.",
+                },
+                {
+                    id: "Xenova/depth-anything-base-hf",
+                    label: "Depth Anything · base",
+                    tier: "Large",
+                    blurb: "Step up in size from small; use WebGPU or high throttle on laptop CPU.",
+                },
+                {
+                    id: "onnx-community/depth-anything-v2-small",
+                    label: "DAv2 · small (onnx-community)",
+                    tier: "Medium",
+                    blurb: "Community ONNX pack; if load fails, try Xenova presets or fp16/WebGPU.",
+                },
+                {
+                    id: "Xenova/dpt-large",
+                    label: "DPT · large (heavy)",
+                    tier: "Large",
+                    blurb: "High quality, slow; prefer WebGPU + fp16 and large throttle on laptops.",
+                },
+            ];
+
+            /** Turbo-like 256×RGB lookup (piecewise linear through classic turbo key stops). */
+            function buildTurbo256() {
+                const stops = [
+                    [0, 48, 18, 59],
+                    [0.25, 12, 61, 153],
+                    [0.5, 73, 196, 109],
+                    [0.75, 253, 231, 37],
+                    [1, 122, 4, 3],
+                ];
+                const out = new Uint8Array(256 * 3);
+                for (let i = 0; i < 256; i++) {
+                    const t = i / 255;
+                    let s = 0;
+                    while (s < stops.length - 2 && t > stops[s + 1][0]) s++;
+                    const a = stops[s];
+                    const b = stops[s + 1];
+                    const u = (t - a[0]) / (b[0] - a[0] || 1);
+                    out[i * 3] = Math.round(a[1] + u * (b[1] - a[1]));
+                    out[i * 3 + 1] = Math.round(a[2] + u * (b[2] - a[2]));
+                    out[i * 3 + 2] = Math.round(a[3] + u * (b[3] - a[3]));
+                }
+                return out;
+            }
+            const TURBO_RGB = buildTurbo256();
+
+            const { pipeline } = await import(TF_MODULE);
+
+            const mirrorStack = document.getElementById("mirrorStack");
+            const video = document.getElementById("video");
+            const canvas = document.getElementById("canvas");
+            const ctx = canvas.getContext("2d");
+            const work = document.getElementById("work");
+            const wctx = work.getContext("2d");
+            const modelBlurb = document.getElementById("modelBlurb");
+            const statusEl = document.getElementById("status");
+            const metricsEl = document.getElementById("metrics");
+            const jsonPanel = document.getElementById("jsonPanel");
+
+            const selModel = document.getElementById("selModel");
+            const inpCustom = document.getElementById("inpCustomModel");
+            const selDevice = document.getElementById("selDevice");
+            const selDtype = document.getElementById("selDtype");
+            const rngMaxSide = document.getElementById("rngMaxSide");
+            const lblMaxSide = document.getElementById("lblMaxSide");
+            const inpThrottle = document.getElementById("inpThrottle");
+            const selCmap = document.getElementById("selCmap");
+            const chkUnderlay = document.getElementById("chkUnderlay");
+            const rngUnderlay = document.getElementById("rngUnderlay");
+
+            function hubModelUrl(repoId) {
+                return `https://huggingface.co/${repoId}`;
+            }
+
+            function refreshSourceLayoutClass() {
+                mirrorStack.classList.toggle("mode-file", !!fileImage);
+            }
+
+            function refreshModelBlurb() {
+                const id = inpCustom.value.trim() || selModel.value;
+                const preset = MODEL_PRESETS.find((p) => p.id === id);
+                if (inpCustom.value.trim()) {
+                    modelBlurb.innerHTML = `Custom · <a href="${hubModelUrl(id)}" target="_blank" rel="noopener noreferrer">${id}</a> — verify “transformers.js” + ONNX on the model card before loading.`;
+                    return;
+                }
+                if (preset) {
+                    modelBlurb.innerHTML = `${preset.tier}. ${preset.blurb} · <a href="${hubModelUrl(preset.id)}" target="_blank" rel="noopener noreferrer">HF card</a>`;
+                } else {
+                    modelBlurb.innerHTML = "";
+                }
+            }
+
+            for (const p of MODEL_PRESETS) {
+                const o = document.createElement("option");
+                o.value = p.id;
+                o.textContent = `${p.label}`;
+                selModel.appendChild(o);
+            }
+            refreshModelBlurb();
+            selModel.addEventListener("change", () => {
+                inpCustom.value = "";
+                refreshModelBlurb();
+            });
+            inpCustom.addEventListener("input", refreshModelBlurb);
+
+            let stream = null;
+            let running = false;
+            let paused = false;
+            let raf = 0;
+            /** @type {HTMLImageElement | null} */
+            let fileImage = null;
+
+            /** @type {any} */
+            let depthPipe = null;
+            let loadModelMs = null;
+            let lastTensorInfo = "—";
+            /** @type {string} */
+            let activeModelId = MODEL_PRESETS[0].id;
+
+            const inferSamples = [];
+            let lastInferMs = null;
+            let lastFrameTs = 0;
+            /** Earliest time next inference may start (for throttle ms between frames). */
+            let nextInferAllowedAt = 0;
+            /** Skip overlapped ticks if inference is slower than requestAnimationFrame. */
+            let inferBusy = false;
+            /** @type {HTMLCanvasElement | null} */
+            let depthScratch = null;
+
+            function setStatus(text, err = false) {
+                statusEl.textContent = text;
+                statusEl.classList.toggle("err", err);
+            }
+
+            function layoutMirrorStackForFile(img) {
+                const maxW = mirrorStack.parentElement
+                    ? Math.min(window.innerWidth * 0.92, mirrorStack.parentElement.clientWidth)
+                    : window.innerWidth * 0.92;
+                const maxH = Math.max(80, window.innerHeight - 120);
+                const nw = img.naturalWidth;
+                const nh = img.naturalHeight;
+                if (!nw || !nh) return;
+                const r = Math.min(maxW / nw, maxH / nh, 1);
+                mirrorStack.style.width = `${Math.round(nw * r)}px`;
+                mirrorStack.style.height = `${Math.round(nh * r)}px`;
+            }
+
+            function clearMirrorStackFileLayout() {
+                mirrorStack.style.width = "";
+                mirrorStack.style.height = "";
+            }
+
+            /**
+             * Size the backing buffer to the on-screen mirror-stack box (fills over hidden video).
+             * @returns {boolean} false if the stage has no usable size yet
+             */
+            function syncCanvasBitmapToStack() {
+                const rw = mirrorStack.clientWidth;
+                const rh = mirrorStack.clientHeight;
+                if (rw < 2 || rh < 2) return false;
+                const dpr = Math.min(2, window.devicePixelRatio || 1);
+                const bw = Math.max(1, Math.round(rw * dpr));
+                const bh = Math.max(1, Math.round(rh * dpr));
+                if (canvas.width !== bw || canvas.height !== bh) {
+                    canvas.width = bw;
+                    canvas.height = bh;
+                }
+                return true;
+            }
+
+            function getDepthScratch(w, h) {
+                if (!depthScratch) depthScratch = document.createElement("canvas");
+                if (depthScratch.width !== w || depthScratch.height !== h) {
+                    depthScratch.width = w;
+                    depthScratch.height = h;
+                }
+                return depthScratch;
+            }
+
+            function computeInputSize(vw, vh, maxSide) {
+                if (!vw || !vh) return { w: 0, h: 0 };
+                const s = Math.max(vw, vh);
+                const scale = Math.min(1, maxSide / s);
+                return {
+                    w: Math.max(1, Math.round(vw * scale)),
+                    h: Math.max(1, Math.round(vh * scale)),
+                };
+            }
+
+            /**
+             * @param {any} depthImg pipeline `depth` RawImage
+             * @param {'gray' | 'turbo'} cmap
+             */
+            function depthToImageData(depthImg, cmap) {
+                const rgba = depthImg.rgba();
+                const w = rgba.width;
+                const h = rgba.height;
+                const src = rgba.data;
+                const out = new ImageData(w, h);
+                const d = out.data;
+                if (cmap === "gray") {
+                    for (let i = 0, j = 0; i < src.length; i += 4, j += 4) {
+                        const g = src[i];
+                        d[j] = g;
+                        d[j + 1] = g;
+                        d[j + 2] = g;
+                        d[j + 3] = 255;
+                    }
+                } else {
+                    for (let i = 0, j = 0; i < src.length; i += 4, j += 4) {
+                        const v = src[i];
+                        const k = v * 3;
+                        d[j] = TURBO_RGB[k];
+                        d[j + 1] = TURBO_RGB[k + 1];
+                        d[j + 2] = TURBO_RGB[k + 2];
+                        d[j + 3] = 255;
+                    }
+                }
+                return out;
+            }
+
+            function updateMetrics(inferMs) {
+                inferSamples.push(inferMs);
+                if (inferSamples.length > 20) inferSamples.shift();
+                const avg = inferSamples.reduce((a, b) => a + b, 0) / inferSamples.length;
+                const now = performance.now();
+                const dt = now - lastFrameTs;
+                lastFrameTs = now;
+                const fps = dt > 0 ? 1000 / dt : 0;
+                lastInferMs = inferMs;
+                metricsEl.innerHTML = `Last infer: ${inferMs.toFixed(1)} ms · avg (20): ${avg.toFixed(1)} ms · FPS: ${fps.toFixed(1)}<br />Model load: ${loadModelMs != null ? `${loadModelMs.toFixed(0)} ms` : "—"} · Tensor: ${lastTensorInfo}`;
+            }
+
+            function summarizeResult(modelId, device, dtype, maxSide, out, inferMs) {
+                const pd = out?.predicted_depth;
+                let shape = null;
+                try {
+                    shape = pd?.dims ? [...pd.dims] : null;
+                } catch (_) {
+                    shape = null;
+                }
+                lastTensorInfo = shape ? `[${shape.join(", ")}]` : "—";
+                const summary = {
+                    model: modelId,
+                    device,
+                    dtype,
+                    maxInputSide: maxSide,
+                    inferMs: Math.round(inferMs * 10) / 10,
+                    loadModelMs: loadModelMs != null ? Math.round(loadModelMs) : null,
+                    predicted_depth_dims: shape,
+                    depth_image: out?.depth
+                        ? { width: out.depth.width, height: out.depth.height, channels: out.depth.channels }
+                        : null,
+                    ts: new Date().toISOString(),
+                };
+                jsonPanel.value = JSON.stringify(summary, null, 2);
+            }
+
+            async function ensurePipeline() {
+                const custom = inpCustom.value.trim();
+                const modelId = custom || selModel.value;
+                activeModelId = modelId;
+
+                const device = selDevice.value === "webgpu" ? "webgpu" : "wasm";
+                const dtype = selDtype.value;
+
+                depthPipe = null;
+                setStatus(`Loading model ${modelId}…`);
+
+                const t0 = performance.now();
+                try {
+                    depthPipe = await pipeline("depth-estimation", modelId, {
+                        device,
+                        dtype,
+                    });
+                } catch (e) {
+                    setStatus(`Model load failed: ${e?.message ?? e}`, true);
+                    depthPipe = null;
+                    jsonPanel.value = JSON.stringify({ error: String(e?.message ?? e), model: modelId, device, dtype }, null, 2);
+                    throw e;
+                }
+                loadModelMs = performance.now() - t0;
+                setStatus(`Ready · ${modelId}`);
+            }
+
+            async function inferFrame() {
+                if (!depthPipe) return;
+
+                let vw;
+                let vh;
+                if (fileImage) {
+                    vw = fileImage.naturalWidth;
+                    vh = fileImage.naturalHeight;
+                } else {
+                    vw = video.videoWidth;
+                    vh = video.videoHeight;
+                }
+                const maxSide = Number(rngMaxSide.value);
+                const { w: iw, h: ih } = computeInputSize(vw, vh, maxSide);
+                if (iw < 2 || ih < 2) return;
+
+                work.width = iw;
+                work.height = ih;
+                wctx.save();
+                if (!fileImage) {
+                    wctx.translate(iw, 0);
+                    wctx.scale(-1, 1);
+                }
+                if (fileImage) wctx.drawImage(fileImage, 0, 0, iw, ih);
+                else wctx.drawImage(video, 0, 0, iw, ih);
+                wctx.restore();
+
+                const t1 = performance.now();
+                let out;
+                try {
+                    out = await depthPipe(work);
+                } catch (e) {
+                    setStatus(`Inference error: ${e?.message ?? e}`, true);
+                    return;
+                }
+                const inferMs = performance.now() - t1;
+                updateMetrics(inferMs);
+                summarizeResult(activeModelId, selDevice.value, selDtype.value, maxSide, out, inferMs);
+
+                const depthImg = out?.depth;
+                if (!depthImg) return;
+
+                const cmap = selCmap.value === "turbo" ? "turbo" : "gray";
+                const imgData = depthToImageData(depthImg, cmap);
+
+                if (!syncCanvasBitmapToStack()) return;
+
+                const cw = canvas.width;
+                const ch = canvas.height;
+                const under = chkUnderlay.checked;
+                const uo = Number(rngUnderlay.value) / 100;
+
+                ctx.clearRect(0, 0, cw, ch);
+                if (under && uo > 0) {
+                    ctx.save();
+                    ctx.globalAlpha = uo;
+                    ctx.drawImage(work, 0, 0, cw, ch);
+                    ctx.restore();
+                }
+
+                const tmp = getDepthScratch(imgData.width, imgData.height);
+                tmp.getContext("2d").putImageData(imgData, 0, 0);
+
+                ctx.save();
+                ctx.globalAlpha = 1;
+                ctx.drawImage(tmp, 0, 0, cw, ch);
+                ctx.restore();
+            }
+
+            async function loop() {
+                if (!running || paused || !depthPipe) return;
+
+                const throttle = Math.max(0, Number(inpThrottle.value) || 0);
+                const now = performance.now();
+                if (now < nextInferAllowedAt) {
+                    raf = requestAnimationFrame(loop);
+                    return;
+                }
+                if (inferBusy) {
+                    raf = requestAnimationFrame(loop);
+                    return;
+                }
+
+                inferBusy = true;
+                try {
+                    await inferFrame();
+                } finally {
+                    inferBusy = false;
+                }
+                nextInferAllowedAt = throttle > 0 ? performance.now() + throttle : 0;
+
+                raf = requestAnimationFrame(loop);
+            }
+
+            function startLoop() {
+                cancelAnimationFrame(raf);
+                raf = 0;
+                if (running && depthPipe && !paused) raf = requestAnimationFrame(loop);
+            }
+
+            document.getElementById("btnCam").addEventListener("click", async () => {
+                if (stream) {
+                    stream.getTracks().forEach((t) => t.stop());
+                    stream = null;
+                }
+                try {
+                    clearMirrorStackFileLayout();
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+                        audio: false,
+                    });
+                    video.srcObject = stream;
+                    await video.play();
+                    setStatus("Camera on");
+                    document.getElementById("btnPause").disabled = false;
+                    if (!running) {
+                        running = true;
+                        paused = false;
+                        startLoop();
+                    }
+                } catch (e) {
+                    setStatus(`Camera denied: ${e?.message ?? e}`, true);
+                }
+            });
+
+            document.getElementById("btnPause").addEventListener("click", () => {
+                paused = !paused;
+                document.getElementById("btnPause").textContent = paused ? "Resume" : "Pause";
+                if (paused) cancelAnimationFrame(raf);
+                else startLoop();
+            });
+
+            document.getElementById("fileImg").addEventListener("change", (ev) => {
+                const f = ev.target.files?.[0];
+                if (!f) return;
+                const url = URL.createObjectURL(f);
+                const img = new Image();
+                img.onload = () => {
+                    if (fileImage) URL.revokeObjectURL(fileImage.src);
+                    fileImage = img;
+                    layoutMirrorStackForFile(img);
+                    refreshSourceLayoutClass();
+                    document.getElementById("btnClearFile").disabled = false;
+                    setStatus("File image loaded");
+                    if (!running) {
+                        running = true;
+                        paused = false;
+                    }
+                    if (depthPipe) void inferFrame();
+                };
+                img.onerror = () => setStatus("Image load failed", true);
+                img.src = url;
+            });
+
+            document.getElementById("btnClearFile").addEventListener("click", () => {
+                if (fileImage) {
+                    URL.revokeObjectURL(fileImage.src);
+                    fileImage = null;
+                }
+                document.getElementById("fileImg").value = "";
+                document.getElementById("btnClearFile").disabled = true;
+                clearMirrorStackFileLayout();
+                refreshSourceLayoutClass();
+                setStatus("Cleared file");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            });
+
+            document.getElementById("btnLoadModel").addEventListener("click", async () => {
+                document.getElementById("btnLoadModel").disabled = true;
+                try {
+                    await ensurePipeline();
+                    startLoop();
+                } catch (_) {
+                    /* status set */
+                } finally {
+                    document.getElementById("btnLoadModel").disabled = false;
+                }
+            });
+
+            rngMaxSide.addEventListener("input", () => {
+                lblMaxSide.textContent = rngMaxSide.value;
+            });
+
+            chkUnderlay.addEventListener("change", () => {
+                rngUnderlay.disabled = !chkUnderlay.checked;
+            });
+
+            ["selCmap", "chkUnderlay", "rngUnderlay", "rngMaxSide", "inpThrottle"].forEach((id) => {
+                document.getElementById(id).addEventListener("change", () => {
+                    if (depthPipe && fileImage) void inferFrame();
+                });
+            });
+
+            video.addEventListener("loadedmetadata", () => {
+                if (fileImage) return;
+                if (depthPipe && running && !paused) startLoop();
+            });
+
+            window.addEventListener("resize", () => {
+                if (fileImage) layoutMirrorStackForFile(fileImage);
+            });
+
+            window.addEventListener("beforeunload", () => {
+                if (stream) stream.getTracks().forEach((t) => t.stop());
+            });
+
+            if (!navigator.gpu) {
+                const o = selDevice.querySelector('option[value="webgpu"]');
+                if (o) o.disabled = true;
+            }
+
+            setStatus("Load a model to begin");
+            ensurePipeline()
+                .then(() => {
+                    running = true;
+                    startLoop();
+                })
+                .catch(() => {
+                    /* user can retry */
+                });
+        </script>
+    </body>
+</html>
