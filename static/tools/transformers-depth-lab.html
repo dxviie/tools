@@ -302,7 +302,7 @@
                     <strong>What you are looking at.</strong> The large frame is the <strong>depth map</strong> inferred from
                     your camera or image (Transformers.js <code>depth-estimation</code> pipeline). Pale / bright usually means
                     closer in relative terms—exact mapping depends on the model. It is <strong>not</strong> a live duplicate
-                    webcam view unless you enable <em>RGB underlay</em>. Start the camera, wait for “Ready”, then watch the
+                    webcam view unless you enable <em>RGB underlay</em>. Start the camera, wait for "Ready", then watch the
                     depth update (rate depends on CPU/GPU and settings below).
                 </div>
 
@@ -408,8 +408,10 @@
             const TF_MODULE = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${HF_TRANSFORMERS_VER}`;
 
             /**
-             * @typedef {{ id: string, label: string, tier: string, blurb: string }} ModelPreset
+             * @typedef {{ id: string, label: string, tier: string, blurb: string, detail?: boolean }} ModelPreset
              * `id` is the Hub repo id passed to pipeline().
+             * `detail` marks models whose sharp boundaries make them ideal as per-pixel
+             * height/shading sources for downstream pipelines (e.g. Voronoi hatch).
              */
             /** @type {ModelPreset[]} */
             const MODEL_PRESETS = [
@@ -429,7 +431,8 @@
                     id: "Xenova/depth-anything-small-hf",
                     label: "Depth Anything · small (balanced default)",
                     tier: "Medium",
-                    blurb: "Strong general monocular depth; heavier than GLPN. Good first “serious” model.",
+                    detail: true,
+                    blurb: "Strong general monocular depth; heavier than GLPN. Good first serious model.",
                 },
                 {
                     id: "Xenova/dpt-hybrid-midas",
@@ -447,7 +450,22 @@
                     id: "onnx-community/depth-anything-v2-small",
                     label: "DAv2 · small (onnx-community)",
                     tier: "Medium",
-                    blurb: "Community ONNX pack; if load fails, try Xenova presets or fp16/WebGPU.",
+                    detail: true,
+                    blurb: "DAv2 sharpens boundaries vs. v1; fast enough for real-time detail maps. If load fails, try Xenova presets or fp16/WebGPU.",
+                },
+                {
+                    id: "onnx-community/depth-anything-v2-base-hf",
+                    label: "DAv2 · base (onnx-community — detail map)",
+                    tier: "Large",
+                    detail: true,
+                    blurb: "Sharper, more detailed depth than v2-small; excellent shading/height-field source for hatching pipelines. WebGPU + fp16 recommended.",
+                },
+                {
+                    id: "onnx-community/depth-anything-v2-large-hf",
+                    label: "DAv2 · large (onnx-community — heavy)",
+                    tier: "Large",
+                    detail: true,
+                    blurb: "Highest-quality DAv2 depth; very slow on CPU — requires WebGPU + fp16. Best edge fidelity for detail-map use.",
                 },
                 {
                     id: "Xenova/dpt-large",
@@ -518,11 +536,14 @@
                 const id = inpCustom.value.trim() || selModel.value;
                 const preset = MODEL_PRESETS.find((p) => p.id === id);
                 if (inpCustom.value.trim()) {
-                    modelBlurb.innerHTML = `Custom · <a href="${hubModelUrl(id)}" target="_blank" rel="noopener noreferrer">${id}</a> — verify “transformers.js” + ONNX on the model card before loading.`;
+                    modelBlurb.innerHTML = `Custom · <a href="${hubModelUrl(id)}" target="_blank" rel="noopener noreferrer">${id}</a> — verify "transformers.js" + ONNX on the model card before loading.`;
                     return;
                 }
                 if (preset) {
-                    modelBlurb.innerHTML = `${preset.tier}. ${preset.blurb} · <a href="${hubModelUrl(preset.id)}" target="_blank" rel="noopener noreferrer">HF card</a>`;
+                    const detailBadge = preset.detail
+                        ? ` · <span style="color:var(--accent2);font-size:9px">✓ detail map</span>`
+                        : "";
+                    modelBlurb.innerHTML = `${preset.tier}. ${preset.blurb} · <a href="${hubModelUrl(preset.id)}" target="_blank" rel="noopener noreferrer">HF card</a>${detailBadge}`;
                 } else {
                     modelBlurb.innerHTML = "";
                 }
@@ -562,12 +583,12 @@
             let nextInferAllowedAt = 0;
             /** Skip overlapped ticks if inference is slower than requestAnimationFrame. */
             let inferBusy = false;
-            /** @type {HTMLCanvasElement | null} */
-            let depthScratch = null;
-            /** @type {CanvasRenderingContext2D | null} */
-            let depthScratchCtx = null;
             /** @type {ImageData | null} */
             let reusableImageData = null;
+            /** Cached depth RawImage from last inference — used to redraw without re-running the model. */
+            let lastDepthImg = null;
+            /** Cached numeric value of the max-side slider, updated on input to avoid DOM reads in the hot path. */
+            let cachedMaxSide = 384;
 
             function setStatus(text, err = false) {
                 statusEl.textContent = text;
@@ -608,18 +629,6 @@
                     canvas.height = bh;
                 }
                 return true;
-            }
-
-            function getDepthScratch(w, h) {
-                if (!depthScratch) {
-                    depthScratch = document.createElement("canvas");
-                    depthScratchCtx = depthScratch.getContext("2d");
-                }
-                if (depthScratch.width !== w || depthScratch.height !== h) {
-                    depthScratch.width = w;
-                    depthScratch.height = h;
-                }
-                return depthScratch;
             }
 
             function computeInputSize(vw, vh, maxSide) {
@@ -704,6 +713,30 @@
                 jsonPanel.value = JSON.stringify(summary, null, 2);
             }
 
+            /**
+             * Re-colorize and composite from the cached depth image without re-running inference.
+             * Used when only display settings (colormap, underlay) change for a file image.
+             */
+            async function redrawFromCache() {
+                if (!lastDepthImg) return;
+                if (!syncCanvasBitmapToStack()) return;
+                const cw = canvas.width;
+                const ch = canvas.height;
+                const cmap = selCmap.value === "turbo" ? "turbo" : "gray";
+                const imgData = depthToImageData(lastDepthImg, cmap);
+                ctx.clearRect(0, 0, cw, ch);
+                const uo = Number(rngUnderlay.value) / 100;
+                if (chkUnderlay.checked && uo > 0) {
+                    ctx.save();
+                    ctx.globalAlpha = uo;
+                    ctx.drawImage(work, 0, 0, cw, ch);
+                    ctx.restore();
+                }
+                const bmp = await createImageBitmap(imgData);
+                ctx.drawImage(bmp, 0, 0, cw, ch);
+                bmp.close();
+            }
+
             async function ensurePipeline() {
                 const custom = inpCustom.value.trim();
                 const modelId = custom || selModel.value;
@@ -743,12 +776,14 @@
                     vw = video.videoWidth;
                     vh = video.videoHeight;
                 }
-                const maxSide = Number(rngMaxSide.value);
+                const maxSide = cachedMaxSide;
                 const { w: iw, h: ih } = computeInputSize(vw, vh, maxSide);
                 if (iw < 2 || ih < 2) return;
 
-                work.width = iw;
-                work.height = ih;
+                if (work.width !== iw || work.height !== ih) {
+                    work.width = iw;
+                    work.height = ih;
+                }
                 wctx.save();
                 if (!fileImage) {
                     wctx.translate(iw, 0);
@@ -772,6 +807,7 @@
 
                 const depthImg = out?.depth;
                 if (!depthImg) return;
+                lastDepthImg = depthImg;
 
                 const cmap = selCmap.value === "turbo" ? "turbo" : "gray";
                 const imgData = depthToImageData(depthImg, cmap);
@@ -791,13 +827,9 @@
                     ctx.restore();
                 }
 
-                getDepthScratch(imgData.width, imgData.height);
-                depthScratchCtx.putImageData(imgData, 0, 0);
-
-                ctx.save();
-                ctx.globalAlpha = 1;
-                ctx.drawImage(depthScratch, 0, 0, cw, ch);
-                ctx.restore();
+                const bmp = await createImageBitmap(imgData);
+                ctx.drawImage(bmp, 0, 0, cw, ch);
+                bmp.close();
             }
 
             async function loop() {
@@ -911,6 +943,7 @@
             });
 
             rngMaxSide.addEventListener("input", () => {
+                cachedMaxSide = Number(rngMaxSide.value);
                 lblMaxSide.textContent = rngMaxSide.value;
             });
 
@@ -918,7 +951,15 @@
                 rngUnderlay.disabled = !chkUnderlay.checked;
             });
 
-            ["selCmap", "chkUnderlay", "rngUnderlay", "rngMaxSide", "inpThrottle"].forEach((id) => {
+            // Display-only controls: re-colorize from cached depth without re-running inference.
+            ["selCmap", "chkUnderlay", "rngUnderlay"].forEach((id) => {
+                document.getElementById(id).addEventListener("change", () => {
+                    if (fileImage && lastDepthImg) void redrawFromCache();
+                    else if (depthPipe && fileImage) void inferFrame();
+                });
+            });
+            // Inference controls: changing resolution or throttle requires a fresh infer pass.
+            ["rngMaxSide", "inpThrottle"].forEach((id) => {
                 document.getElementById(id).addEventListener("change", () => {
                     if (depthPipe && fileImage) void inferFrame();
                 });

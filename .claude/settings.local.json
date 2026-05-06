@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "PowerShell($lines = Get-Content 'C:\\\\Users\\\\d16de\\\\_projects\\\\dxviie\\\\tools\\\\static\\\\tools\\\\transformers-depth-lab.html' -Encoding UTF8; $lines[407..418] | ForEach-Object { $i = [array]::IndexOf\\($lines, $_\\) + 1; \"$i : $_\" })",
+      "PowerShell($content = Get-Content 'C:\\\\Users\\\\d16de\\\\_projects\\\\dxviie\\\\tools\\\\static\\\\tools\\\\transformers-depth-lab.html' -Encoding UTF8 -Raw; $line435 = \\($content -split \"`n\"\\)[434]; [int[]][char[]]$line435 | Select-Object -First 120)"
+    ]
+  }
+}

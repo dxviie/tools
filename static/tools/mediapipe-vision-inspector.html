@@ -334,8 +334,8 @@
 
         <footer class="note">
             <code>@mediapipe/tasks-vision@0.10.35</code> · WASM/jsDelivr · weights from MediaPipe storage · Inference
-            uses <code>delegate: &quot;CPU&quot;</code>; segmentation mask compositing uses a hidden WebGL2 canvas for
-            <code>DrawingUtils</code> (pose confidence overlays need WebGL · category masks fall back to CPU tint if not).
+            uses <code>delegate: &quot;GPU&quot;</code> (WebGL2, CPU fallback); inference canvas is shared with
+            <code>DrawingUtils</code> for mask compositing (pose confidence overlays · category masks).
         </footer>
 
         <script type="module">
@@ -359,9 +359,9 @@
                     "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite",
             };
 
-            /** All vision tasks use CPU delegate unless we pass a WebGL canvas (see VisionTaskOptions). */
-            function cpuModel(modelAssetPath) {
-                return { modelAssetPath, delegate: "CPU" };
+            /** GPU delegate when WebGL2 is available; CPU fallback otherwise. */
+            function taskBase(modelAssetPath) {
+                return { modelAssetPath, delegate: maskGlCtx ? "GPU" : "CPU" };
             }
 
             const {
@@ -410,10 +410,18 @@
             let drawUtils = null;
             /** Last size used to build DrawingUtils (recreate when video resolution changes). */
             let drawUtilsDim = { w: 0, h: 0 };
-            /** WebGL canvas for DrawingUtils GPU mask ops (segmentation / pose mask). Inference can stay CPU. */
-            let maskGlCanvas = null;
+            /** Shared WebGL2 canvas — GPU inference delegate + DrawingUtils mask compositing. */
+            const maskGlCanvas = document.createElement("canvas");
+            maskGlCanvas.width = 2;
+            maskGlCanvas.height = 2;
             /** @type {WebGL2RenderingContext | null} */
-            let maskGlCtx = null;
+            const maskGlCtx = maskGlCanvas.getContext("webgl2", {
+                alpha: true,
+                antialias: false,
+                depth: false,
+                stencil: false,
+                premultipliedAlpha: false,
+            });
 
             /** @type {string[] | null} */
             let segLabels = null;
@@ -441,17 +449,6 @@
              */
             function ensureDrawingUtils(w, h) {
                 if (!w || !h) return null;
-
-                if (!maskGlCanvas) {
-                    maskGlCanvas = document.createElement("canvas");
-                    maskGlCtx = maskGlCanvas.getContext("webgl2", {
-                        alpha: true,
-                        antialias: false,
-                        depth: false,
-                        stencil: false,
-                        premultipliedAlpha: false,
-                    });
-                }
 
                 if (maskGlCanvas.width !== w || maskGlCanvas.height !== h) {
                     maskGlCanvas.width = w;
@@ -601,7 +598,7 @@
                 if (!wantHolistic && !faceDetector && wantFaceDet) {
                     faceDetector = await FaceDetector.createFromOptions(vision, {
                         ...baseVideo,
-                        baseOptions: cpuModel(MODELS.faceDetector),
+                        baseOptions: taskBase(MODELS.faceDetector),
                         minDetectionConfidence: 0.5,
                         minSuppressionThreshold: 0.3,
                     });
@@ -613,7 +610,7 @@
                 if (!wantHolistic && !faceLandmarker && wantFaceLm) {
                     faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
                         ...baseVideo,
-                        baseOptions: cpuModel(MODELS.faceLandmarker),
+                        baseOptions: taskBase(MODELS.faceLandmarker),
                         outputFaceBlendshapes: blend,
                         numFaces: 2,
                     });
@@ -625,7 +622,7 @@
                 if (!wantHolistic && !handLandmarker && wantHand) {
                     handLandmarker = await HandLandmarker.createFromOptions(vision, {
                         ...baseVideo,
-                        baseOptions: cpuModel(MODELS.handLandmarker),
+                        baseOptions: taskBase(MODELS.handLandmarker),
                         numHands: 2,
                     });
                 } else if (!wantHand) {
@@ -636,7 +633,7 @@
                 if (!wantHolistic && !poseLandmarker && wantPose) {
                     poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
                         ...baseVideo,
-                        baseOptions: cpuModel(MODELS.poseLandmarker),
+                        baseOptions: taskBase(MODELS.poseLandmarker),
                         numPoses: 1,
                         outputSegmentationMasks: wantPoseSeg,
                     });
@@ -648,7 +645,7 @@
                 if (!wantHolistic && !gestureRecognizer && wantGest) {
                     gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
                         ...baseVideo,
-                        baseOptions: cpuModel(MODELS.gestureRecognizer),
+                        baseOptions: taskBase(MODELS.gestureRecognizer),
                         numHands: 2,
                     });
                 } else if (!wantGest) {
@@ -659,7 +656,7 @@
                 if (!holisticLandmarker && wantHolistic) {
                     holisticLandmarker = await HolisticLandmarker.createFromOptions(vision, {
                         ...baseVideo,
-                        baseOptions: cpuModel(MODELS.holistic),
+                        baseOptions: taskBase(MODELS.holistic),
                         outputPoseSegmentationMasks: holisticPoseSeg,
                         outputFaceBlendshapes: holFaceBlend,
                     });
@@ -671,7 +668,7 @@
                 if (!imageSegmenter && wantImgSeg) {
                     imageSegmenter = await ImageSegmenter.createFromOptions(vision, {
                         ...baseVideo,
-                        baseOptions: cpuModel(MODELS.imageSegmenter),
+                        baseOptions: taskBase(MODELS.imageSegmenter),
                         outputCategoryMask: true,
                         outputConfidenceMasks: false,
                     });
@@ -1056,6 +1053,17 @@
 
             document.getElementById("rowHolPoseSeg").style.display = "none";
             chk("chkHolFaceBlend").closest("label.row").style.display = "none";
+
+            // Show GPU renderer info on load
+            if (maskGlCtx) {
+                const ext = maskGlCtx.getExtension("WEBGL_debug_renderer_info");
+                const renderer = ext
+                    ? maskGlCtx.getParameter(ext.UNMASKED_RENDERER_WEBGL)
+                    : "WebGL2";
+                setStatus(`GPU · ${renderer}`.substring(0, 52));
+            } else {
+                setStatus("CPU mode (WebGL2 unavailable)");
+            }
         </script>
     </body>
 </html>
