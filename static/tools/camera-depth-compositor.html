@@ -402,7 +402,6 @@
         </footer>
 
         <canvas id="work" hidden></canvas>
-        <canvas id="captureFrame" hidden></canvas>
         <canvas id="sourceFrame" hidden></canvas>
         <canvas id="depthViz" hidden></canvas>
         <canvas id="maskCanvas" hidden></canvas>
@@ -435,12 +434,10 @@
             const mirrorStack = document.getElementById("mirrorStack");
             const work = document.getElementById("work");
             const wctx = work.getContext("2d", { willReadFrequently: true });
-            const captureFrame = document.getElementById("captureFrame");
-            const captureCtx = captureFrame.getContext("2d", { willReadFrequently: true });
             const sourceFrame = document.getElementById("sourceFrame");
-            const sourceCtx = sourceFrame.getContext("2d", { willReadFrequently: true });
+            const sourceCtx = sourceFrame.getContext("2d");
             const depthViz = document.getElementById("depthViz");
-            const depthCtx = depthViz.getContext("2d", { willReadFrequently: true });
+            const depthCtx = depthViz.getContext("2d");
             const maskCanvas = document.getElementById("maskCanvas");
             const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
 
@@ -489,9 +486,9 @@
             let latestFace = null;
             /** @type {any} */
             let latestHands = null;
-            /** @type {ImageData | null} */
-            let latestDepthImage = null;
             let latestDepthValue = null;
+            let maskImageData = null;
+            let depthRawImageData = null;
             let latestSummary = {};
             let hasSyncedSourceFrame = false;
 
@@ -628,8 +625,9 @@
 
             async function reloadDepthModel() {
                 depthPipe = null;
-                latestDepthImage = null;
                 latestDepthValue = null;
+                maskImageData = null;
+                depthRawImageData = null;
                 hasSyncedSourceFrame = false;
 
                 const modelId = document.getElementById("inpDepthModel").value.trim() || "onnx-community/depth-anything-v2-small";
@@ -740,35 +738,47 @@
                 if (maskCanvas.width !== w || maskCanvas.height !== h) {
                     maskCanvas.width = w;
                     maskCanvas.height = h;
+                    maskImageData = null;
                 }
-                const img = maskCtx.createImageData(w, h);
+                if (!maskImageData) {
+                    maskImageData = maskCtx.createImageData(w, h);
+                    const d = maskImageData.data;
+                    for (let j = 0; j < d.length; j += 4) {
+                        d[j] = d[j + 1] = d[j + 2] = 255;
+                    }
+                }
                 const threshold = Math.round((Number(rngThreshold.value) / 100) * 255);
-                for (let i = 0, j = 0; i < latestDepthValue.data.length; i++, j += 4) {
-                    const alpha = latestDepthValue.data[i] >= threshold ? 255 : 0;
-                    img.data[j] = 255;
-                    img.data[j + 1] = 255;
-                    img.data[j + 2] = 255;
-                    img.data[j + 3] = alpha;
+                const depth = latestDepthValue.data;
+                const out = maskImageData.data;
+                for (let i = 0; i < depth.length; i++) {
+                    out[i * 4 + 3] = depth[i] >= threshold ? 255 : 0;
                 }
-                maskCtx.putImageData(img, 0, 0);
+                maskCtx.putImageData(maskImageData, 0, 0);
             }
 
             function cacheDepthOutput(depthImg) {
                 const rgba = depthImg.rgba();
-                latestDepthImage = new ImageData(new Uint8ClampedArray(rgba.data), rgba.width, rgba.height);
-                latestDepthValue = {
-                    width: rgba.width,
-                    height: rgba.height,
-                    data: new Uint8Array(rgba.width * rgba.height),
-                };
-                for (let i = 0, p = 0; i < rgba.data.length; i += 4, p++) {
-                    latestDepthValue.data[p] = rgba.data[i];
+                const w = rgba.width;
+                const h = rgba.height;
+                if (!latestDepthValue || latestDepthValue.width !== w || latestDepthValue.height !== h) {
+                    latestDepthValue = { width: w, height: h, data: new Uint8Array(w * h) };
+                    depthRawImageData = new ImageData(w, h);
+                    const a = depthRawImageData.data;
+                    for (let i = 3; i < a.length; i += 4) a[i] = 255;
+                    if (depthViz.width !== w || depthViz.height !== h) {
+                        depthViz.width = w;
+                        depthViz.height = h;
+                    }
+                    maskImageData = null;
                 }
-                if (depthViz.width !== rgba.width || depthViz.height !== rgba.height) {
-                    depthViz.width = rgba.width;
-                    depthViz.height = rgba.height;
+                const src = rgba.data;
+                const dv = latestDepthValue.data;
+                const di = depthRawImageData.data;
+                for (let i = 0, p = 0; i < src.length; i += 4, p++) {
+                    dv[p] = src[i];
+                    di[i] = di[i + 1] = di[i + 2] = src[i];
                 }
-                depthCtx.putImageData(latestDepthImage, 0, 0);
+                depthCtx.putImageData(depthRawImageData, 0, 0);
                 rebuildMaskCanvas();
             }
 
@@ -785,20 +795,14 @@
                     inferBusy = false;
                     return;
                 }
-                if (captureFrame.width !== vw || captureFrame.height !== vh) {
-                    captureFrame.width = vw;
-                    captureFrame.height = vh;
-                }
                 if (work.width !== w || work.height !== h) {
                     work.width = w;
                     work.height = h;
                 }
-                captureCtx.clearRect(0, 0, vw, vh);
-                captureCtx.drawImage(video, 0, 0, vw, vh);
-                wctx.clearRect(0, 0, w, h);
-                wctx.drawImage(captureFrame, 0, 0, w, h);
-
+                let frameBitmap = null;
                 try {
+                    frameBitmap = await createImageBitmap(video);
+                    wctx.drawImage(frameBitmap, 0, 0, w, h);
                     const mpStart = performance.now();
                     const nextFace = faceLandmarker ? faceLandmarker.detectForVideo(work, ts) : null;
                     const nextHands = handLandmarker ? handLandmarker.detectForVideo(work, ts) : null;
@@ -816,8 +820,7 @@
                         sourceFrame.width = vw;
                         sourceFrame.height = vh;
                     }
-                    sourceCtx.clearRect(0, 0, vw, vh);
-                    sourceCtx.drawImage(captureFrame, 0, 0, vw, vh);
+                    sourceCtx.drawImage(frameBitmap, 0, 0, vw, vh);
                     hasSyncedSourceFrame = true;
                     latestFace = nextFace;
                     latestHands = nextHands;
@@ -846,6 +849,7 @@
                 } catch (e) {
                     setStatus(`Inference error: ${e?.message ?? e}`, true);
                 } finally {
+                    frameBitmap?.close();
                     inferBusy = false;
                 }
             }
@@ -856,11 +860,10 @@
                 const ch = canvas.height;
                 const mode = selView.value;
 
-                ctx.save();
                 ctx.clearRect(0, 0, cw, ch);
 
                 if (mode === "depth") {
-                    if (latestDepthImage) ctx.drawImage(depthViz, 0, 0, cw, ch);
+                    if (latestDepthValue) ctx.drawImage(depthViz, 0, 0, cw, ch);
                     else ctx.drawImage(video, 0, 0, cw, ch);
                 } else if (mode === "combined") {
                     if (hasSyncedSourceFrame) ctx.drawImage(sourceFrame, 0, 0, cw, ch);
@@ -876,8 +879,6 @@
                     else ctx.drawImage(video, 0, 0, cw, ch);
                     if (mode === "mediapipe") drawMediaPipeOverlay();
                 }
-
-                ctx.restore();
             }
 
             function updateMetrics(ts) {
