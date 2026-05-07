@@ -1129,18 +1129,23 @@
                     rgbBuf[j] = rgbD[i]; rgbBuf[j + 1] = rgbD[i + 1]; rgbBuf[j + 2] = rgbD[i + 2];
                 }
 
-                tc.drawImage(maskCanvas, 0, 0, aw, ah);
-                const mId = tc.getImageData(0, 0, aw, ah);
-                const mD = mId.data;
-                for (let i = 0, p = 0; i < mD.length; i += 4, p++) {
-                    maskBin[p] = mD[i + 3] > 127 ? 1 : 0;
-                }
-
-                tc.drawImage(depthViz, 0, 0, aw, ah);
-                const dId = tc.getImageData(0, 0, aw, ah);
-                const dD = dId.data;
-                for (let i = 0, p = 0; i < dD.length; i += 4, p++) {
-                    depthBuf[p] = dD[i] / 255;
+                /* Build maskBin + depthBuf by nearest-neighbor sampling from
+                   the raw depth array, then applying the same threshold as
+                   rebuildMaskCanvas(). This avoids canvas alpha-compositing
+                   artifacts that occur when downscaling maskCanvas. */
+                const dw = latestDepthValue.width;
+                const dh = latestDepthValue.height;
+                const dData = latestDepthValue.data;
+                const threshold = Math.round((Number(rngThreshold.value) / 100) * 255);
+                for (let y = 0; y < ah; y++) {
+                    const sy = Math.min(dh - 1, Math.round(y * dh / ah));
+                    for (let x = 0; x < aw; x++) {
+                        const sx = Math.min(dw - 1, Math.round(x * dw / aw));
+                        const dVal = dData[sy * dw + sx];
+                        const p = y * aw + x;
+                        depthBuf[p] = dVal / 255;
+                        maskBin[p] = dVal >= threshold ? 1 : 0;
+                    }
                 }
 
                 return true;
