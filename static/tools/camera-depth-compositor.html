@@ -96,17 +96,15 @@
                 position: relative;
                 display: inline-block;
                 max-width: 100%;
-                max-height: calc(100vh - 120px);
+                max-height: 100%;
                 transform: scaleX(-1);
                 vertical-align: middle;
             }
 
             .mirror-stack video {
                 display: block;
-                max-width: 100%;
-                max-height: calc(100vh - 120px);
-                width: auto;
-                height: auto;
+                width: 100%;
+                height: 100%;
                 visibility: hidden;
                 pointer-events: none;
             }
@@ -404,6 +402,8 @@
         </footer>
 
         <canvas id="work" hidden></canvas>
+        <canvas id="captureFrame" hidden></canvas>
+        <canvas id="sourceFrame" hidden></canvas>
         <canvas id="depthViz" hidden></canvas>
         <canvas id="maskCanvas" hidden></canvas>
 
@@ -431,8 +431,14 @@
             const video = document.getElementById("video");
             const canvas = document.getElementById("canvas");
             const ctx = canvas.getContext("2d");
+            const stage = document.querySelector(".stage");
+            const mirrorStack = document.getElementById("mirrorStack");
             const work = document.getElementById("work");
             const wctx = work.getContext("2d", { willReadFrequently: true });
+            const captureFrame = document.getElementById("captureFrame");
+            const captureCtx = captureFrame.getContext("2d", { willReadFrequently: true });
+            const sourceFrame = document.getElementById("sourceFrame");
+            const sourceCtx = sourceFrame.getContext("2d", { willReadFrequently: true });
             const depthViz = document.getElementById("depthViz");
             const depthCtx = depthViz.getContext("2d", { willReadFrequently: true });
             const maskCanvas = document.getElementById("maskCanvas");
@@ -487,6 +493,7 @@
             let latestDepthImage = null;
             let latestDepthValue = null;
             let latestSummary = {};
+            let hasSyncedSourceFrame = false;
 
             const combinedSamples = [];
             let lastDepthMs = null;
@@ -522,10 +529,24 @@
                 }
             }
 
+            function fitStageToVideo() {
+                const vw = video.videoWidth;
+                const vh = video.videoHeight;
+                if (!vw || !vh) return false;
+                const rect = stage.getBoundingClientRect();
+                const stageW = Math.max(1, rect.width - 28);
+                const stageH = Math.max(1, rect.height - 28);
+                const scale = Math.min(stageW / vw, stageH / vh);
+                mirrorStack.style.width = `${Math.max(1, Math.floor(vw * scale))}px`;
+                mirrorStack.style.height = `${Math.max(1, Math.floor(vh * scale))}px`;
+                return true;
+            }
+
             function resizeCanvasToVideo() {
                 const vw = video.videoWidth;
                 const vh = video.videoHeight;
                 if (!vw || !vh) return false;
+                fitStageToVideo();
                 if (canvas.width !== vw || canvas.height !== vh) {
                     canvas.width = vw;
                     canvas.height = vh;
@@ -609,6 +630,7 @@
                 depthPipe = null;
                 latestDepthImage = null;
                 latestDepthValue = null;
+                hasSyncedSourceFrame = false;
 
                 const modelId = document.getElementById("inpDepthModel").value.trim() || "onnx-community/depth-anything-v2-small";
                 const device = selDepthDevice.value === "webgpu" ? "webgpu" : "wasm";
@@ -654,6 +676,9 @@
                 document.getElementById("btnCam").textContent = "Start camera";
                 document.getElementById("btnPause").textContent = "Pause";
                 document.getElementById("btnPause").disabled = true;
+                hasSyncedSourceFrame = false;
+                mirrorStack.style.width = "";
+                mirrorStack.style.height = "";
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 setStatus("Idle");
             }
@@ -752,23 +777,31 @@
                 if (!video.videoWidth || !video.videoHeight) return;
                 inferBusy = true;
                 const combinedStart = performance.now();
+                const vw = video.videoWidth;
+                const vh = video.videoHeight;
                 const maxSide = Number(rngMaxSide.value);
-                const { w, h } = computeInputSize(video.videoWidth, video.videoHeight, maxSide);
+                const { w, h } = computeInputSize(vw, vh, maxSide);
                 if (w < 2 || h < 2) {
                     inferBusy = false;
                     return;
+                }
+                if (captureFrame.width !== vw || captureFrame.height !== vh) {
+                    captureFrame.width = vw;
+                    captureFrame.height = vh;
                 }
                 if (work.width !== w || work.height !== h) {
                     work.width = w;
                     work.height = h;
                 }
+                captureCtx.clearRect(0, 0, vw, vh);
+                captureCtx.drawImage(video, 0, 0, vw, vh);
                 wctx.clearRect(0, 0, w, h);
-                wctx.drawImage(video, 0, 0, w, h);
+                wctx.drawImage(captureFrame, 0, 0, w, h);
 
                 try {
                     const mpStart = performance.now();
-                    if (faceLandmarker) latestFace = faceLandmarker.detectForVideo(work, ts);
-                    if (handLandmarker) latestHands = handLandmarker.detectForVideo(work, ts);
+                    const nextFace = faceLandmarker ? faceLandmarker.detectForVideo(work, ts) : null;
+                    const nextHands = handLandmarker ? handLandmarker.detectForVideo(work, ts) : null;
                     lastMpMs = performance.now() - mpStart;
 
                     let out = null;
@@ -778,6 +811,16 @@
                         lastDepthMs = performance.now() - depthStart;
                         if (out?.depth) cacheDepthOutput(out.depth);
                     }
+
+                    if (sourceFrame.width !== vw || sourceFrame.height !== vh) {
+                        sourceFrame.width = vw;
+                        sourceFrame.height = vh;
+                    }
+                    sourceCtx.clearRect(0, 0, vw, vh);
+                    sourceCtx.drawImage(captureFrame, 0, 0, vw, vh);
+                    hasSyncedSourceFrame = true;
+                    latestFace = nextFace;
+                    latestHands = nextHands;
 
                     lastCombinedMs = performance.now() - combinedStart;
                     combinedSamples.push(lastCombinedMs);
@@ -789,6 +832,7 @@
                         depthMs: lastDepthMs != null ? Math.round(lastDepthMs * 10) / 10 : null,
                         mediaPipeMs: lastMpMs != null ? Math.round(lastMpMs * 10) / 10 : null,
                         combinedMs: Math.round(lastCombinedMs * 10) / 10,
+                        syncedSourceFrame: hasSyncedSourceFrame,
                         faceGroups: latestFace?.faceLandmarks?.length ?? 0,
                         handGroups: latestHands?.landmarks?.length ?? 0,
                         depthImage: out?.depth
@@ -819,7 +863,8 @@
                     if (latestDepthImage) ctx.drawImage(depthViz, 0, 0, cw, ch);
                     else ctx.drawImage(video, 0, 0, cw, ch);
                 } else if (mode === "combined") {
-                    ctx.drawImage(video, 0, 0, cw, ch);
+                    if (hasSyncedSourceFrame) ctx.drawImage(sourceFrame, 0, 0, cw, ch);
+                    else ctx.drawImage(video, 0, 0, cw, ch);
                     if (latestDepthValue) {
                         ctx.globalCompositeOperation = "destination-in";
                         ctx.drawImage(maskCanvas, 0, 0, cw, ch);
@@ -827,7 +872,8 @@
                     }
                     drawMediaPipeOverlay();
                 } else {
-                    ctx.drawImage(video, 0, 0, cw, ch);
+                    if (mode === "mediapipe" && hasSyncedSourceFrame) ctx.drawImage(sourceFrame, 0, 0, cw, ch);
+                    else ctx.drawImage(video, 0, 0, cw, ch);
                     if (mode === "mediapipe") drawMediaPipeOverlay();
                 }
 
@@ -928,6 +974,10 @@
                 closeQuietly(faceLandmarker);
                 closeQuietly(handLandmarker);
                 closeQuietly(drawUtils);
+            });
+
+            window.addEventListener("resize", () => {
+                fitStageToVideo();
             });
 
             if (!navigator.gpu) {
