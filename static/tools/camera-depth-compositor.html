@@ -1,0 +1,955 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <!-- tool-meta: {"name":"Camera Depth Performance Tool","slug":"camera-depth-compositor","description":"Event-focused camera compositor combining MediaPipe face/hand landmarks with Depth Anything v2 small depth masking, view modes, threshold controls, and performance metrics.","tags":["webcam","mediapipe","transformers.js","depth","face","hands","performance","art"]} -->
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Camera Depth Performance Tool</title>
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500&display=swap");
+
+            :root {
+                --bg: #0c0c0c;
+                --panel: #131313;
+                --border: #2a2a2a;
+                --text: #ddd;
+                --muted: #7a7a7a;
+                --accent: #7dd3fc;
+                --accent2: #c4f07a;
+                --danger: #f87171;
+                --mono: "IBM Plex Mono", monospace;
+            }
+
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                font-family: var(--mono);
+                font-size: 12px;
+                background: var(--bg);
+                color: var(--text);
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            header {
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 10px 16px;
+                border-bottom: 1px solid var(--border);
+                background: var(--panel);
+            }
+
+            .logo {
+                font-size: 10px;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+                color: var(--accent2);
+                font-weight: 500;
+                white-space: nowrap;
+            }
+
+            .tagline {
+                color: var(--muted);
+                font-size: 11px;
+                max-width: 64ch;
+            }
+
+            .status {
+                margin-left: auto;
+                font-size: 11px;
+                color: var(--accent);
+                white-space: nowrap;
+                max-width: 42ch;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .layout {
+                flex: 1;
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) min(400px, 40vw);
+                min-height: 0;
+            }
+
+            .stage {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 14px;
+                background: #070707;
+                min-width: 0;
+                min-height: 0;
+                position: relative;
+            }
+
+            .mirror-stack {
+                position: relative;
+                display: inline-block;
+                max-width: 100%;
+                max-height: calc(100vh - 120px);
+                transform: scaleX(-1);
+                vertical-align: middle;
+            }
+
+            .mirror-stack video {
+                display: block;
+                max-width: 100%;
+                max-height: calc(100vh - 120px);
+                width: auto;
+                height: auto;
+                visibility: hidden;
+                pointer-events: none;
+            }
+
+            .mirror-stack canvas {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background: #000;
+                box-shadow: 0 0 0 1px var(--border);
+            }
+
+            aside {
+                border-left: 1px solid var(--border);
+                background: var(--panel);
+                overflow: auto;
+                padding: 12px 14px 20px;
+            }
+
+            h2 {
+                font-size: 10px;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                color: var(--muted);
+                margin: 14px 0 8px;
+            }
+
+            h2:first-child {
+                margin-top: 0;
+            }
+
+            label.row {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                gap: 8px;
+                align-items: center;
+                margin-bottom: 8px;
+            }
+
+            label.row.block {
+                grid-template-columns: 1fr;
+            }
+
+            label.row span,
+            summary {
+                color: var(--muted);
+            }
+
+            .hint {
+                font-size: 10px;
+                color: var(--muted);
+                line-height: 1.45;
+                margin: 6px 0 10px;
+            }
+
+            .metrics {
+                font-variant-numeric: tabular-nums;
+                font-size: 11px;
+                color: var(--accent);
+                line-height: 1.55;
+            }
+
+            button,
+            select,
+            input {
+                font-family: var(--mono);
+                font-size: 11px;
+            }
+
+            button {
+                padding: 6px 10px;
+                border: 1px solid var(--border);
+                background: #1a1a1a;
+                color: var(--text);
+                cursor: pointer;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+            }
+
+            button:hover {
+                border-color: var(--accent);
+                color: var(--accent2);
+            }
+
+            button.secondary {
+                margin-top: 6px;
+                width: 100%;
+            }
+
+            button:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+            }
+
+            select,
+            input[type="text"],
+            input[type="number"] {
+                width: 100%;
+                padding: 5px 8px;
+                background: #1a1a1a;
+                border: 1px solid var(--border);
+                color: var(--text);
+            }
+
+            input[type="number"] {
+                width: 86px;
+            }
+
+            input[type="range"] {
+                width: 100%;
+            }
+
+            details {
+                margin-top: 14px;
+                border-top: 1px solid var(--border);
+                padding-top: 12px;
+            }
+
+            summary {
+                cursor: pointer;
+                font-size: 10px;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                margin-bottom: 8px;
+            }
+
+            #jsonPanel {
+                width: 100%;
+                min-height: 110px;
+                max-height: 180px;
+                margin-top: 6px;
+                padding: 8px;
+                font-size: 10px;
+                line-height: 1.35;
+                background: #0a0a0a;
+                border: 1px solid var(--border);
+                color: var(--muted);
+                resize: vertical;
+                overflow: auto;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+
+            footer.note {
+                flex-shrink: 0;
+                padding: 8px 16px;
+                border-top: 1px solid var(--border);
+                font-size: 10px;
+                color: var(--muted);
+                line-height: 1.45;
+            }
+
+            .err {
+                color: var(--danger);
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <span class="logo">DXVIIE / TOOL</span>
+            <span class="tagline">Camera + MediaPipe face/hands + DAv2-small depth mask for event performance tests.</span>
+            <span class="status" id="status">Idle</span>
+        </header>
+
+        <div class="layout">
+            <div class="stage">
+                <div class="mirror-stack" id="mirrorStack">
+                    <video id="video" playsinline autoplay muted></video>
+                    <canvas id="canvas"></canvas>
+                </div>
+            </div>
+
+            <aside>
+                <h2>Camera</h2>
+                <button type="button" id="btnCam">Start camera</button>
+                <button type="button" id="btnPause" class="secondary" disabled>Pause</button>
+                <label class="row block" style="margin-top: 10px">
+                    <span>Camera input</span>
+                    <select id="selCamera">
+                        <option value="">Default camera</option>
+                    </select>
+                </label>
+                <p class="hint">Requires HTTPS or localhost. The preview is mirrored visually; model inputs use the raw camera frame.</p>
+
+                <h2>View</h2>
+                <label class="row block">
+                    <span>Stage mode</span>
+                    <select id="selView">
+                        <option value="combined" selected>Combined</option>
+                        <option value="raw">Raw camera</option>
+                        <option value="mediapipe">MediaPipe</option>
+                        <option value="depth">Depth</option>
+                    </select>
+                </label>
+                <label class="row block">
+                    <span>Mask threshold — <span id="lblThreshold">55</span>%</span>
+                    <input type="range" id="rngThreshold" min="0" max="100" step="1" value="55" />
+                </label>
+                <p class="hint">Depth is relative, not metric. Bright / near values are kept in combined mode.</p>
+
+                <h2>Timing</h2>
+                <div class="metrics" id="metrics">
+                    Combined: — · target: 10 fps<br />
+                    Depth: — · MediaPipe: — · render: —
+                </div>
+
+                <details>
+                    <summary>Advanced model configuration</summary>
+
+                    <h2>MediaPipe</h2>
+                    <label class="row">
+                        <span>Face landmarker</span>
+                        <input type="checkbox" id="chkFace" checked />
+                    </label>
+                    <label class="row">
+                        <span>Hand landmarker</span>
+                        <input type="checkbox" id="chkHands" checked />
+                    </label>
+                    <label class="row block">
+                        <span>Delegate</span>
+                        <select id="selMpDelegate">
+                            <option value="auto" selected>Auto (GPU if WebGL2)</option>
+                            <option value="GPU">GPU</option>
+                            <option value="CPU">CPU</option>
+                        </select>
+                    </label>
+                    <label class="row">
+                        <span>Faces</span>
+                        <input type="number" id="inpFaces" min="1" max="4" step="1" value="1" />
+                    </label>
+                    <label class="row">
+                        <span>Hands</span>
+                        <input type="number" id="inpHands" min="1" max="4" step="1" value="2" />
+                    </label>
+                    <label class="row">
+                        <span>Face confidence</span>
+                        <input type="number" id="inpFaceConf" min="0" max="1" step="0.05" value="0.5" />
+                    </label>
+                    <label class="row">
+                        <span>Hand confidence</span>
+                        <input type="number" id="inpHandConf" min="0" max="1" step="0.05" value="0.5" />
+                    </label>
+                    <label class="row block">
+                        <span>Face model URL</span>
+                        <input type="text" id="inpFaceModel" />
+                    </label>
+                    <label class="row block">
+                        <span>Hand model URL</span>
+                        <input type="text" id="inpHandModel" />
+                    </label>
+                    <button type="button" id="btnReloadMp" class="secondary">Reload MediaPipe</button>
+
+                    <h2>Depth</h2>
+                    <label class="row block">
+                        <span>Model id</span>
+                        <input type="text" id="inpDepthModel" value="onnx-community/depth-anything-v2-small" />
+                    </label>
+                    <label class="row block">
+                        <span>Device</span>
+                        <select id="selDepthDevice">
+                            <option value="wasm">WASM (CPU)</option>
+                            <option value="webgpu">WebGPU</option>
+                        </select>
+                    </label>
+                    <label class="row block">
+                        <span>dtype</span>
+                        <select id="selDepthDtype">
+                            <option value="q8">q8</option>
+                            <option value="fp16">fp16</option>
+                            <option value="fp32">fp32</option>
+                            <option value="q4">q4</option>
+                        </select>
+                    </label>
+                    <label class="row block">
+                        <span>Max input side — <span id="lblMaxSide">384</span>px</span>
+                        <input type="range" id="rngMaxSide" min="256" max="768" step="32" value="384" />
+                    </label>
+                    <label class="row">
+                        <span>Target interval ms</span>
+                        <input type="number" id="inpTargetMs" min="50" max="1000" step="10" value="100" />
+                    </label>
+                    <button type="button" id="btnReloadDepth" class="secondary">Reload depth model</button>
+                </details>
+
+                <h2>Last pass (JSON)</h2>
+                <textarea id="jsonPanel" readonly spellcheck="false"></textarea>
+            </aside>
+        </div>
+
+        <footer class="note">
+            <code>@mediapipe/tasks-vision@0.10.35</code> + <code>@huggingface/transformers@4.2.0</code> from CDN.
+            Defaults are tuned for desktop Chrome: 640×480 camera, DAv2-small, 384px depth input, 100ms target interval.
+        </footer>
+
+        <canvas id="work" hidden></canvas>
+        <canvas id="depthViz" hidden></canvas>
+        <canvas id="maskCanvas" hidden></canvas>
+
+        <script type="module">
+            const MP_VER = "0.10.35";
+            const HF_TRANSFORMERS_VER = "4.2.0";
+            const WASM_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}/wasm`;
+            const TF_MODULE = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${HF_TRANSFORMERS_VER}`;
+
+            const MODELS = {
+                faceLandmarker:
+                    "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                handLandmarker:
+                    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+            };
+
+            const {
+                DrawingUtils,
+                FaceLandmarker,
+                FilesetResolver,
+                HandLandmarker,
+            } = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}/vision_bundle.mjs`);
+            const { pipeline, env } = await import(TF_MODULE);
+
+            const video = document.getElementById("video");
+            const canvas = document.getElementById("canvas");
+            const ctx = canvas.getContext("2d");
+            const work = document.getElementById("work");
+            const wctx = work.getContext("2d", { willReadFrequently: true });
+            const depthViz = document.getElementById("depthViz");
+            const depthCtx = depthViz.getContext("2d", { willReadFrequently: true });
+            const maskCanvas = document.getElementById("maskCanvas");
+            const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+
+            const statusEl = document.getElementById("status");
+            const metricsEl = document.getElementById("metrics");
+            const jsonPanel = document.getElementById("jsonPanel");
+            const selCamera = document.getElementById("selCamera");
+            const selView = document.getElementById("selView");
+            const rngThreshold = document.getElementById("rngThreshold");
+            const lblThreshold = document.getElementById("lblThreshold");
+            const rngMaxSide = document.getElementById("rngMaxSide");
+            const lblMaxSide = document.getElementById("lblMaxSide");
+            const selDepthDevice = document.getElementById("selDepthDevice");
+            const selDepthDtype = document.getElementById("selDepthDtype");
+
+            document.getElementById("inpFaceModel").value = MODELS.faceLandmarker;
+            document.getElementById("inpHandModel").value = MODELS.handLandmarker;
+
+            /** @type {MediaStream | null} */
+            let stream = null;
+            let running = false;
+            let paused = false;
+            let raf = 0;
+
+            /** @type {any} */
+            let vision = null;
+            /** @type {any} */
+            let faceLandmarker = null;
+            /** @type {any} */
+            let handLandmarker = null;
+            /** @type {any} */
+            let depthPipe = null;
+            /** @type {any} */
+            let drawUtils = null;
+
+            const glCanvas = document.createElement("canvas");
+            const glCtx = glCanvas.getContext("webgl2", {
+                alpha: true,
+                antialias: false,
+                depth: false,
+                stencil: false,
+                premultipliedAlpha: false,
+            });
+
+            /** @type {any} */
+            let latestFace = null;
+            /** @type {any} */
+            let latestHands = null;
+            /** @type {ImageData | null} */
+            let latestDepthImage = null;
+            let latestDepthValue = null;
+            let latestSummary = {};
+
+            const combinedSamples = [];
+            let lastDepthMs = null;
+            let lastMpMs = null;
+            let lastCombinedMs = null;
+            let lastRenderTs = 0;
+            let renderFps = 0;
+            let inferredFrames = 0;
+            let inferenceFps = 0;
+            let fpsWindowStart = performance.now();
+            let inferBusy = false;
+            let nextInferAllowedAt = 0;
+
+            function setStatus(text, err = false) {
+                statusEl.textContent = text;
+                statusEl.classList.toggle("err", err);
+            }
+
+            function getNum(id, fallback) {
+                const n = Number(document.getElementById(id).value);
+                return Number.isFinite(n) ? n : fallback;
+            }
+
+            function clamp01(n) {
+                return Math.max(0, Math.min(1, n));
+            }
+
+            function closeQuietly(instance) {
+                try {
+                    instance?.close?.();
+                } catch (_) {
+                    /* noop */
+                }
+            }
+
+            function resizeCanvasToVideo() {
+                const vw = video.videoWidth;
+                const vh = video.videoHeight;
+                if (!vw || !vh) return false;
+                if (canvas.width !== vw || canvas.height !== vh) {
+                    canvas.width = vw;
+                    canvas.height = vh;
+                    closeQuietly(drawUtils);
+                    drawUtils = null;
+                }
+                return true;
+            }
+
+            function ensureDrawingUtils() {
+                if (!drawUtils) {
+                    drawUtils = glCtx ? new DrawingUtils(ctx, glCtx) : new DrawingUtils(ctx);
+                }
+                return drawUtils;
+            }
+
+            function computeInputSize(vw, vh, maxSide) {
+                if (!vw || !vh) return { w: 0, h: 0 };
+                const scale = Math.min(1, maxSide / Math.max(vw, vh));
+                return {
+                    w: Math.max(1, Math.round(vw * scale)),
+                    h: Math.max(1, Math.round(vh * scale)),
+                };
+            }
+
+            function selectedMpDelegate() {
+                const requested = document.getElementById("selMpDelegate").value;
+                if (requested === "auto") return glCtx ? "GPU" : "CPU";
+                return requested;
+            }
+
+            function baseOptions(modelAssetPath) {
+                return {
+                    modelAssetPath,
+                    delegate: selectedMpDelegate(),
+                };
+            }
+
+            async function ensureVision() {
+                if (vision) return vision;
+                setStatus("Loading MediaPipe WASM...");
+                vision = await FilesetResolver.forVisionTasks(WASM_BASE);
+                return vision;
+            }
+
+            async function reloadMediaPipe() {
+                closeQuietly(faceLandmarker);
+                closeQuietly(handLandmarker);
+                faceLandmarker = null;
+                handLandmarker = null;
+                latestFace = null;
+                latestHands = null;
+
+                await ensureVision();
+                const baseVideo = { runningMode: "VIDEO" };
+                if (document.getElementById("chkFace").checked) {
+                    setStatus("Loading face landmarker...");
+                    faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+                        ...baseVideo,
+                        baseOptions: baseOptions(document.getElementById("inpFaceModel").value.trim() || MODELS.faceLandmarker),
+                        outputFaceBlendshapes: false,
+                        numFaces: Math.max(1, Math.round(getNum("inpFaces", 1))),
+                        minFaceDetectionConfidence: clamp01(getNum("inpFaceConf", 0.5)),
+                    });
+                }
+                if (document.getElementById("chkHands").checked) {
+                    setStatus("Loading hand landmarker...");
+                    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                        ...baseVideo,
+                        baseOptions: baseOptions(document.getElementById("inpHandModel").value.trim() || MODELS.handLandmarker),
+                        numHands: Math.max(1, Math.round(getNum("inpHands", 2))),
+                        minHandDetectionConfidence: clamp01(getNum("inpHandConf", 0.5)),
+                        minHandPresenceConfidence: clamp01(getNum("inpHandConf", 0.5)),
+                        minTrackingConfidence: clamp01(getNum("inpHandConf", 0.5)),
+                    });
+                }
+                setStatus("MediaPipe ready");
+            }
+
+            async function reloadDepthModel() {
+                depthPipe = null;
+                latestDepthImage = null;
+                latestDepthValue = null;
+
+                const modelId = document.getElementById("inpDepthModel").value.trim() || "onnx-community/depth-anything-v2-small";
+                const device = selDepthDevice.value === "webgpu" ? "webgpu" : "wasm";
+                const dtype = selDepthDtype.value;
+
+                setStatus(`Loading depth model ${modelId}...`);
+                try {
+                    depthPipe = await pipeline("depth-estimation", modelId, { device, dtype });
+                    setStatus(`Depth ready · ${modelId}`);
+                } catch (e) {
+                    depthPipe = null;
+                    setStatus(`Depth load failed: ${e?.message ?? e}`, true);
+                    jsonPanel.value = JSON.stringify({ error: String(e?.message ?? e), model: modelId, device, dtype }, null, 2);
+                    throw e;
+                }
+            }
+
+            async function refreshCameras() {
+                if (!navigator.mediaDevices?.enumerateDevices) return;
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const cameras = devices.filter((d) => d.kind === "videoinput");
+                const prev = selCamera.value;
+                selCamera.innerHTML = `<option value="">Default camera</option>`;
+                cameras.forEach((cam, i) => {
+                    const opt = document.createElement("option");
+                    opt.value = cam.deviceId;
+                    opt.textContent = cam.label || `Camera ${i + 1}`;
+                    selCamera.appendChild(opt);
+                });
+                if ([...selCamera.options].some((o) => o.value === prev)) selCamera.value = prev;
+            }
+
+            function stopCamera() {
+                running = false;
+                paused = false;
+                cancelAnimationFrame(raf);
+                raf = 0;
+                if (stream) {
+                    stream.getTracks().forEach((t) => t.stop());
+                    stream = null;
+                }
+                video.srcObject = null;
+                document.getElementById("btnCam").textContent = "Start camera";
+                document.getElementById("btnPause").textContent = "Pause";
+                document.getElementById("btnPause").disabled = true;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                setStatus("Idle");
+            }
+
+            async function startCamera() {
+                if (stream) stopCamera();
+                setStatus("Requesting camera...");
+                const deviceId = selCamera.value;
+                const videoConstraints = deviceId
+                    ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
+                    : { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } };
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+                    video.srcObject = stream;
+                    await video.play();
+                    resizeCanvasToVideo();
+                    await refreshCameras();
+                    running = true;
+                    paused = false;
+                    document.getElementById("btnCam").textContent = "Stop camera";
+                    document.getElementById("btnPause").disabled = false;
+                    setStatus("Camera running");
+                    startLoop();
+                } catch (e) {
+                    setStatus(`Camera failed: ${e?.message ?? e}`, true);
+                }
+            }
+
+            function drawMediaPipeOverlay() {
+                const du = ensureDrawingUtils();
+                if (!du) return;
+                for (const lm of latestFace?.faceLandmarks ?? []) {
+                    du.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, {
+                        lineWidth: 2,
+                        color: "rgba(125,211,252,0.95)",
+                    });
+                    du.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_CONTOURS, {
+                        lineWidth: 1,
+                        color: "rgba(196,240,122,0.5)",
+                    });
+                }
+                for (const lm of latestHands?.landmarks ?? []) {
+                    du.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, {
+                        lineWidth: 2,
+                        color: "rgba(196,240,122,0.95)",
+                    });
+                    du.drawLandmarks(lm, {
+                        lineWidth: 1,
+                        radius: 2,
+                        color: "rgba(125,211,252,0.85)",
+                    });
+                }
+            }
+
+            function rebuildMaskCanvas() {
+                if (!latestDepthValue) return;
+                const w = latestDepthValue.width;
+                const h = latestDepthValue.height;
+                if (maskCanvas.width !== w || maskCanvas.height !== h) {
+                    maskCanvas.width = w;
+                    maskCanvas.height = h;
+                }
+                const img = maskCtx.createImageData(w, h);
+                const threshold = Math.round((Number(rngThreshold.value) / 100) * 255);
+                for (let i = 0, j = 0; i < latestDepthValue.data.length; i++, j += 4) {
+                    const alpha = latestDepthValue.data[i] >= threshold ? 255 : 0;
+                    img.data[j] = 255;
+                    img.data[j + 1] = 255;
+                    img.data[j + 2] = 255;
+                    img.data[j + 3] = alpha;
+                }
+                maskCtx.putImageData(img, 0, 0);
+            }
+
+            function cacheDepthOutput(depthImg) {
+                const rgba = depthImg.rgba();
+                latestDepthImage = new ImageData(new Uint8ClampedArray(rgba.data), rgba.width, rgba.height);
+                latestDepthValue = {
+                    width: rgba.width,
+                    height: rgba.height,
+                    data: new Uint8Array(rgba.width * rgba.height),
+                };
+                for (let i = 0, p = 0; i < rgba.data.length; i += 4, p++) {
+                    latestDepthValue.data[p] = rgba.data[i];
+                }
+                if (depthViz.width !== rgba.width || depthViz.height !== rgba.height) {
+                    depthViz.width = rgba.width;
+                    depthViz.height = rgba.height;
+                }
+                depthCtx.putImageData(latestDepthImage, 0, 0);
+                rebuildMaskCanvas();
+            }
+
+            async function runInferencePass(ts) {
+                if (!running || paused || inferBusy || (!depthPipe && !faceLandmarker && !handLandmarker)) return;
+                if (!video.videoWidth || !video.videoHeight) return;
+                inferBusy = true;
+                const combinedStart = performance.now();
+                const maxSide = Number(rngMaxSide.value);
+                const { w, h } = computeInputSize(video.videoWidth, video.videoHeight, maxSide);
+                if (w < 2 || h < 2) {
+                    inferBusy = false;
+                    return;
+                }
+                if (work.width !== w || work.height !== h) {
+                    work.width = w;
+                    work.height = h;
+                }
+                wctx.clearRect(0, 0, w, h);
+                wctx.drawImage(video, 0, 0, w, h);
+
+                try {
+                    const mpStart = performance.now();
+                    if (faceLandmarker) latestFace = faceLandmarker.detectForVideo(work, ts);
+                    if (handLandmarker) latestHands = handLandmarker.detectForVideo(work, ts);
+                    lastMpMs = performance.now() - mpStart;
+
+                    let out = null;
+                    if (depthPipe) {
+                        const depthStart = performance.now();
+                        out = await depthPipe(work);
+                        lastDepthMs = performance.now() - depthStart;
+                        if (out?.depth) cacheDepthOutput(out.depth);
+                    }
+
+                    lastCombinedMs = performance.now() - combinedStart;
+                    combinedSamples.push(lastCombinedMs);
+                    if (combinedSamples.length > 30) combinedSamples.shift();
+                    inferredFrames++;
+                    latestSummary = {
+                        view: selView.value,
+                        depthModel: document.getElementById("inpDepthModel").value.trim(),
+                        depthMs: lastDepthMs != null ? Math.round(lastDepthMs * 10) / 10 : null,
+                        mediaPipeMs: lastMpMs != null ? Math.round(lastMpMs * 10) / 10 : null,
+                        combinedMs: Math.round(lastCombinedMs * 10) / 10,
+                        faceGroups: latestFace?.faceLandmarks?.length ?? 0,
+                        handGroups: latestHands?.landmarks?.length ?? 0,
+                        depthImage: out?.depth
+                            ? { width: out.depth.width, height: out.depth.height, channels: out.depth.channels }
+                            : null,
+                        maskThreshold: Number(rngThreshold.value),
+                        maxInputSide: maxSide,
+                        ts: new Date().toISOString(),
+                    };
+                    jsonPanel.value = JSON.stringify(latestSummary, null, 2);
+                } catch (e) {
+                    setStatus(`Inference error: ${e?.message ?? e}`, true);
+                } finally {
+                    inferBusy = false;
+                }
+            }
+
+            function render() {
+                if (!resizeCanvasToVideo()) return;
+                const cw = canvas.width;
+                const ch = canvas.height;
+                const mode = selView.value;
+
+                ctx.save();
+                ctx.clearRect(0, 0, cw, ch);
+
+                if (mode === "depth") {
+                    if (latestDepthImage) ctx.drawImage(depthViz, 0, 0, cw, ch);
+                    else ctx.drawImage(video, 0, 0, cw, ch);
+                } else if (mode === "combined") {
+                    ctx.drawImage(video, 0, 0, cw, ch);
+                    if (latestDepthValue) {
+                        ctx.globalCompositeOperation = "destination-in";
+                        ctx.drawImage(maskCanvas, 0, 0, cw, ch);
+                        ctx.globalCompositeOperation = "source-over";
+                    }
+                    drawMediaPipeOverlay();
+                } else {
+                    ctx.drawImage(video, 0, 0, cw, ch);
+                    if (mode === "mediapipe") drawMediaPipeOverlay();
+                }
+
+                ctx.restore();
+            }
+
+            function updateMetrics(ts) {
+                if (lastRenderTs) {
+                    const dt = ts - lastRenderTs;
+                    if (dt > 0) renderFps = 1000 / dt;
+                }
+                lastRenderTs = ts;
+
+                const now = performance.now();
+                if (now - fpsWindowStart >= 1000) {
+                    inferenceFps = (inferredFrames * 1000) / (now - fpsWindowStart);
+                    inferredFrames = 0;
+                    fpsWindowStart = now;
+                }
+
+                const avg = combinedSamples.length
+                    ? combinedSamples.reduce((a, b) => a + b, 0) / combinedSamples.length
+                    : null;
+                const targetMs = Math.max(50, Number(document.getElementById("inpTargetMs").value) || 100);
+                const meeting = avg != null && avg <= targetMs ? "on target" : "over target";
+                metricsEl.innerHTML = `Combined: ${lastCombinedMs != null ? `${lastCombinedMs.toFixed(1)} ms` : "—"} · avg: ${avg != null ? `${avg.toFixed(1)} ms` : "—"} · ${meeting}<br />Depth: ${lastDepthMs != null ? `${lastDepthMs.toFixed(1)} ms` : "—"} · MediaPipe: ${lastMpMs != null ? `${lastMpMs.toFixed(1)} ms` : "—"}<br />render: ${renderFps.toFixed(1)} fps · inference: ${inferenceFps.toFixed(1)} fps · target: ${(1000 / targetMs).toFixed(1)} fps`;
+            }
+
+            function loop(ts) {
+                if (!running || paused) return;
+                render();
+                updateMetrics(ts);
+
+                const targetMs = Math.max(50, Number(document.getElementById("inpTargetMs").value) || 100);
+                if (performance.now() >= nextInferAllowedAt && !inferBusy) {
+                    nextInferAllowedAt = performance.now() + targetMs;
+                    void runInferencePass(ts);
+                }
+                raf = requestAnimationFrame(loop);
+            }
+
+            function startLoop() {
+                cancelAnimationFrame(raf);
+                if (running && !paused) raf = requestAnimationFrame(loop);
+            }
+
+            document.getElementById("btnCam").addEventListener("click", async () => {
+                if (stream) stopCamera();
+                else await startCamera();
+            });
+
+            document.getElementById("btnPause").addEventListener("click", () => {
+                if (!stream) return;
+                paused = !paused;
+                document.getElementById("btnPause").textContent = paused ? "Resume" : "Pause";
+                if (paused) cancelAnimationFrame(raf);
+                else startLoop();
+                setStatus(paused ? "Paused" : "Camera running");
+            });
+
+            selCamera.addEventListener("change", () => {
+                if (stream) void startCamera();
+            });
+
+            rngThreshold.addEventListener("input", () => {
+                lblThreshold.textContent = rngThreshold.value;
+                rebuildMaskCanvas();
+            });
+
+            rngMaxSide.addEventListener("input", () => {
+                lblMaxSide.textContent = rngMaxSide.value;
+            });
+
+            document.getElementById("btnReloadMp").addEventListener("click", async () => {
+                document.getElementById("btnReloadMp").disabled = true;
+                try {
+                    await reloadMediaPipe();
+                } catch (e) {
+                    setStatus(`MediaPipe failed: ${e?.message ?? e}`, true);
+                } finally {
+                    document.getElementById("btnReloadMp").disabled = false;
+                }
+            });
+
+            document.getElementById("btnReloadDepth").addEventListener("click", async () => {
+                document.getElementById("btnReloadDepth").disabled = true;
+                try {
+                    await reloadDepthModel();
+                } catch (_) {
+                    /* status set */
+                } finally {
+                    document.getElementById("btnReloadDepth").disabled = false;
+                }
+            });
+
+            window.addEventListener("beforeunload", () => {
+                stopCamera();
+                closeQuietly(faceLandmarker);
+                closeQuietly(handLandmarker);
+                closeQuietly(drawUtils);
+            });
+
+            if (!navigator.gpu) {
+                const o = selDepthDevice.querySelector('option[value="webgpu"]');
+                if (o) o.disabled = true;
+                selDepthDevice.value = "wasm";
+                selDepthDtype.value = "q8";
+            } else {
+                selDepthDevice.value = "webgpu";
+                selDepthDtype.value = "fp16";
+                env.backends.onnx.webgpu = env.backends.onnx.webgpu ?? {};
+                env.backends.onnx.webgpu.powerPreference = "high-performance";
+            }
+
+            if (glCtx) setStatus("GPU available · loading defaults");
+            else setStatus("CPU/WebGL2 fallback · loading defaults");
+
+            Promise.allSettled([reloadMediaPipe(), reloadDepthModel(), refreshCameras()]).then((results) => {
+                const rejected = results.find((r) => r.status === "rejected");
+                if (rejected) setStatus(`Default load issue: ${rejected.reason?.message ?? rejected.reason}`, true);
+                else setStatus("Ready · start camera");
+            });
+        </script>
+    </body>
+</html>
