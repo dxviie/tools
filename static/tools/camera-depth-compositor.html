@@ -92,6 +92,21 @@
                 position: relative;
             }
 
+            .export-flash-veil {
+                position: absolute;
+                inset: 0;
+                z-index: 40;
+                pointer-events: none;
+                background: #fff;
+                opacity: 0;
+                transition: opacity 0.45s ease-out;
+            }
+
+            .export-flash-veil.export-flash-veil--on {
+                opacity: 0.93;
+                transition: opacity 0.045s ease-out;
+            }
+
             .mirror-stack {
                 position: relative;
                 display: inline-block;
@@ -153,6 +168,13 @@
             label.row span,
             summary {
                 color: var(--muted);
+            }
+
+            label.row .val {
+                color: var(--accent);
+                font-variant-numeric: tabular-nums;
+                min-width: 3.2ch;
+                text-align: right;
             }
 
             .hint {
@@ -217,6 +239,7 @@
 
             input[type="range"] {
                 width: 100%;
+                accent-color: var(--accent2);
             }
 
             details {
@@ -231,6 +254,27 @@
                 letter-spacing: 0.12em;
                 text-transform: uppercase;
                 margin-bottom: 8px;
+            }
+
+            .feature-grid {
+                display: grid;
+                grid-template-columns: 1fr auto auto;
+                gap: 2px 8px;
+                align-items: center;
+                margin-bottom: 8px;
+                font-size: 11px;
+            }
+
+            .feature-grid .fg-label {
+                color: var(--muted);
+            }
+
+            .feature-grid .fg-head {
+                font-size: 9px;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: var(--muted);
+                text-align: center;
             }
 
             #jsonPanel {
@@ -273,6 +317,7 @@
 
         <div class="layout">
             <div class="stage">
+                <div class="export-flash-veil" id="exportFlash"></div>
                 <div class="mirror-stack" id="mirrorStack">
                     <video id="video" playsinline autoplay muted></video>
                     <canvas id="canvas"></canvas>
@@ -299,6 +344,7 @@
                         <option value="raw">Raw camera</option>
                         <option value="mediapipe">MediaPipe</option>
                         <option value="depth">Depth</option>
+                        <option value="hatch">Hatch preview</option>
                     </select>
                 </label>
                 <label class="row block">
@@ -312,6 +358,164 @@
                     Combined: — · target: 10 fps<br />
                     Depth: — · MediaPipe: — · render: —
                 </div>
+
+                <details id="detailsHatch">
+                    <summary>Hatch &amp; SVG export</summary>
+
+                    <h2>Analysis</h2>
+                    <label class="row">
+                        <span>Analysis width — <span class="val" id="v-analysisW">96</span>px</span>
+                        <input type="range" id="rngAnalysisW" min="48" max="140" step="8" value="96" />
+                    </label>
+
+                    <h2>Detail / Seeding</h2>
+                    <label class="row">
+                        <span>Seed count — <span class="val" id="v-seedCount">72</span></span>
+                        <input type="range" id="rngSeedCount" min="20" max="140" step="2" value="72" />
+                    </label>
+                    <label class="row">
+                        <span>Grid div — <span class="val" id="v-gridDiv">20</span></span>
+                        <input type="range" id="rngGridDiv" min="10" max="36" step="1" value="20" />
+                    </label>
+                    <label class="row">
+                        <span>Detail gamma — <span class="val" id="v-detailGamma">1.15</span></span>
+                        <input type="range" id="rngDetailGamma" min="0.35" max="2.8" step="0.05" value="1.15" />
+                    </label>
+                    <label class="row">
+                        <span>Detail gain — <span class="val" id="v-detailGain">1.4</span></span>
+                        <input type="range" id="rngDetailGain" min="0.4" max="3.5" step="0.05" value="1.4" />
+                    </label>
+                    <label class="row">
+                        <span>Detail smooth — <span class="val" id="v-detailSmooth">1</span></span>
+                        <input type="range" id="rngDetailSmooth" min="0" max="4" step="1" value="1" />
+                    </label>
+
+                    <h2>Hatch geometry</h2>
+                    <label class="row">
+                        <span>Spacing min mm — <span class="val" id="v-hatchSpacingMinMm">1.25</span></span>
+                        <input type="range" id="rngHatchSpacingMinMm" min="0.25" max="18" step="0.05" value="1.25" />
+                    </label>
+                    <label class="row">
+                        <span>Spacing max mm — <span class="val" id="v-hatchSpacingMaxMm">5.5</span></span>
+                        <input type="range" id="rngHatchSpacingMaxMm" min="0.25" max="18" step="0.05" value="5.5" />
+                    </label>
+                    <label class="row">
+                        <span>Line width mm — <span class="val" id="v-hatchLineWidthMm">0.45</span></span>
+                        <input type="range" id="rngHatchLineWidthMm" min="0.1" max="2" step="0.01" value="0.45" />
+                    </label>
+                    <label class="row block">
+                        <span>Density channel</span>
+                        <select id="selHatchDensityChannel">
+                            <option value="lum" selected>Luminance</option>
+                            <option value="sat">Saturation</option>
+                            <option value="hue">Hue</option>
+                        </select>
+                    </label>
+
+                    <h2>Hatch styling (RGB)</h2>
+                    <label class="row">
+                        <span>Lum density — <span class="val" id="v-lumDensityAmt">1.00</span></span>
+                        <input type="range" id="rngLumDensityAmt" min="0" max="1.35" step="0.05" value="1" />
+                    </label>
+                    <label class="row">
+                        <span>Hue → angle — <span class="val" id="v-hueAngleScale">1.10</span></span>
+                        <input type="range" id="rngHueAngleScale" min="0" max="2.5" step="0.05" value="1.1" />
+                    </label>
+                    <label class="row">
+                        <span>Angle offset — <span class="val" id="v-angleOffset">12</span>°</span>
+                        <input type="range" id="rngAngleOffset" min="-45" max="45" step="1" value="12" />
+                    </label>
+                    <label class="row">
+                        <span>Sat → angle — <span class="val" id="v-satAngleAmt">22</span>°</span>
+                        <input type="range" id="rngSatAngleAmt" min="0" max="55" step="1" value="22" />
+                    </label>
+
+                    <h2>Depth shading (DAv2)</h2>
+                    <label class="row block">
+                        <span>Shading mode</span>
+                        <select id="selShadingMode">
+                            <option value="off">Off</option>
+                            <option value="depth" selected>Depth</option>
+                        </select>
+                    </label>
+                    <label class="row">
+                        <span>Shading angle — <span class="val" id="v-shadingAngleAmt">0.35</span></span>
+                        <input type="range" id="rngShadingAngleAmt" min="0" max="1.2" step="0.05" value="0.35" />
+                    </label>
+                    <label class="row">
+                        <span>Shading density — <span class="val" id="v-shadingDensityAmt">0.35</span></span>
+                        <input type="range" id="rngShadingDensityAmt" min="0" max="1" step="0.05" value="0.35" />
+                    </label>
+
+                    <h2>Feature holes &amp; outlines</h2>
+                    <div class="feature-grid">
+                        <span></span><span class="fg-head">hole</span><span class="fg-head">outline</span>
+                        <span class="fg-label">Lips outer</span>
+                        <input type="checkbox" id="chkHoleLipsOuter" checked />
+                        <input type="checkbox" id="chkOutlineLipsOuter" />
+                        <span class="fg-label">Lips inner</span>
+                        <input type="checkbox" id="chkHoleLipsInner" checked />
+                        <input type="checkbox" id="chkOutlineLipsInner" />
+                        <span class="fg-label">Left eye</span>
+                        <input type="checkbox" id="chkHoleLeftEye" checked />
+                        <input type="checkbox" id="chkOutlineLeftEye" />
+                        <span class="fg-label">Right eye</span>
+                        <input type="checkbox" id="chkHoleRightEye" checked />
+                        <input type="checkbox" id="chkOutlineRightEye" />
+                        <span class="fg-label">Left iris</span>
+                        <input type="checkbox" id="chkHoleLeftIris" />
+                        <input type="checkbox" id="chkOutlineLeftIris" />
+                        <span class="fg-label">Right iris</span>
+                        <input type="checkbox" id="chkHoleRightIris" />
+                        <input type="checkbox" id="chkOutlineRightIris" />
+                        <span class="fg-label">Left brow</span>
+                        <input type="checkbox" id="chkHoleLeftBrow" />
+                        <input type="checkbox" id="chkOutlineLeftBrow" />
+                        <span class="fg-label">Right brow</span>
+                        <input type="checkbox" id="chkHoleRightBrow" />
+                        <input type="checkbox" id="chkOutlineRightBrow" />
+                        <span class="fg-label">Face oval</span>
+                        <input type="checkbox" id="chkHoleFaceOval" />
+                        <input type="checkbox" id="chkOutlineFaceOval" />
+                        <span class="fg-label">Hands hull</span>
+                        <input type="checkbox" id="chkHoleHandsHull" />
+                        <input type="checkbox" id="chkOutlineHandsHull" />
+                    </div>
+                    <label class="row">
+                        <span>Hole pad mm — <span class="val" id="v-holePadMm">0.50</span></span>
+                        <input type="range" id="rngHolePadMm" min="0" max="4" step="0.1" value="0.5" />
+                    </label>
+
+                    <h2>Silhouette</h2>
+                    <label class="row">
+                        <span>Enabled</span>
+                        <input type="checkbox" id="chkSilhouette" />
+                    </label>
+                    <label class="row">
+                        <span>Simplify mm — <span class="val" id="v-silhouetteSimplifyMm">0.40</span></span>
+                        <input type="range" id="rngSilhouetteSimplifyMm" min="0" max="2" step="0.05" value="0.4" />
+                    </label>
+
+                    <h2>SVG export</h2>
+                    <label class="row block">
+                        <span>Page size</span>
+                        <select id="selSvgPageSize">
+                            <option value="a6">A6</option>
+                            <option value="a5">A5</option>
+                            <option value="a4" selected>A4</option>
+                            <option value="a3">A3</option>
+                        </select>
+                    </label>
+                    <label class="row">
+                        <span>Mirror SVG to match preview</span>
+                        <input type="checkbox" id="chkSvgMirror" checked />
+                    </label>
+                    <label class="row block">
+                        <span>Caption</span>
+                        <input type="text" id="inpSvgCaption" value="" />
+                    </label>
+                    <button type="button" id="btnExportSvg" class="secondary" disabled>Export SVG</button>
+                </details>
 
                 <details>
                     <summary>Advanced model configuration</summary>
@@ -427,6 +631,8 @@
             } = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}/vision_bundle.mjs`);
             const { pipeline, env } = await import(TF_MODULE);
 
+            /* ── DOM refs ────────────────────────────────────────── */
+
             const video = document.getElementById("video");
             const canvas = document.getElementById("canvas");
             const ctx = canvas.getContext("2d");
@@ -452,9 +658,95 @@
             const lblMaxSide = document.getElementById("lblMaxSide");
             const selDepthDevice = document.getElementById("selDepthDevice");
             const selDepthDtype = document.getElementById("selDepthDtype");
+            const btnExportSvg = document.getElementById("btnExportSvg");
+            const exportFlash = document.getElementById("exportFlash");
 
             document.getElementById("inpFaceModel").value = MODELS.faceLandmarker;
             document.getElementById("inpHandModel").value = MODELS.handLandmarker;
+
+            /* ── SVG page constants ──────────────────────────────── */
+
+            const SVG_PAGE_LANDSCAPE_MM = { a6: [148, 105], a5: [210, 148], a4: [297, 210], a3: [420, 297] };
+            const A3W = 420, A3H = 297;
+            const SVG_PAGE_MARGIN_MM = 8;
+            const SVG_CAPTION_BAND_INNER_MM = 13;
+            const SVG_HATCH_CAPTION_GAP_MM = 2;
+            const SVG_HATCH_TOP_PAD_MM = 2;
+            const SVG_HATCH_VERTICAL_BIAS = 0.18;
+            const SVG_ART_INSET = 0.92;
+
+            /* ── Hatch params ────────────────────────────────────── */
+
+            const HP = {
+                analysisW: 96,
+                seedCount: 72,
+                gridDiv: 20,
+                detailGamma: 1.15,
+                detailGain: 1.4,
+                detailSmooth: 1,
+                hatchSpacingMinMm: 1.25,
+                hatchSpacingMaxMm: 5.5,
+                hatchLineWidthMm: 0.45,
+                hatchDensityChannel: "lum",
+                lumDensityAmt: 1.0,
+                hueAngleScale: 1.1,
+                angleOffset: 12,
+                satAngleAmt: 22,
+                shadingMode: "depth",
+                shadingAngleAmt: 0.35,
+                shadingDensityAmt: 0.35,
+                holePadMm: 0.5,
+                silhouetteEnabled: false,
+                silhouetteSimplifyMm: 0.4,
+                svgPageSize: "a4",
+                svgMirror: true,
+                svgCaption: "",
+                featureLipsOuter:   { hole: true,  outline: false },
+                featureLipsInner:   { hole: true,  outline: false },
+                featureLeftEye:     { hole: true,  outline: false },
+                featureRightEye:    { hole: true,  outline: false },
+                featureLeftIris:    { hole: false, outline: false },
+                featureRightIris:   { hole: false, outline: false },
+                featureLeftBrow:    { hole: false, outline: false },
+                featureRightBrow:   { hole: false, outline: false },
+                featureFaceOval:    { hole: false, outline: false },
+                featureHandsHull:   { hole: false, outline: false },
+            };
+
+            /* ── MediaPipe landmark ring indices ─────────────────── */
+
+            const LIPS_OUTER_INDICES = [61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37,39,40,185];
+            const LIPS_INNER_INDICES = [78,95,88,178,87,14,317,402,318,324,308,415,310,311,312,13,82,81,80,191];
+            const LEFT_EYE_INDICES  = [263,249,390,373,374,380,381,382,362,398,384,385,386,387,388,466];
+            const RIGHT_EYE_INDICES = [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246];
+            const LEFT_IRIS_INDICES  = [474,475,476,477];
+            const RIGHT_IRIS_INDICES = [469,470,471,472];
+            const LEFT_BROW_INDICES  = [276,283,282,295,285,300,293,334,296,336];
+            const RIGHT_BROW_INDICES = [46,53,52,65,55,70,63,105,66,107];
+            const FACE_OVAL_INDICES = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
+
+            /* ── Hatch state ─────────────────────────────────────── */
+
+            let analysisW = 96, analysisH = 72;
+            let rgbBuf = null;
+            let maskBin = null;
+            let depthBuf = null;
+            let holeMask = null;
+            let effMask = null;
+            let detailBufArr = null;
+            let stratDetailSmooth = null;
+            let seeds = [];
+            let labels = null;
+            let styleEmaRgb = null;
+            let shadingZ = null, shadingGx = null, shadingGy = null;
+            let seedShadeAngle = null, seedShadeDensity = null;
+            let lastExportSnapshot = null;
+            let lastExportLineCount = 0;
+            let hatchFeaturePolygons = [];
+            let hatchSilhouetteRing = [];
+            let mapSx = 1, mapSy = 1, mapOx = 0, mapOy = 0;
+
+            /* ── Core state (from original) ──────────────────────── */
 
             /** @type {MediaStream | null} */
             let stream = null;
@@ -475,11 +767,7 @@
 
             const glCanvas = document.createElement("canvas");
             const glCtx = glCanvas.getContext("webgl2", {
-                alpha: true,
-                antialias: false,
-                depth: false,
-                stencil: false,
-                premultipliedAlpha: false,
+                alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: false,
             });
 
             /** @type {any} */
@@ -504,6 +792,12 @@
             let inferBusy = false;
             let nextInferAllowedAt = 0;
 
+            /* ── Hershey font cache ──────────────────────────────── */
+
+            let hersheySansFontCache = null;
+
+            /* ── Utility functions ───────────────────────────────── */
+
             function setStatus(text, err = false) {
                 statusEl.textContent = text;
                 statusEl.classList.toggle("err", err);
@@ -514,21 +808,14 @@
                 return Number.isFinite(n) ? n : fallback;
             }
 
-            function clamp01(n) {
-                return Math.max(0, Math.min(1, n));
-            }
+            function clamp01(n) { return Math.max(0, Math.min(1, n)); }
 
             function closeQuietly(instance) {
-                try {
-                    instance?.close?.();
-                } catch (_) {
-                    /* noop */
-                }
+                try { instance?.close?.(); } catch (_) { /* noop */ }
             }
 
             function fitStageToVideo() {
-                const vw = video.videoWidth;
-                const vh = video.videoHeight;
+                const vw = video.videoWidth, vh = video.videoHeight;
                 if (!vw || !vh) return false;
                 const rect = stage.getBoundingClientRect();
                 const stageW = Math.max(1, rect.width - 28);
@@ -540,8 +827,7 @@
             }
 
             function resizeCanvasToVideo() {
-                const vw = video.videoWidth;
-                const vh = video.videoHeight;
+                const vw = video.videoWidth, vh = video.videoHeight;
                 if (!vw || !vh) return false;
                 fitStageToVideo();
                 if (canvas.width !== vw || canvas.height !== vh) {
@@ -554,19 +840,14 @@
             }
 
             function ensureDrawingUtils() {
-                if (!drawUtils) {
-                    drawUtils = glCtx ? new DrawingUtils(ctx, glCtx) : new DrawingUtils(ctx);
-                }
+                if (!drawUtils) drawUtils = glCtx ? new DrawingUtils(ctx, glCtx) : new DrawingUtils(ctx);
                 return drawUtils;
             }
 
             function computeInputSize(vw, vh, maxSide) {
                 if (!vw || !vh) return { w: 0, h: 0 };
                 const scale = Math.min(1, maxSide / Math.max(vw, vh));
-                return {
-                    w: Math.max(1, Math.round(vw * scale)),
-                    h: Math.max(1, Math.round(vh * scale)),
-                };
+                return { w: Math.max(1, Math.round(vw * scale)), h: Math.max(1, Math.round(vh * scale)) };
             }
 
             function selectedMpDelegate() {
@@ -576,11 +857,19 @@
             }
 
             function baseOptions(modelAssetPath) {
-                return {
-                    modelAssetPath,
-                    delegate: selectedMpDelegate(),
-                };
+                return { modelAssetPath, delegate: selectedMpDelegate() };
             }
+
+            function playExportFlash() {
+                exportFlash.style.transition = "none";
+                exportFlash.style.opacity = "0.93";
+                requestAnimationFrame(() => {
+                    exportFlash.style.transition = "opacity 0.45s ease-out";
+                    exportFlash.style.opacity = "0";
+                });
+            }
+
+            /* ── Camera / model lifecycle ────────────────────────── */
 
             async function ensureVision() {
                 if (vision) return vision;
@@ -596,7 +885,6 @@
                 handLandmarker = null;
                 latestFace = null;
                 latestHands = null;
-
                 await ensureVision();
                 const baseVideo = { runningMode: "VIDEO" };
                 if (document.getElementById("chkFace").checked) {
@@ -629,11 +917,9 @@
                 maskImageData = null;
                 depthRawImageData = null;
                 hasSyncedSourceFrame = false;
-
                 const modelId = document.getElementById("inpDepthModel").value.trim() || "onnx-community/depth-anything-v2-small";
                 const device = selDepthDevice.value === "webgpu" ? "webgpu" : "wasm";
                 const dtype = selDepthDtype.value;
-
                 setStatus(`Loading depth model ${modelId}...`);
                 try {
                     depthPipe = await pipeline("depth-estimation", modelId, { device, dtype });
@@ -666,10 +952,7 @@
                 paused = false;
                 cancelAnimationFrame(raf);
                 raf = 0;
-                if (stream) {
-                    stream.getTracks().forEach((t) => t.stop());
-                    stream = null;
-                }
+                if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
                 video.srcObject = null;
                 document.getElementById("btnCam").textContent = "Start camera";
                 document.getElementById("btnPause").textContent = "Pause";
@@ -705,36 +988,11 @@
                 }
             }
 
-            function drawMediaPipeOverlay() {
-                const du = ensureDrawingUtils();
-                if (!du) return;
-                for (const lm of latestFace?.faceLandmarks ?? []) {
-                    du.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, {
-                        lineWidth: 2,
-                        color: "rgba(125,211,252,0.95)",
-                    });
-                    du.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_CONTOURS, {
-                        lineWidth: 1,
-                        color: "rgba(196,240,122,0.5)",
-                    });
-                }
-                for (const lm of latestHands?.landmarks ?? []) {
-                    du.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, {
-                        lineWidth: 2,
-                        color: "rgba(196,240,122,0.95)",
-                    });
-                    du.drawLandmarks(lm, {
-                        lineWidth: 1,
-                        radius: 2,
-                        color: "rgba(125,211,252,0.85)",
-                    });
-                }
-            }
+            /* ── Depth mask + cache ──────────────────────────────── */
 
             function rebuildMaskCanvas() {
                 if (!latestDepthValue) return;
-                const w = latestDepthValue.width;
-                const h = latestDepthValue.height;
+                const w = latestDepthValue.width, h = latestDepthValue.height;
                 if (maskCanvas.width !== w || maskCanvas.height !== h) {
                     maskCanvas.width = w;
                     maskCanvas.height = h;
@@ -743,32 +1001,24 @@
                 if (!maskImageData) {
                     maskImageData = maskCtx.createImageData(w, h);
                     const d = maskImageData.data;
-                    for (let j = 0; j < d.length; j += 4) {
-                        d[j] = d[j + 1] = d[j + 2] = 255;
-                    }
+                    for (let j = 0; j < d.length; j += 4) d[j] = d[j + 1] = d[j + 2] = 255;
                 }
                 const threshold = Math.round((Number(rngThreshold.value) / 100) * 255);
                 const depth = latestDepthValue.data;
                 const out = maskImageData.data;
-                for (let i = 0; i < depth.length; i++) {
-                    out[i * 4 + 3] = depth[i] >= threshold ? 255 : 0;
-                }
+                for (let i = 0; i < depth.length; i++) out[i * 4 + 3] = depth[i] >= threshold ? 255 : 0;
                 maskCtx.putImageData(maskImageData, 0, 0);
             }
 
             function cacheDepthOutput(depthImg) {
                 const rgba = depthImg.rgba();
-                const w = rgba.width;
-                const h = rgba.height;
+                const w = rgba.width, h = rgba.height;
                 if (!latestDepthValue || latestDepthValue.width !== w || latestDepthValue.height !== h) {
                     latestDepthValue = { width: w, height: h, data: new Uint8Array(w * h) };
                     depthRawImageData = new ImageData(w, h);
                     const a = depthRawImageData.data;
                     for (let i = 3; i < a.length; i += 4) a[i] = 255;
-                    if (depthViz.width !== w || depthViz.height !== h) {
-                        depthViz.width = w;
-                        depthViz.height = h;
-                    }
+                    if (depthViz.width !== w || depthViz.height !== h) { depthViz.width = w; depthViz.height = h; }
                     maskImageData = null;
                 }
                 const src = rgba.data;
@@ -782,83 +1032,1179 @@
                 rebuildMaskCanvas();
             }
 
-            async function runInferencePass(ts) {
-                if (!running || paused || inferBusy || (!depthPipe && !faceLandmarker && !handLandmarker)) return;
-                if (!video.videoWidth || !video.videoHeight) return;
-                inferBusy = true;
-                const combinedStart = performance.now();
-                const vw = video.videoWidth;
-                const vh = video.videoHeight;
-                const maxSide = Number(rngMaxSide.value);
-                const { w, h } = computeInputSize(vw, vh, maxSide);
-                if (w < 2 || h < 2) {
-                    inferBusy = false;
-                    return;
+            /* ── MediaPipe overlay (original views) ──────────────── */
+
+            function drawMediaPipeOverlay() {
+                const du = ensureDrawingUtils();
+                if (!du) return;
+                for (const lm of latestFace?.faceLandmarks ?? []) {
+                    du.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { lineWidth: 2, color: "rgba(125,211,252,0.95)" });
+                    du.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_CONTOURS, { lineWidth: 1, color: "rgba(196,240,122,0.5)" });
                 }
-                if (work.width !== w || work.height !== h) {
-                    work.width = w;
-                    work.height = h;
-                }
-                let frameBitmap = null;
-                try {
-                    frameBitmap = await createImageBitmap(video);
-                    wctx.drawImage(frameBitmap, 0, 0, w, h);
-                    const mpStart = performance.now();
-                    const nextFace = faceLandmarker ? faceLandmarker.detectForVideo(work, ts) : null;
-                    const nextHands = handLandmarker ? handLandmarker.detectForVideo(work, ts) : null;
-                    lastMpMs = performance.now() - mpStart;
-
-                    let out = null;
-                    if (depthPipe) {
-                        const depthStart = performance.now();
-                        out = await depthPipe(work);
-                        lastDepthMs = performance.now() - depthStart;
-                        if (out?.depth) cacheDepthOutput(out.depth);
-                    }
-
-                    if (sourceFrame.width !== vw || sourceFrame.height !== vh) {
-                        sourceFrame.width = vw;
-                        sourceFrame.height = vh;
-                    }
-                    sourceCtx.drawImage(frameBitmap, 0, 0, vw, vh);
-                    hasSyncedSourceFrame = true;
-                    latestFace = nextFace;
-                    latestHands = nextHands;
-
-                    lastCombinedMs = performance.now() - combinedStart;
-                    combinedSamples.push(lastCombinedMs);
-                    if (combinedSamples.length > 30) combinedSamples.shift();
-                    inferredFrames++;
-                    latestSummary = {
-                        view: selView.value,
-                        depthModel: document.getElementById("inpDepthModel").value.trim(),
-                        depthMs: lastDepthMs != null ? Math.round(lastDepthMs * 10) / 10 : null,
-                        mediaPipeMs: lastMpMs != null ? Math.round(lastMpMs * 10) / 10 : null,
-                        combinedMs: Math.round(lastCombinedMs * 10) / 10,
-                        syncedSourceFrame: hasSyncedSourceFrame,
-                        faceGroups: latestFace?.faceLandmarks?.length ?? 0,
-                        handGroups: latestHands?.landmarks?.length ?? 0,
-                        depthImage: out?.depth
-                            ? { width: out.depth.width, height: out.depth.height, channels: out.depth.channels }
-                            : null,
-                        maskThreshold: Number(rngThreshold.value),
-                        maxInputSide: maxSide,
-                        ts: new Date().toISOString(),
-                    };
-                    jsonPanel.value = JSON.stringify(latestSummary, null, 2);
-                } catch (e) {
-                    setStatus(`Inference error: ${e?.message ?? e}`, true);
-                } finally {
-                    frameBitmap?.close();
-                    inferBusy = false;
+                for (const lm of latestHands?.landmarks ?? []) {
+                    du.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, { lineWidth: 2, color: "rgba(196,240,122,0.95)" });
+                    du.drawLandmarks(lm, { lineWidth: 1, radius: 2, color: "rgba(125,211,252,0.85)" });
                 }
             }
 
+            /* ══════════════════════════════════════════════════════
+               HATCH PIPELINE — ported from webcam-adaptive-voronoi-hatch
+               ══════════════════════════════════════════════════════ */
+
+            function hatchMaskAt(x, y) {
+                if (x < 0 || y < 0 || x >= analysisW || y >= analysisH) return false;
+                return effMask[y * analysisW + x] === 1;
+            }
+
+            function hatchRgbAt(px, py, out) {
+                const i = (py * analysisW + px) * 3;
+                out[0] = rgbBuf[i]; out[1] = rgbBuf[i + 1]; out[2] = rgbBuf[i + 2];
+            }
+
+            function luminance(r, g, b) {
+                return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+            }
+
+            function hslFromRgb(r, g, b) {
+                r /= 255; g /= 255; b /= 255;
+                const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+                let h = 0, s = 0;
+                const l = (mx + mn) / 2, d = mx - mn;
+                if (d > 1e-6) {
+                    s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+                    switch (mx) {
+                        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                        case g: h = (b - r) / d + 2; break;
+                        default: h = (r - g) / d + 4;
+                    }
+                    h /= 6;
+                }
+                return { h, s, l };
+            }
+
+            function normalizedHatchDensityDrive(m, channel) {
+                let v;
+                switch (channel) {
+                    case "r": v = m.r / 255; break;
+                    case "g": v = m.g / 255; break;
+                    case "b": v = m.b / 255; break;
+                    default: { const hsl = hslFromRgb(m.r, m.g, m.b); v = hsl.l; }
+                }
+                return Math.max(0, Math.min(1, v));
+            }
+
+            /* ── Analysis grid build ─────────────────────────────── */
+
+            function buildAnalysisFromCombined() {
+                if (!latestDepthValue || !hasSyncedSourceFrame) return false;
+                const vw = video.videoWidth, vh = video.videoHeight;
+                if (!vw || !vh) return false;
+
+                const aw = Math.max(16, Math.min(140, Math.round(HP.analysisW)));
+                const ah = Math.max(16, Math.round((aw * vh) / vw));
+                if (analysisW !== aw || analysisH !== ah || !rgbBuf) {
+                    analysisW = aw; analysisH = ah;
+                    const n = aw * ah;
+                    rgbBuf = new Uint8Array(n * 3);
+                    maskBin = new Uint8Array(n);
+                    depthBuf = new Float32Array(n);
+                    holeMask = new Uint8Array(n);
+                    effMask = new Uint8Array(n);
+                    detailBufArr = new Float32Array(n);
+                    stratDetailSmooth = null;
+                    styleEmaRgb = null;
+                    shadingZ = new Float32Array(n);
+                    shadingGx = new Float32Array(n);
+                    shadingGy = new Float32Array(n);
+                }
+
+                const tmpC = document.createElement("canvas");
+                tmpC.width = aw; tmpC.height = ah;
+                const tc = tmpC.getContext("2d", { willReadFrequently: true });
+
+                tc.drawImage(sourceFrame, 0, 0, aw, ah);
+                const rgbId = tc.getImageData(0, 0, aw, ah);
+                const rgbD = rgbId.data;
+                for (let i = 0, j = 0; i < rgbD.length; i += 4, j += 3) {
+                    rgbBuf[j] = rgbD[i]; rgbBuf[j + 1] = rgbD[i + 1]; rgbBuf[j + 2] = rgbD[i + 2];
+                }
+
+                tc.drawImage(maskCanvas, 0, 0, aw, ah);
+                const mId = tc.getImageData(0, 0, aw, ah);
+                const mD = mId.data;
+                for (let i = 0, p = 0; i < mD.length; i += 4, p++) {
+                    maskBin[p] = mD[i + 3] > 127 ? 1 : 0;
+                }
+
+                tc.drawImage(depthViz, 0, 0, aw, ah);
+                const dId = tc.getImageData(0, 0, aw, ah);
+                const dD = dId.data;
+                for (let i = 0, p = 0; i < dD.length; i += 4, p++) {
+                    depthBuf[p] = dD[i] / 255;
+                }
+
+                return true;
+            }
+
+            /* ── Feature polygon projection ──────────────────────── */
+
+            function projectLandmarksToAnalysis(landmarks, indices) {
+                const pts = [];
+                for (const idx of indices) {
+                    const lm = landmarks[idx];
+                    if (!lm) continue;
+                    pts.push([lm.x * analysisW, lm.y * analysisH]);
+                }
+                return pts;
+            }
+
+            function convexHull(points) {
+                if (points.length < 3) return points.slice();
+                const sorted = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+                const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+                const lower = [];
+                for (const p of sorted) {
+                    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+                    lower.push(p);
+                }
+                const upper = [];
+                for (let i = sorted.length - 1; i >= 0; i--) {
+                    const p = sorted[i];
+                    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+                    upper.push(p);
+                }
+                lower.pop(); upper.pop();
+                return lower.concat(upper);
+            }
+
+            function buildFeaturePolygons() {
+                hatchFeaturePolygons = [];
+                const features = [
+                    { key: "featureLipsOuter",  indices: LIPS_OUTER_INDICES,  type: "face" },
+                    { key: "featureLipsInner",  indices: LIPS_INNER_INDICES,  type: "face" },
+                    { key: "featureLeftEye",    indices: LEFT_EYE_INDICES,    type: "face" },
+                    { key: "featureRightEye",   indices: RIGHT_EYE_INDICES,   type: "face" },
+                    { key: "featureLeftIris",   indices: LEFT_IRIS_INDICES,   type: "face" },
+                    { key: "featureRightIris",  indices: RIGHT_IRIS_INDICES,  type: "face" },
+                    { key: "featureLeftBrow",   indices: LEFT_BROW_INDICES,   type: "face" },
+                    { key: "featureRightBrow",  indices: RIGHT_BROW_INDICES,  type: "face" },
+                    { key: "featureFaceOval",   indices: FACE_OVAL_INDICES,   type: "face" },
+                ];
+
+                for (const lm of latestFace?.faceLandmarks ?? []) {
+                    for (const feat of features) {
+                        const cfg = HP[feat.key];
+                        if (!cfg.hole && !cfg.outline) continue;
+                        const pts = projectLandmarksToAnalysis(lm, feat.indices);
+                        if (pts.length < 3) continue;
+                        hatchFeaturePolygons.push({ key: feat.key, hole: cfg.hole, outline: cfg.outline, pts });
+                    }
+                }
+
+                const handCfg = HP.featureHandsHull;
+                if (handCfg.hole || handCfg.outline) {
+                    for (const lm of latestHands?.landmarks ?? []) {
+                        const allPts = lm.map((p) => [p.x * analysisW, p.y * analysisH]);
+                        const hull = convexHull(allPts);
+                        if (hull.length < 3) continue;
+                        hatchFeaturePolygons.push({ key: "featureHandsHull", hole: handCfg.hole, outline: handCfg.outline, pts: hull });
+                    }
+                }
+            }
+
+            /* ── Scanline polygon rasterizer ──────────────────────── */
+
+            function scanlineFillPolygon(pts, dst, w, h) {
+                if (pts.length < 3) return;
+                let minY = Infinity, maxY = -Infinity;
+                for (const p of pts) { minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]); }
+                const y0 = Math.max(0, Math.floor(minY));
+                const y1 = Math.min(h - 1, Math.ceil(maxY));
+                const n = pts.length;
+                for (let y = y0; y <= y1; y++) {
+                    const yf = y + 0.5;
+                    const xs = [];
+                    for (let i = 0; i < n; i++) {
+                        const j = (i + 1) % n;
+                        const ay = pts[i][1], by = pts[j][1];
+                        if ((ay <= yf && by > yf) || (by <= yf && ay > yf)) {
+                            const t = (yf - ay) / (by - ay);
+                            xs.push(pts[i][0] + t * (pts[j][0] - pts[i][0]));
+                        }
+                    }
+                    xs.sort((a, b) => a - b);
+                    for (let k = 0; k + 1 < xs.length; k += 2) {
+                        const x0 = Math.max(0, Math.floor(xs[k]));
+                        const x1 = Math.min(w - 1, Math.ceil(xs[k + 1]));
+                        for (let x = x0; x <= x1; x++) dst[y * w + x] = 1;
+                    }
+                }
+            }
+
+            function dilateMask(src, dst, w, h, radius) {
+                if (radius <= 0) { dst.set(src); return; }
+                dst.fill(0);
+                const r = Math.ceil(radius);
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        if (!src[y * w + x]) continue;
+                        for (let dy = -r; dy <= r; dy++) {
+                            const yy = y + dy;
+                            if (yy < 0 || yy >= h) continue;
+                            for (let dx = -r; dx <= r; dx++) {
+                                const xx = x + dx;
+                                if (xx < 0 || xx >= w) continue;
+                                if (dx * dx + dy * dy <= radius * radius) dst[yy * w + xx] = 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            function buildEffectiveMask() {
+                const n = analysisW * analysisH;
+                holeMask.fill(0);
+
+                const mmPerPx = computeHatchExportInnerScale(analysisW, analysisH, HP.svgPageSize);
+                const padPx = Math.max(0, Math.round(HP.holePadMm / Math.max(1e-6, mmPerPx)));
+
+                const rawHoles = new Uint8Array(n);
+                for (const fp of hatchFeaturePolygons) {
+                    if (!fp.hole) continue;
+                    scanlineFillPolygon(fp.pts, rawHoles, analysisW, analysisH);
+                }
+
+                if (padPx > 0) {
+                    dilateMask(rawHoles, holeMask, analysisW, analysisH, padPx);
+                } else {
+                    holeMask.set(rawHoles);
+                }
+
+                for (let i = 0; i < n; i++) {
+                    effMask[i] = maskBin[i] && !holeMask[i] ? 1 : 0;
+                }
+            }
+
+            /* ── Sobel detail map ────────────────────────────────── */
+
+            function boxBlurFloat(src, dst, w, h, mask, r) {
+                const tmp = new Float32Array(w * h);
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        let s = 0, cnt = 0;
+                        for (let dx = -r; dx <= r; dx++) {
+                            const xx = x + dx;
+                            if (xx < 0 || xx >= w) continue;
+                            const p = y * w + xx;
+                            if (mask && !mask[p]) continue;
+                            s += src[p]; cnt++;
+                        }
+                        tmp[y * w + x] = cnt > 0 ? s / cnt : 0;
+                    }
+                }
+                for (let x = 0; x < w; x++) {
+                    for (let y = 0; y < h; y++) {
+                        let s = 0, cnt = 0;
+                        for (let dy = -r; dy <= r; dy++) {
+                            const yy = y + dy;
+                            if (yy < 0 || yy >= h) continue;
+                            const p = yy * w + x;
+                            if (mask && !mask[p]) continue;
+                            s += tmp[p]; cnt++;
+                        }
+                        dst[y * w + x] = cnt > 0 ? s / cnt : 0;
+                    }
+                }
+            }
+
+            function computeDetail(dst) {
+                dst.fill(0);
+                const w = analysisW, h = analysisH;
+                const L = new Float32Array(w * h);
+                const c = [0, 0, 0];
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        const p = y * w + x;
+                        if (!effMask[p]) { L[p] = 0; continue; }
+                        hatchRgbAt(x, y, c);
+                        L[p] = luminance(c[0], c[1], c[2]);
+                    }
+                }
+                const blurPass = HP.detailSmooth | 0;
+                let src = L, tmp = new Float32Array(w * h);
+                for (let pass = 0; pass < blurPass; pass++) {
+                    boxBlurFloat(src, tmp, w, h, effMask, 1);
+                    const swap = src; src = tmp; tmp = swap;
+                }
+                const gxK = [-1,0,1,-2,0,2,-1,0,1];
+                const gyK = [-1,-2,-1,0,0,0,1,2,1];
+                let dmax = 1e-6;
+                for (let y = 1; y < h - 1; y++) {
+                    for (let x = 1; x < w - 1; x++) {
+                        const p = y * w + x;
+                        if (!effMask[p]) { dst[p] = 0; continue; }
+                        let gx = 0, gy = 0, ki = 0;
+                        for (let j = -1; j <= 1; j++) {
+                            for (let i = -1; i <= 1; i++) {
+                                const v = src[p + j * w + i];
+                                gx += v * gxK[ki]; gy += v * gyK[ki]; ki++;
+                            }
+                        }
+                        const mag = Math.hypot(gx, gy) * HP.detailGain;
+                        dst[p] = mag;
+                        dmax = Math.max(dmax, mag);
+                    }
+                }
+                const inv = 1 / dmax;
+                for (let y = 1; y < h - 1; y++) {
+                    for (let x = 1; x < w - 1; x++) {
+                        const p = y * w + x;
+                        if (!effMask[p]) dst[p] = 0;
+                        else dst[p] = Math.min(1, dst[p] * inv);
+                    }
+                }
+            }
+
+            /* ── Adaptive seed placement ─────────────────────────── */
+
+            function allocateByWeight(weights, target) {
+                const n = weights.length;
+                const out = new Array(n).fill(0);
+                if (target <= 0 || n === 0) return out;
+                let tw = 0;
+                for (let i = 0; i < n; i++) tw += weights[i];
+                if (tw <= 0) return out;
+                const raw = new Float64Array(n), frac = new Float64Array(n);
+                let assigned = 0;
+                for (let i = 0; i < n; i++) {
+                    raw[i] = (weights[i] / tw) * target;
+                    out[i] = Math.floor(raw[i]);
+                    frac[i] = raw[i] - out[i];
+                    assigned += out[i];
+                }
+                let rem = target - assigned;
+                const order = Array.from({ length: n }, (_, i) => i);
+                order.sort((a, b) => { const d = frac[b] - frac[a]; if (d !== 0) return d > 0 ? 1 : -1; return a - b; });
+                for (let k = 0; k < rem; k++) out[order[k % n]]++;
+                return out;
+            }
+
+            function halton(i, base) {
+                let f = 1, r = 0, k = Math.max(1, i | 0);
+                while (k > 0) { f /= base; r += f * (k % base); k = (k / base) | 0; }
+                return r;
+            }
+
+            function tThMaskedInCell(cell, t) {
+                const tm = Math.max(0, t | 0);
+                let seen = 0;
+                for (let y = cell.y0; y < cell.y1; y++) {
+                    for (let x = cell.x0; x < cell.x1; x++) {
+                        if (!hatchMaskAt(x, y)) continue;
+                        if (seen === tm) return [x + 0.5, y + 0.5];
+                        seen++;
+                    }
+                }
+                return null;
+            }
+
+            function buildAdaptiveSeeds(stratDetail) {
+                const sd = stratDetail || detailBufArr;
+                const gw = Math.max(4, Math.min(60, Math.round(HP.gridDiv)));
+                const gh = Math.max(4, Math.min(60, Math.round((gw * analysisH) / analysisW)));
+                const cells = [], weights = [];
+                for (let j = 0; j < gh; j++) {
+                    const y0 = Math.floor((j / gh) * analysisH);
+                    const y1 = Math.floor(((j + 1) / gh) * analysisH);
+                    for (let i = 0; i < gw; i++) {
+                        const x0 = Math.floor((i / gw) * analysisW);
+                        const x1 = Math.floor(((i + 1) / gw) * analysisW);
+                        let cnt = 0, dsum = 0;
+                        for (let y = y0; y < y1; y++) {
+                            for (let x = x0; x < x1; x++) {
+                                const p = y * analysisW + x;
+                                if (!effMask[p]) continue;
+                                cnt++; dsum += sd[p];
+                            }
+                        }
+                        if (cnt < 3) continue;
+                        const avgD = dsum / cnt;
+                        const wgt = cnt * Math.pow(Math.max(0.02, avgD), HP.detailGamma);
+                        cells.push({ x0, x1, y0, y1, cnt, avgD });
+                        weights.push(wgt);
+                    }
+                }
+                const target = Math.max(8, Math.min(200, Math.round(HP.seedCount)));
+                const alloc = allocateByWeight(weights, target);
+                const out = [];
+                for (let c = 0; c < cells.length; c++) {
+                    const k = alloc[c], cell = cells[c];
+                    const cw = Math.max(1e-6, cell.x1 - cell.x0);
+                    const ch = Math.max(1e-6, cell.y1 - cell.y0);
+                    const cnt = Math.max(1, cell.cnt | 0);
+                    for (let t = 0; t < k; t++) {
+                        const haltonIdx = (c + 1) * 9973 + (t + 1) * 199;
+                        const u = halton(haltonIdx, 2), v = halton(haltonIdx, 3);
+                        let x = cell.x0 + u * cw, y = cell.y0 + v * ch;
+                        const xi = Math.min(analysisW - 1, Math.max(0, x | 0));
+                        const yi = Math.min(analysisH - 1, Math.max(0, y | 0));
+                        if (!hatchMaskAt(xi, yi)) {
+                            const p = tThMaskedInCell(cell, t % cnt);
+                            if (!p) continue;
+                            x = p[0]; y = p[1];
+                        }
+                        out.push([x, y]);
+                    }
+                }
+                if (out.length < 6) {
+                    let hop = Math.max(1, ((analysisW * analysisH) / (target * 8)) | 0);
+                    let acc = 0;
+                    for (let y = 0; y < analysisH && out.length < target; y++) {
+                        for (let x = 0; x < analysisW && out.length < target; x++) {
+                            if (!hatchMaskAt(x, y)) continue;
+                            if ((acc++ % hop) !== 0) continue;
+                            out.push([x + 0.5, y + 0.5]);
+                        }
+                    }
+                }
+                return out;
+            }
+
+            /* ── Voronoi labeling ────────────────────────────────── */
+
+            function labelMapVoronoi(seedList) {
+                const labs = new Int32Array(analysisW * analysisH);
+                labs.fill(-1);
+                if (seedList.length === 0) return labs;
+                for (let y = 0; y < analysisH; y++) {
+                    const fy = y + 0.5;
+                    for (let x = 0; x < analysisW; x++) {
+                        if (!hatchMaskAt(x, y)) continue;
+                        const fx = x + 0.5;
+                        let best = 0, bestD = Infinity;
+                        for (let s = 0; s < seedList.length; s++) {
+                            const dx = seedList[s][0] - fx, dy = seedList[s][1] - fy;
+                            const d = dx * dx + dy * dy;
+                            if (d < bestD) { bestD = d; best = s; }
+                        }
+                        labs[y * analysisW + x] = best;
+                    }
+                }
+                return labs;
+            }
+
+            /* ── Cell means ──────────────────────────────────────── */
+
+            function collectCellMeans(labs) {
+                const nseed = seeds.length;
+                const rs = new Float64Array(nseed), gs = new Float64Array(nseed), bs = new Float64Array(nseed);
+                const cnt = new Uint32Array(nseed);
+                const c = [0, 0, 0];
+                for (let y = 0; y < analysisH; y++) {
+                    for (let x = 0; x < analysisW; x++) {
+                        const p = y * analysisW + x;
+                        if (!effMask[p]) continue;
+                        const lid = labs[p];
+                        if (lid < 0 || lid >= nseed) continue;
+                        hatchRgbAt(x, y, c);
+                        rs[lid] += c[0]; gs[lid] += c[1]; bs[lid] += c[2]; cnt[lid]++;
+                    }
+                }
+                const means = [];
+                const labelCounts = new Uint32Array(nseed);
+                for (let i = 0; i < nseed; i++) {
+                    labelCounts[i] = cnt[i];
+                    if (cnt[i] > 0) {
+                        means.push({ r: rs[i] / cnt[i], g: gs[i] / cnt[i], b: bs[i] / cnt[i], n: cnt[i] });
+                    } else {
+                        const s = seeds[i];
+                        const xi = Math.min(analysisW - 1, Math.max(0, s[0] | 0));
+                        const yi = Math.min(analysisH - 1, Math.max(0, s[1] | 0));
+                        if (hatchMaskAt(xi, yi)) {
+                            hatchRgbAt(xi, yi, c);
+                            means.push({ r: c[0], g: c[1], b: c[2], n: 0 });
+                        } else {
+                            means.push({ r: 128, g: 128, b: 128, n: 0 });
+                        }
+                    }
+                }
+                return { means, labelCounts };
+            }
+
+            /* ── EMA smoothing ───────────────────────────────────── */
+
+            function updateStyleEma(means) {
+                const n = means.length;
+                if (n === 0) return;
+                const na = n * 3;
+                if (!styleEmaRgb || styleEmaRgb.length !== na) {
+                    styleEmaRgb = new Float64Array(na);
+                    for (let i = 0; i < n; i++) {
+                        styleEmaRgb[i * 3] = means[i].r;
+                        styleEmaRgb[i * 3 + 1] = means[i].g;
+                        styleEmaRgb[i * 3 + 2] = means[i].b;
+                    }
+                    return;
+                }
+                const a = 0.16, om = 1 - a;
+                for (let i = 0; i < n; i++) {
+                    const b = i * 3;
+                    styleEmaRgb[b] = om * styleEmaRgb[b] + a * means[i].r;
+                    styleEmaRgb[b + 1] = om * styleEmaRgb[b + 1] + a * means[i].g;
+                    styleEmaRgb[b + 2] = om * styleEmaRgb[b + 2] + a * means[i].b;
+                }
+            }
+
+            function meanForHatch(lid, means, emaOverride) {
+                const nseed = means.length;
+                const ema = emaOverride || styleEmaRgb;
+                if (ema && ema.length === nseed * 3) {
+                    const b = lid * 3;
+                    return { r: ema[b], g: ema[b + 1], b: ema[b + 2], n: means[lid].n };
+                }
+                return means[lid];
+            }
+
+            /* ── Cell style (angle + spacing) ────────────────────── */
+
+            function computeHatchExportInnerScale(outW, outH, formatKey) {
+                const fmt = SVG_PAGE_LANDSCAPE_MM[formatKey] || SVG_PAGE_LANDSCAPE_MM.a4;
+                const [fmtW, fmtH] = fmt;
+                const isA3 = formatKey === "a3";
+                let innerW, innerH;
+                if (isA3) { const m = SVG_PAGE_MARGIN_MM; innerW = A3W - 2 * m; innerH = A3H - 2 * m; }
+                else { innerW = fmtW; innerH = fmtH; }
+                const capBandH = Math.min(Math.max(10, innerH * 0.15), SVG_CAPTION_BAND_INNER_MM + 4);
+                const hatchRegionH = innerH - capBandH - SVG_HATCH_CAPTION_GAP_MM;
+                const hatchPadTop = SVG_HATCH_TOP_PAD_MM;
+                const availW = innerW * SVG_ART_INSET;
+                const availH = Math.max(8, hatchRegionH - hatchPadTop - 1);
+                return Math.min(availW / Math.max(1, outW), availH / Math.max(1, outH));
+            }
+
+            function cellStyleFromMeans(mAngle, mDensity, lid, shadeOpt) {
+                const hsl = hslFromRgb(mAngle.r, mAngle.g, mAngle.b);
+                let angle = HP.angleOffset + hsl.h * 360 * HP.hueAngleScale + hsl.s * HP.satAngleAmt;
+                let v = normalizedHatchDensityDrive(mDensity, HP.hatchDensityChannel);
+                const a = HP.lumDensityAmt;
+                let vMix;
+                if (a <= 0) vMix = 0.5;
+                else { vMix = 0.5 + (v - 0.5) * a; vMix = Math.max(0, Math.min(1, vMix)); }
+                if (shadeOpt && shadeOpt.angle && shadeOpt.density && lid < shadeOpt.angle.length) {
+                    angle += shadeOpt.angle[lid];
+                    vMix += shadeOpt.density[lid];
+                    vMix = Math.max(0, Math.min(1, vMix));
+                }
+                const mmPerPx = computeHatchExportInnerScale(analysisW, analysisH, HP.svgPageSize);
+                let minPx = HP.hatchSpacingMinMm / mmPerPx;
+                let maxPx = HP.hatchSpacingMaxMm / mmPerPx;
+                if (maxPx < minPx) { const s = minPx; minPx = maxPx; maxPx = s; }
+                let spacing = minPx + (1 - vMix) * (maxPx - minPx);
+                spacing = Math.max(1.25, spacing);
+                angle = Math.round(angle * 2) / 2;
+                spacing = Math.round(spacing * 4) / 4;
+                return { angle, spacing };
+            }
+
+            /* ── Depth shading ───────────────────────────────────── */
+
+            function normalizeMaskedZ(z, mask, n) {
+                let lo = Infinity, hi = -Infinity;
+                for (let i = 0; i < n; i++) {
+                    if (!mask[i]) continue;
+                    lo = Math.min(lo, z[i]); hi = Math.max(hi, z[i]);
+                }
+                if (hi - lo < 1e-9) { for (let i = 0; i < n; i++) z[i] = mask[i] ? 0.5 : 0; return; }
+                const inv = 1 / (hi - lo);
+                for (let i = 0; i < n; i++) z[i] = mask[i] ? (z[i] - lo) * inv : 0;
+            }
+
+            function gradientFromHeight(z, gx, gy, w, h, mask) {
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        const p = y * w + x;
+                        if (!mask[p]) { gx[p] = gy[p] = 0; continue; }
+                        const xl = x > 0 && mask[p - 1] ? z[p - 1] : z[p];
+                        const xr = x < w - 1 && mask[p + 1] ? z[p + 1] : z[p];
+                        const yt = y > 0 && mask[p - w] ? z[p - w] : z[p];
+                        const yb = y < h - 1 && mask[p + w] ? z[p + w] : z[p];
+                        gx[p] = (xr - xl) * 0.5;
+                        gy[p] = (yb - yt) * 0.5;
+                    }
+                }
+            }
+
+            function computeDepthShading() {
+                const w = analysisW, h = analysisH, n = w * h;
+                for (let i = 0; i < n; i++) shadingZ[i] = effMask[i] ? depthBuf[i] : 0;
+                const tmp = new Float32Array(n);
+                boxBlurFloat(shadingZ, tmp, w, h, effMask, 1);
+                boxBlurFloat(tmp, shadingZ, w, h, effMask, 1);
+                normalizeMaskedZ(shadingZ, effMask, n);
+                gradientFromHeight(shadingZ, shadingGx, shadingGy, w, h, effMask);
+            }
+
+            function buildSeedShadingArrays(seedArr, nseed) {
+                if (!seedShadeAngle || seedShadeAngle.length < nseed) {
+                    seedShadeAngle = new Float32Array(Math.max(nseed, 64));
+                    seedShadeDensity = new Float32Array(Math.max(nseed, 64));
+                }
+                if (HP.shadingMode === "off" || !shadingZ) {
+                    for (let i = 0; i < nseed; i++) { seedShadeAngle[i] = 0; seedShadeDensity[i] = 0; }
+                    return;
+                }
+                const w = analysisW, h = analysisH;
+                const am = HP.shadingAngleAmt, dm = HP.shadingDensityAmt;
+                for (let lid = 0; lid < nseed; lid++) {
+                    const xi = Math.min(w - 1, Math.max(0, seedArr[lid][0] | 0));
+                    const yi = Math.min(h - 1, Math.max(0, seedArr[lid][1] | 0));
+                    const p = yi * w + xi;
+                    seedShadeAngle[lid] = (Math.atan2(shadingGy[p], shadingGx[p]) * 180) / Math.PI * am;
+                    seedShadeDensity[lid] = (shadingZ[p] - 0.5) * 2 * dm;
+                }
+            }
+
+            /* ── Hatch line generation ───────────────────────────── */
+
+            function clipLineToRect(px, py, dx, dy, x0, y0, x1, y1) {
+                let t0 = -Infinity, t1 = Infinity;
+                const clips = [[1,0,-x0],[-1,0,x1],[0,1,-y0],[0,-1,y1]];
+                for (const clip of clips) {
+                    const denom = clip[0] * dx + clip[1] * dy;
+                    const num = clip[0] * px + clip[1] * py + clip[2];
+                    if (Math.abs(denom) < 1e-9) { if (num < 0) return null; continue; }
+                    const t = -num / denom;
+                    if (denom > 0) t0 = Math.max(t0, t);
+                    else t1 = Math.min(t1, t);
+                }
+                if (t0 > t1) return null;
+                return [[px + t0 * dx, py + t0 * dy], [px + t1 * dx, py + t1 * dy]];
+            }
+
+            function sampleOk(px, py, lid, labs) {
+                const ax = ((px - mapOx) / mapSx) | 0;
+                const ay = ((py - mapOy) / mapSy) | 0;
+                if (ax < 0 || ay < 0 || ax >= analysisW || ay >= analysisH) return false;
+                return labs[ay * analysisW + ax] === lid && hatchMaskAt(ax, ay);
+            }
+
+            function segmentSubparts(x0, y0, x1, y1, lid, labs, steps) {
+                const out = [];
+                let runStart = -1;
+                for (let i = 0; i <= steps; i++) {
+                    const t = i / steps;
+                    const px = x0 + t * (x1 - x0), py = y0 + t * (y1 - y0);
+                    const ok = sampleOk(px, py, lid, labs);
+                    if (ok && runStart < 0) runStart = t;
+                    if (!ok && runStart >= 0) { out.push([runStart, (i - 1) / steps]); runStart = -1; }
+                }
+                if (runStart >= 0) out.push([runStart, 1]);
+                return out.map(([ts, te]) => [
+                    [x0 + ts * (x1 - x0), y0 + ts * (y1 - y0)],
+                    [x0 + te * (x1 - x0), y0 + te * (y1 - y0)],
+                ]);
+            }
+
+            function regionHatchLines(lid, labs, angleDeg, spacing, sFit, ox, oy) {
+                const lines = [];
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                for (let y = 0; y < analysisH; y++) {
+                    for (let x = 0; x < analysisW; x++) {
+                        const ix = y * analysisW + x;
+                        if (labs[ix] !== lid || !hatchMaskAt(x, y)) continue;
+                        minX = Math.min(minX, x); minY = Math.min(minY, y);
+                        maxX = Math.max(maxX, x + 1); maxY = Math.max(maxY, y + 1);
+                    }
+                }
+                if (minX === Infinity) return lines;
+                const ax0 = ox + minX * sFit, ay0 = oy + minY * sFit;
+                const ax1 = ox + maxX * sFit, ay1 = oy + maxY * sFit;
+                const pad = spacing * 4;
+                const rx0 = ax0 - pad, ry0 = ay0 - pad, rx1 = ax1 + pad, ry1 = ay1 + pad;
+                const rad = (angleDeg * Math.PI) / 180;
+                const ux = Math.cos(rad), uy = Math.sin(rad);
+                const nx = -uy, ny = ux;
+                const cx = (rx0 + rx1) / 2, cy = (ry0 + ry1) / 2;
+                const corners = [[rx0,ry0],[rx1,ry0],[rx1,ry1],[rx0,ry1]];
+                let vmin = Infinity, vmax = -Infinity;
+                for (const [cpx, cpy] of corners) {
+                    const v = (cpx - cx) * nx + (cpy - cy) * ny;
+                    vmin = Math.min(vmin, v); vmax = Math.max(vmax, v);
+                }
+                for (let v = Math.floor(vmin / spacing) * spacing; v <= vmax; v += spacing) {
+                    const bx = cx + nx * v, by = cy + ny * v;
+                    const clip = clipLineToRect(bx, by, ux, uy, rx0, ry0, rx1, ry1);
+                    if (!clip) continue;
+                    const chord = Math.hypot(clip[1][0] - clip[0][0], clip[1][1] - clip[0][1]);
+                    const steps = Math.min(256, Math.max(24, chord | 0));
+                    const subs = segmentSubparts(clip[0][0], clip[0][1], clip[1][0], clip[1][1], lid, labs, steps);
+                    for (const sub of subs) lines.push(sub);
+                }
+                return lines;
+            }
+
+            function fallbackHatchLinesForLabel(lid, labs, angleDeg, spacing, sFit, ox, oy) {
+                let cx = 0, cy = 0, n = 0;
+                for (let y = 0; y < analysisH; y++) {
+                    for (let x = 0; x < analysisW; x++) {
+                        const ix = y * analysisW + x;
+                        if (labs[ix] !== lid || !hatchMaskAt(x, y)) continue;
+                        cx += x + 0.5; cy += y + 0.5; n++;
+                    }
+                }
+                if (n === 0) return [];
+                cx /= n; cy /= n;
+                const rad = (angleDeg * Math.PI) / 180;
+                const ux = Math.cos(rad), uy = Math.sin(rad);
+                const half = Math.max(spacing * sFit * 8, sFit * 14);
+                const px0 = ox + cx * sFit - ux * half, py0 = oy + cy * sFit - uy * half;
+                const px1 = ox + cx * sFit + ux * half, py1 = oy + cy * sFit + uy * half;
+                const steps = Math.min(256, Math.max(48, (2 * half) | 0));
+                return segmentSubparts(px0, py0, px1, py1, lid, labs, steps);
+            }
+
+            function forEachHatchLineSegment(labs, means, labelCounts, sFit, ox, oy, visitor, emaOverride, shadeOpt) {
+                const nseed = means.length;
+                for (let lid = 0; lid < nseed; lid++) {
+                    if (!labelCounts[lid]) continue;
+                    const mA = meanForHatch(lid, means, emaOverride);
+                    const mD = means[lid];
+                    const st = cellStyleFromMeans(mA, mD, lid, shadeOpt);
+                    let lines = regionHatchLines(lid, labs, st.angle, st.spacing, sFit, ox, oy);
+                    if (lines.length === 0) lines = fallbackHatchLinesForLabel(lid, labs, st.angle, st.spacing, sFit, ox, oy);
+                    for (const seg of lines) visitor(seg[0], seg[1]);
+                }
+            }
+
+            /* ── Marching squares (silhouette) ───────────────────── */
+
+            const MS_CASES = [
+                [],
+                [[[1.0,1.5],[0.5,1.0]]],
+                [[[1.5,1.0],[1.0,1.5]]],
+                [[[1.5,1.0],[0.5,1.0]]],
+                [[[1.0,0.5],[1.5,1.0]]],
+                [[[1.0,1.5],[0.5,1.0]],[[1.0,0.5],[1.5,1.0]]],
+                [[[1.0,0.5],[1.0,1.5]]],
+                [[[1.0,0.5],[0.5,1.0]]],
+                [[[0.5,1.0],[1.0,0.5]]],
+                [[[1.0,1.5],[1.0,0.5]],[[0.5,1.0],[1.0,0.5]]],
+                [[[0.5,1.0],[1.0,0.5]]],
+                [[[1.5,1.0],[1.0,0.5]]],
+                [[[0.5,1.0],[1.5,1.0]]],
+                [[[1.0,1.5],[1.5,1.0]]],
+                [[[0.5,1.0],[1.0,1.5]]],
+                [],
+            ];
+
+            function ringAreaAbs(pts) {
+                if (pts.length < 3) return 0;
+                let a = 0;
+                const n = pts.length;
+                for (let i = 0; i < n; i++) {
+                    const j = (i + 1) % n;
+                    a += pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1];
+                }
+                return Math.abs(a * 0.5);
+            }
+
+            function marchingSquaresOuterPolyline(maskArr, dx, dy) {
+                const above = (i) => i >= 0 && i < maskArr.length && (maskArr[i] | 0) >= 1;
+                const rings = [];
+                const fragmentByStart = Object.create(null);
+                const fragmentByEnd = Object.create(null);
+                function pointIndex(p) { return p[0] * 2 + p[1] * (dx + 1) * 4; }
+                function stitch(line, x, y) {
+                    const start = [line[0][0] + x, line[0][1] + y];
+                    const end = [line[1][0] + x, line[1][1] + y];
+                    const startIndex = pointIndex(start), endIndex = pointIndex(end);
+                    let f, g;
+                    if ((f = fragmentByEnd[startIndex])) {
+                        if ((g = fragmentByStart[endIndex])) {
+                            delete fragmentByEnd[f.end]; delete fragmentByStart[g.start];
+                            if (f === g) { f.ring.push(end); rings.push(f.ring); }
+                            else { fragmentByStart[f.start] = fragmentByEnd[g.end] = { start: f.start, end: g.end, ring: f.ring.concat(g.ring) }; }
+                        } else { delete fragmentByEnd[f.end]; f.ring.push(end); fragmentByEnd[(f.end = endIndex)] = f; }
+                    } else if ((f = fragmentByStart[endIndex])) {
+                        if ((g = fragmentByEnd[startIndex])) {
+                            delete fragmentByStart[f.start]; delete fragmentByEnd[g.end];
+                            if (f === g) { f.ring.push(end); rings.push(f.ring); }
+                            else { fragmentByStart[g.start] = fragmentByEnd[f.end] = { start: g.start, end: f.end, ring: g.ring.concat(f.ring) }; }
+                        } else { delete fragmentByStart[f.start]; f.ring.unshift(start); fragmentByStart[(f.start = startIndex)] = f; }
+                    } else {
+                        fragmentByStart[startIndex] = fragmentByEnd[endIndex] = { start: startIndex, end: endIndex, ring: [start, end] };
+                    }
+                }
+                let x, y, t0, t1, t2, t3;
+                x = -1; y = -1; t1 = above(0);
+                MS_CASES[t1 << 1].forEach((ln) => stitch(ln, x, y));
+                while (++x < dx - 1) { t0 = t1; t1 = above(x + 1); MS_CASES[t0 | (t1 << 1)].forEach((ln) => stitch(ln, x, y)); }
+                MS_CASES[t1 << 0].forEach((ln) => stitch(ln, x, y));
+                while (++y < dy - 1) {
+                    x = -1; t1 = above(y * dx + dx); t2 = above(y * dx);
+                    MS_CASES[(t1 << 1) | (t2 << 2)].forEach((ln) => stitch(ln, x, y));
+                    while (++x < dx - 1) {
+                        t0 = t1; t1 = above(y * dx + dx + x + 1); t3 = t2; t2 = above(y * dx + x + 1);
+                        MS_CASES[t0 | (t1 << 1) | (t2 << 2) | (t3 << 3)].forEach((ln) => stitch(ln, x, y));
+                    }
+                    MS_CASES[t1 | (t2 << 3)].forEach((ln) => stitch(ln, x, y));
+                }
+                x = -1; t2 = maskArr[y * dx] >= 1;
+                MS_CASES[t2 << 2].forEach((ln) => stitch(ln, x, y));
+                while (++x < dx - 1) { t3 = t2; t2 = above(y * dx + x + 1); MS_CASES[(t2 << 2) | (t3 << 3)].forEach((ln) => stitch(ln, x, y)); }
+                MS_CASES[t2 << 3].forEach((ln) => stitch(ln, x, y));
+                if (rings.length === 0) return [];
+                let best = rings[0], bestA = ringAreaAbs(best);
+                for (let ri = 1; ri < rings.length; ri++) {
+                    const ar = ringAreaAbs(rings[ri]);
+                    if (ar > bestA) { bestA = ar; best = rings[ri]; }
+                }
+                return best;
+            }
+
+            function rdpSimplify(pts, epsilon) {
+                if (pts.length <= 2) return pts;
+                let maxDist = 0, idx = 0;
+                const a = pts[0], b = pts[pts.length - 1];
+                const dx = b[0] - a[0], dy = b[1] - a[1];
+                const lenSq = dx * dx + dy * dy;
+                for (let i = 1; i < pts.length - 1; i++) {
+                    let dist;
+                    if (lenSq < 1e-12) {
+                        dist = Math.hypot(pts[i][0] - a[0], pts[i][1] - a[1]);
+                    } else {
+                        const t = Math.max(0, Math.min(1, ((pts[i][0] - a[0]) * dx + (pts[i][1] - a[1]) * dy) / lenSq));
+                        dist = Math.hypot(pts[i][0] - (a[0] + t * dx), pts[i][1] - (a[1] + t * dy));
+                    }
+                    if (dist > maxDist) { maxDist = dist; idx = i; }
+                }
+                if (maxDist > epsilon) {
+                    const left = rdpSimplify(pts.slice(0, idx + 1), epsilon);
+                    const right = rdpSimplify(pts.slice(idx), epsilon);
+                    return left.slice(0, -1).concat(right);
+                }
+                return [a, b];
+            }
+
+            /* ── Hershey font (for SVG captions) ─────────────────── */
+
+            async function ensureHersheySansFont() {
+                if (hersheySansFontCache) return hersheySansFontCache;
+                const r = await fetch("/fonts/hershey/HersheySans1.svg");
+                if (!r.ok) throw new Error(`Hershey font HTTP ${r.status}`);
+                const t = await r.text();
+                hersheySansFontCache = parseHersheyFontSvg(t);
+                return hersheySansFontCache;
+            }
+
+            function parseHersheyFontSvg(svgText) {
+                const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
+                const fontEl = doc.querySelector("font");
+                const faceEl = doc.querySelector("font-face");
+                if (!fontEl || !faceEl) throw new Error("SVG font not found");
+                const unitsPerEm = Number(faceEl.getAttribute("units-per-em")) || 1000;
+                const defaultAdv = Number(fontEl.getAttribute("horiz-adv-x")) || 600;
+                const glyphs = new Map();
+                for (const g of fontEl.querySelectorAll("glyph")) {
+                    const u = g.getAttribute("unicode");
+                    if (!u) continue;
+                    glyphs.set(u, {
+                        d: g.getAttribute("d") || "",
+                        horizAdvX: Number(g.getAttribute("horiz-adv-x")) || defaultAdv,
+                    });
+                }
+                return { unitsPerEm, defaultAdv, glyphs };
+            }
+
+            function measureHersheyText(text, sizeMm, font) {
+                const sc = sizeMm / font.unitsPerEm;
+                let w = 0;
+                for (const ch of text) {
+                    const g = font.glyphs.get(ch);
+                    w += (g ? g.horizAdvX : font.defaultAdv) * sc;
+                }
+                return w;
+            }
+
+            function renderHersheyText(text, x, y, sizeMm, font, strokeAttrs, maxW) {
+                const sc = sizeMm / font.unitsPerEm;
+                let cx = x, paths = "";
+                for (const ch of text) {
+                    const g = font.glyphs.get(ch);
+                    const adv = (g ? g.horizAdvX : font.defaultAdv) * sc;
+                    if (maxW && cx + adv - x > maxW + 0.1) break;
+                    if (g && g.d) {
+                        const ns = (-sc).toFixed(6);
+                        paths += `<path d="${g.d}" transform="translate(${cx.toFixed(4)},${y.toFixed(4)}) scale(${sc.toFixed(6)},${ns})" ${strokeAttrs}/>`;
+                    }
+                    cx += adv;
+                }
+                return { paths, width: cx - x };
+            }
+
+            function captionLinesFromText(raw, maxW, sizeMm, font) {
+                if (!raw || !font) return [];
+                const words = raw.split(/\s+/);
+                const lines = [];
+                let cur = "";
+                for (const w of words) {
+                    const test = cur ? cur + " " + w : w;
+                    if (measureHersheyText(test, sizeMm, font) > maxW && cur) {
+                        lines.push(cur); cur = w;
+                    } else { cur = test; }
+                }
+                if (cur) lines.push(cur);
+                return lines;
+            }
+
+            /* ── Full hatch build + draw ─────────────────────────── */
+
+            function buildAndDrawHatch() {
+                if (!buildAnalysisFromCombined()) return;
+
+                buildFeaturePolygons();
+                buildEffectiveMask();
+                computeDetail(detailBufArr);
+
+                const nDet = detailBufArr.length;
+                if (!stratDetailSmooth || stratDetailSmooth.length !== nDet) {
+                    stratDetailSmooth = new Float32Array(detailBufArr);
+                } else {
+                    const beta = 0.17, om = 1 - beta;
+                    for (let i = 0; i < nDet; i++) {
+                        stratDetailSmooth[i] = om * stratDetailSmooth[i] + beta * detailBufArr[i];
+                    }
+                }
+
+                seeds = buildAdaptiveSeeds(stratDetailSmooth);
+                labels = labelMapVoronoi(seeds);
+                const { means, labelCounts } = collectCellMeans(labels);
+                updateStyleEma(means);
+
+                if (HP.shadingMode === "depth") {
+                    computeDepthShading();
+                }
+                buildSeedShadingArrays(seeds, seeds.length);
+
+                const cw = canvas.width, ch = canvas.height;
+                const bw = Math.max(1, analysisW), bh = Math.max(1, analysisH);
+                const sFit = Math.min(cw / bw, ch / bh);
+                const ox = (cw - bw * sFit) / 2;
+                const oy = (ch - bh * sFit) / 2;
+                mapSx = sFit; mapSy = sFit; mapOx = ox; mapOy = oy;
+
+                const shadeOpt = HP.shadingMode !== "off" && seedShadeAngle ? { angle: seedShadeAngle, density: seedShadeDensity } : null;
+
+                ctx.fillStyle = "#0c0c0c";
+                ctx.fillRect(0, 0, cw, ch);
+
+                ctx.save();
+                ctx.strokeStyle = "#e8e8e8";
+                const mmPerPx = computeHatchExportInnerScale(cw, ch, HP.svgPageSize);
+                ctx.lineWidth = Math.max(0.15, HP.hatchLineWidthMm / Math.max(1e-6, mmPerPx));
+                ctx.lineCap = "round";
+                forEachHatchLineSegment(labels, means, labelCounts, sFit, ox, oy, (a, b) => {
+                    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+                }, undefined, shadeOpt);
+                ctx.restore();
+
+                if (HP.silhouetteEnabled) {
+                    hatchSilhouetteRing = marchingSquaresOuterPolyline(effMask, analysisW, analysisH);
+                    if (hatchSilhouetteRing.length > 2) {
+                        ctx.save();
+                        ctx.strokeStyle = "rgba(125,211,252,0.6)";
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        for (let i = 0; i < hatchSilhouetteRing.length; i++) {
+                            const px = ox + hatchSilhouetteRing[i][0] * sFit;
+                            const py = oy + hatchSilhouetteRing[i][1] * sFit;
+                            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                        }
+                        ctx.closePath(); ctx.stroke(); ctx.restore();
+                    }
+                } else {
+                    hatchSilhouetteRing = [];
+                }
+
+                for (const fp of hatchFeaturePolygons) {
+                    if (!fp.outline) continue;
+                    ctx.save();
+                    ctx.strokeStyle = "rgba(196,240,122,0.7)";
+                    ctx.lineWidth = 1.2;
+                    ctx.beginPath();
+                    for (let i = 0; i < fp.pts.length; i++) {
+                        const px = ox + fp.pts[i][0] * sFit;
+                        const py = oy + fp.pts[i][1] * sFit;
+                        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                    }
+                    ctx.closePath(); ctx.stroke(); ctx.restore();
+                }
+
+                const exportW = bw * sFit, exportH = bh * sFit;
+                lastExportSnapshot = {
+                    outW: exportW, outH: exportH, sFit,
+                    ox: 0, oy: 0,
+                    analysisW, analysisH,
+                    hatchLineWidthMm: HP.hatchLineWidthMm,
+                    labels: new Int32Array(labels),
+                    labelCounts: Uint32Array.from(labelCounts),
+                    means: means.map((m) => ({ r: m.r, g: m.g, b: m.b, n: m.n })),
+                    styleEma: styleEmaRgb && styleEmaRgb.length === means.length * 3 ? new Float64Array(styleEmaRgb) : null,
+                    seedShadeAngle: shadeOpt ? Float32Array.from(seedShadeAngle.subarray(0, means.length)) : null,
+                    seedShadeDensity: shadeOpt ? Float32Array.from(seedShadeDensity.subarray(0, means.length)) : null,
+                    featurePolygons: hatchFeaturePolygons.map((fp) => ({ ...fp, pts: fp.pts.map((p) => [p[0], p[1]]) })),
+                    silhouetteRing: hatchSilhouetteRing.map((p) => [p[0], p[1]]),
+                    effMask: new Uint8Array(effMask),
+                    svgPageSize: HP.svgPageSize,
+                    svgMirror: HP.svgMirror,
+                };
+
+                let lineCount = 0;
+                forEachHatchLineSegment(labels, means, labelCounts, sFit, 0, 0, () => { lineCount++; }, lastExportSnapshot.styleEma, shadeOpt);
+                lastExportLineCount = lineCount;
+                btnExportSvg.disabled = lineCount === 0;
+            }
+
+            /* ── SVG export ──────────────────────────────────────── */
+
+            function buildHatchSvg(snap, formatKey, captionText, font) {
+                const fmt = SVG_PAGE_LANDSCAPE_MM[formatKey] || SVG_PAGE_LANDSCAPE_MM.a4;
+                const [fmtW, fmtH] = fmt;
+                const isA3 = formatKey === "a3";
+                let innerX, innerY, innerW, innerH;
+                if (isA3) {
+                    const m = SVG_PAGE_MARGIN_MM;
+                    innerX = m; innerY = m; innerW = A3W - 2 * m; innerH = A3H - 2 * m;
+                } else {
+                    innerW = fmtW; innerH = fmtH;
+                    innerX = (A3W - fmtW) / 2; innerY = (A3H - fmtH) / 2;
+                }
+
+                const capBandH = Math.min(Math.max(10, innerH * 0.15), SVG_CAPTION_BAND_INNER_MM + 4);
+                const hatchRegionH = innerH - capBandH - SVG_HATCH_CAPTION_GAP_MM;
+                const hatchPadTop = SVG_HATCH_TOP_PAD_MM;
+
+                const cw = snap.outW, ch = snap.outH;
+                const scale1 = computeHatchExportInnerScale(cw, ch, formatKey);
+                const tw = cw * scale1, th = ch * scale1;
+                const tx = innerX + (innerW - tw) * 0.5;
+                const slackY = Math.max(0, hatchRegionH - hatchPadTop - th);
+                const ty = innerY + hatchPadTop + slackY * SVG_HATCH_VERTICAL_BIAS;
+
+                const strokeHex = "#1a1a1a";
+                const guideStroke = "#999";
+                const sw = Math.max(0.05, snap.hatchLineWidthMm);
+                const hatchGAttrs = `fill="none" stroke="${strokeHex}" stroke-width="${sw.toFixed(4)}" stroke-linecap="round" stroke-linejoin="round"`;
+
+                const mirrorWrap = snap.svgMirror;
+                const contentTransform = mirrorWrap
+                    ? `translate(${(tx + tw).toFixed(4)},${ty.toFixed(4)}) scale(-${scale1.toFixed(8)},${scale1.toFixed(8)})`
+                    : `translate(${tx.toFixed(4)},${ty.toFixed(4)}) scale(${scale1.toFixed(8)})`;
+
+                const ink = 'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"';
+                const parts = [];
+                parts.push('<?xml version="1.0" encoding="UTF-8"?>');
+                parts.push(`<svg xmlns="http://www.w3.org/2000/svg" ${ink} width="${A3W}mm" height="${A3H}mm" viewBox="0 0 ${A3W} ${A3H}">`);
+
+                parts.push(`<g id="layer-outline-a3" inkscape:label="Outline — A3 sheet" inkscape:groupmode="layer" fill="none">`);
+                parts.push(`<rect x="0" y="0" width="${A3W}" height="${A3H}" stroke="${guideStroke}" stroke-width="0.35"/>`);
+                parts.push(`</g>`);
+
+                parts.push(`<g id="layer-outline-export" inkscape:label="Outline — export" inkscape:groupmode="layer" fill="none">`);
+                if (!isA3) {
+                    parts.push(`<rect x="${innerX.toFixed(2)}" y="${innerY.toFixed(2)}" width="${innerW}" height="${innerH}" stroke="${guideStroke}" stroke-width="0.3"/>`);
+                } else {
+                    parts.push(`<rect x="${innerX.toFixed(2)}" y="${innerY.toFixed(2)}" width="${innerW.toFixed(2)}" height="${innerH.toFixed(2)}" stroke="${guideStroke}" stroke-width="0.3" stroke-dasharray="2 1.5"/>`);
+                }
+                parts.push(`</g>`);
+
+                if (snap.silhouetteRing && snap.silhouetteRing.length > 2) {
+                    const eps = HP.silhouetteSimplifyMm / Math.max(1e-6, scale1);
+                    let simplified = eps > 0.01 ? rdpSimplify(snap.silhouetteRing, eps) : snap.silhouetteRing;
+                    parts.push(`<g id="layer-silhouette" inkscape:label="Silhouette" inkscape:groupmode="layer">`);
+                    parts.push(`<g transform="${contentTransform}">`);
+                    const pts = simplified.map((p) => `${(p[0]).toFixed(3)},${(p[1]).toFixed(3)}`).join(" ");
+                    parts.push(`<polyline points="${pts}" fill="none" stroke="${strokeHex}" stroke-width="${(sw * 0.8).toFixed(4)}" stroke-linecap="round" stroke-linejoin="round"/>`);
+                    parts.push(`</g></g>`);
+                }
+
+                const featureLayerMap = {};
+                for (const fp of (snap.featurePolygons || [])) {
+                    if (!fp.outline) continue;
+                    const layerKey = fp.key;
+                    if (!featureLayerMap[layerKey]) featureLayerMap[layerKey] = [];
+                    featureLayerMap[layerKey].push(fp);
+                }
+                for (const [key, polygons] of Object.entries(featureLayerMap)) {
+                    const label = key.replace(/([A-Z])/g, " $1").replace(/^feature /, "").trim();
+                    parts.push(`<g id="layer-${key}" inkscape:label="${label}" inkscape:groupmode="layer">`);
+                    parts.push(`<g transform="${contentTransform}">`);
+                    for (const fp of polygons) {
+                        const pts = fp.pts.map((p) => `${(p[0]).toFixed(3)},${(p[1]).toFixed(3)}`).join(" ");
+                        parts.push(`<polyline points="${pts}" fill="none" stroke="${strokeHex}" stroke-width="${(sw * 0.6).toFixed(4)}" stroke-linecap="round" stroke-linejoin="round"/>`);
+                    }
+                    parts.push(`</g></g>`);
+                }
+
+                parts.push(`<g id="layer-hatch" inkscape:label="Hatch" inkscape:groupmode="layer">`);
+                parts.push(`<g transform="${contentTransform}">`);
+                parts.push(`<g ${hatchGAttrs}>`);
+                let n = 0;
+                const shadeOpt = snap.seedShadeAngle && snap.seedShadeDensity ? { angle: snap.seedShadeAngle, density: snap.seedShadeDensity } : null;
+
+                const savedSx = mapSx, savedSy = mapSy, savedOx = mapOx, savedOy = mapOy;
+                const savedAW = analysisW, savedAH = analysisH, savedEff = effMask;
+                analysisW = snap.analysisW; analysisH = snap.analysisH; effMask = snap.effMask;
+                mapSx = snap.sFit; mapSy = snap.sFit; mapOx = 0; mapOy = 0;
+
+                forEachHatchLineSegment(snap.labels, snap.means, snap.labelCounts, snap.sFit, 0, 0, (a, b) => {
+                    n++;
+                    parts.push(`<line x1="${a[0].toFixed(3)}" y1="${a[1].toFixed(3)}" x2="${b[0].toFixed(3)}" y2="${b[1].toFixed(3)}"/>`);
+                }, snap.styleEma, shadeOpt);
+
+                analysisW = savedAW; analysisH = savedAH; effMask = savedEff;
+                mapSx = savedSx; mapSy = savedSy; mapOx = savedOx; mapOy = savedOy;
+
+                parts.push(`</g></g></g>`);
+
+                const textSa = `stroke="${strokeHex}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="0.22"`;
+                const capSizeMm = 2.75 * 1.25;
+                const maxCapW = innerW - 6;
+                const capLines = captionLinesFromText(captionText || "", maxCapW, capSizeMm, font);
+                parts.push(`<g id="layer-caption" inkscape:label="Caption" inkscape:groupmode="layer">`);
+                if (font && capLines.length > 0) {
+                    const bandTop = innerY + innerH - capBandH;
+                    const lineStep = capSizeMm * 1.38;
+                    const nonEmpty = capLines.filter((l) => l.trim()).length;
+                    const totalTextH = Math.max(1, nonEmpty) * lineStep;
+                    let yCursor = bandTop + (capBandH - totalTextH) / 2 + capSizeMm * 0.85;
+                    for (const line of capLines) {
+                        const t = line.trim();
+                        if (!t) { yCursor += lineStep * 0.35; continue; }
+                        const { width } = renderHersheyText(t, 0, 0, capSizeMm, font, textSa, maxCapW);
+                        const x0 = innerX + (innerW - width) / 2;
+                        const { paths } = renderHersheyText(t, x0, yCursor, capSizeMm, font, textSa, maxCapW);
+                        parts.push(paths);
+                        yCursor += lineStep;
+                    }
+                }
+                parts.push(`</g>`);
+
+                parts.push(`</svg>`);
+                return { svg: parts.join("\n"), lineCount: n };
+            }
+
+            /* ── Render (combined view modes) ────────────────────── */
+
             function render() {
                 if (!resizeCanvasToVideo()) return;
-                const cw = canvas.width;
-                const ch = canvas.height;
+                const cw = canvas.width, ch = canvas.height;
                 const mode = selView.value;
+
+                if (mode === "hatch") {
+                    buildAndDrawHatch();
+                    return;
+                }
 
                 ctx.clearRect(0, 0, cw, ch);
 
@@ -881,26 +2227,82 @@
                 }
             }
 
+            /* ── Metrics / loop ──────────────────────────────────── */
+
             function updateMetrics(ts) {
                 if (lastRenderTs) {
                     const dt = ts - lastRenderTs;
                     if (dt > 0) renderFps = 1000 / dt;
                 }
                 lastRenderTs = ts;
-
                 const now = performance.now();
                 if (now - fpsWindowStart >= 1000) {
                     inferenceFps = (inferredFrames * 1000) / (now - fpsWindowStart);
                     inferredFrames = 0;
                     fpsWindowStart = now;
                 }
-
-                const avg = combinedSamples.length
-                    ? combinedSamples.reduce((a, b) => a + b, 0) / combinedSamples.length
-                    : null;
+                const avg = combinedSamples.length ? combinedSamples.reduce((a, b) => a + b, 0) / combinedSamples.length : null;
                 const targetMs = Math.max(50, Number(document.getElementById("inpTargetMs").value) || 100);
                 const meeting = avg != null && avg <= targetMs ? "on target" : "over target";
                 metricsEl.innerHTML = `Combined: ${lastCombinedMs != null ? `${lastCombinedMs.toFixed(1)} ms` : "—"} · avg: ${avg != null ? `${avg.toFixed(1)} ms` : "—"} · ${meeting}<br />Depth: ${lastDepthMs != null ? `${lastDepthMs.toFixed(1)} ms` : "—"} · MediaPipe: ${lastMpMs != null ? `${lastMpMs.toFixed(1)} ms` : "—"}<br />render: ${renderFps.toFixed(1)} fps · inference: ${inferenceFps.toFixed(1)} fps · target: ${(1000 / targetMs).toFixed(1)} fps`;
+            }
+
+            async function runInferencePass(ts) {
+                if (!running || paused || inferBusy || (!depthPipe && !faceLandmarker && !handLandmarker)) return;
+                if (!video.videoWidth || !video.videoHeight) return;
+                inferBusy = true;
+                const combinedStart = performance.now();
+                const vw = video.videoWidth, vh = video.videoHeight;
+                const maxSide = Number(rngMaxSide.value);
+                const { w, h } = computeInputSize(vw, vh, maxSide);
+                if (w < 2 || h < 2) { inferBusy = false; return; }
+                if (work.width !== w || work.height !== h) { work.width = w; work.height = h; }
+                let frameBitmap = null;
+                try {
+                    frameBitmap = await createImageBitmap(video);
+                    wctx.drawImage(frameBitmap, 0, 0, w, h);
+                    const mpStart = performance.now();
+                    const nextFace = faceLandmarker ? faceLandmarker.detectForVideo(work, ts) : null;
+                    const nextHands = handLandmarker ? handLandmarker.detectForVideo(work, ts) : null;
+                    lastMpMs = performance.now() - mpStart;
+                    let out = null;
+                    if (depthPipe) {
+                        const depthStart = performance.now();
+                        out = await depthPipe(work);
+                        lastDepthMs = performance.now() - depthStart;
+                        if (out?.depth) cacheDepthOutput(out.depth);
+                    }
+                    if (sourceFrame.width !== vw || sourceFrame.height !== vh) { sourceFrame.width = vw; sourceFrame.height = vh; }
+                    sourceCtx.drawImage(frameBitmap, 0, 0, vw, vh);
+                    hasSyncedSourceFrame = true;
+                    latestFace = nextFace;
+                    latestHands = nextHands;
+                    lastCombinedMs = performance.now() - combinedStart;
+                    combinedSamples.push(lastCombinedMs);
+                    if (combinedSamples.length > 30) combinedSamples.shift();
+                    inferredFrames++;
+                    latestSummary = {
+                        view: selView.value,
+                        depthModel: document.getElementById("inpDepthModel").value.trim(),
+                        depthMs: lastDepthMs != null ? Math.round(lastDepthMs * 10) / 10 : null,
+                        mediaPipeMs: lastMpMs != null ? Math.round(lastMpMs * 10) / 10 : null,
+                        combinedMs: Math.round(lastCombinedMs * 10) / 10,
+                        syncedSourceFrame: hasSyncedSourceFrame,
+                        faceGroups: latestFace?.faceLandmarks?.length ?? 0,
+                        handGroups: latestHands?.landmarks?.length ?? 0,
+                        depthImage: out?.depth ? { width: out.depth.width, height: out.depth.height, channels: out.depth.channels } : null,
+                        maskThreshold: Number(rngThreshold.value),
+                        maxInputSide: maxSide,
+                        hatchLines: lastExportLineCount,
+                        ts: new Date().toISOString(),
+                    };
+                    jsonPanel.value = JSON.stringify(latestSummary, null, 2);
+                } catch (e) {
+                    setStatus(`Inference error: ${e?.message ?? e}`, true);
+                } finally {
+                    frameBitmap?.close();
+                    inferBusy = false;
+                }
             }
 
             function loop(ts) {
@@ -909,7 +2311,6 @@
                     render();
                     updateMetrics(ts);
                 }
-
                 const targetMs = Math.max(50, Number(document.getElementById("inpTargetMs").value) || 100);
                 if (performance.now() >= nextInferAllowedAt && !inferBusy) {
                     nextInferAllowedAt = performance.now() + targetMs;
@@ -922,6 +2323,61 @@
                 cancelAnimationFrame(raf);
                 if (running && !paused) raf = requestAnimationFrame(loop);
             }
+
+            /* ── UI wiring ───────────────────────────────────────── */
+
+            function syncRangeReadout(rngId, valId, paramKey, toFixed) {
+                const rng = document.getElementById(rngId);
+                const val = document.getElementById(valId);
+                const update = () => {
+                    val.textContent = Number(rng.value).toFixed(toFixed ?? 2);
+                    HP[paramKey] = Number(rng.value);
+                };
+                rng.addEventListener("input", update);
+                update();
+            }
+
+            syncRangeReadout("rngAnalysisW", "v-analysisW", "analysisW", 0);
+            syncRangeReadout("rngSeedCount", "v-seedCount", "seedCount", 0);
+            syncRangeReadout("rngGridDiv", "v-gridDiv", "gridDiv", 0);
+            syncRangeReadout("rngDetailGamma", "v-detailGamma", "detailGamma", 2);
+            syncRangeReadout("rngDetailGain", "v-detailGain", "detailGain", 2);
+            syncRangeReadout("rngDetailSmooth", "v-detailSmooth", "detailSmooth", 0);
+            syncRangeReadout("rngHatchSpacingMinMm", "v-hatchSpacingMinMm", "hatchSpacingMinMm", 2);
+            syncRangeReadout("rngHatchSpacingMaxMm", "v-hatchSpacingMaxMm", "hatchSpacingMaxMm", 2);
+            syncRangeReadout("rngHatchLineWidthMm", "v-hatchLineWidthMm", "hatchLineWidthMm", 2);
+            syncRangeReadout("rngLumDensityAmt", "v-lumDensityAmt", "lumDensityAmt", 2);
+            syncRangeReadout("rngHueAngleScale", "v-hueAngleScale", "hueAngleScale", 2);
+            syncRangeReadout("rngAngleOffset", "v-angleOffset", "angleOffset", 0);
+            syncRangeReadout("rngSatAngleAmt", "v-satAngleAmt", "satAngleAmt", 0);
+            syncRangeReadout("rngShadingAngleAmt", "v-shadingAngleAmt", "shadingAngleAmt", 2);
+            syncRangeReadout("rngShadingDensityAmt", "v-shadingDensityAmt", "shadingDensityAmt", 2);
+            syncRangeReadout("rngHolePadMm", "v-holePadMm", "holePadMm", 2);
+            syncRangeReadout("rngSilhouetteSimplifyMm", "v-silhouetteSimplifyMm", "silhouetteSimplifyMm", 2);
+
+            document.getElementById("selHatchDensityChannel").addEventListener("change", (e) => { HP.hatchDensityChannel = e.target.value; });
+            document.getElementById("selShadingMode").addEventListener("change", (e) => { HP.shadingMode = e.target.value; });
+            document.getElementById("selSvgPageSize").addEventListener("change", (e) => { HP.svgPageSize = e.target.value; });
+            document.getElementById("chkSvgMirror").addEventListener("change", (e) => { HP.svgMirror = e.target.checked; });
+            document.getElementById("inpSvgCaption").addEventListener("input", (e) => { HP.svgCaption = e.target.value; });
+            document.getElementById("chkSilhouette").addEventListener("change", (e) => { HP.silhouetteEnabled = e.target.checked; });
+
+            function bindFeatureToggle(holeId, outlineId, featureKey) {
+                const hEl = document.getElementById(holeId);
+                const oEl = document.getElementById(outlineId);
+                hEl.addEventListener("change", () => { HP[featureKey].hole = hEl.checked; });
+                oEl.addEventListener("change", () => { HP[featureKey].outline = oEl.checked; });
+            }
+            bindFeatureToggle("chkHoleLipsOuter", "chkOutlineLipsOuter", "featureLipsOuter");
+            bindFeatureToggle("chkHoleLipsInner", "chkOutlineLipsInner", "featureLipsInner");
+            bindFeatureToggle("chkHoleLeftEye", "chkOutlineLeftEye", "featureLeftEye");
+            bindFeatureToggle("chkHoleRightEye", "chkOutlineRightEye", "featureRightEye");
+            bindFeatureToggle("chkHoleLeftIris", "chkOutlineLeftIris", "featureLeftIris");
+            bindFeatureToggle("chkHoleRightIris", "chkOutlineRightIris", "featureRightIris");
+            bindFeatureToggle("chkHoleLeftBrow", "chkOutlineLeftBrow", "featureLeftBrow");
+            bindFeatureToggle("chkHoleRightBrow", "chkOutlineRightBrow", "featureRightBrow");
+            bindFeatureToggle("chkHoleFaceOval", "chkOutlineFaceOval", "featureFaceOval");
+            bindFeatureToggle("chkHoleHandsHull", "chkOutlineHandsHull", "featureHandsHull");
 
             document.getElementById("btnCam").addEventListener("click", async () => {
                 if (stream) stopCamera();
@@ -937,38 +2393,45 @@
                 setStatus(paused ? "Paused" : "Camera running");
             });
 
-            selCamera.addEventListener("change", () => {
-                if (stream) void startCamera();
-            });
+            selCamera.addEventListener("change", () => { if (stream) void startCamera(); });
 
             rngThreshold.addEventListener("input", () => {
                 lblThreshold.textContent = rngThreshold.value;
                 rebuildMaskCanvas();
             });
 
-            rngMaxSide.addEventListener("input", () => {
-                lblMaxSide.textContent = rngMaxSide.value;
-            });
+            rngMaxSide.addEventListener("input", () => { lblMaxSide.textContent = rngMaxSide.value; });
 
             document.getElementById("btnReloadMp").addEventListener("click", async () => {
                 document.getElementById("btnReloadMp").disabled = true;
-                try {
-                    await reloadMediaPipe();
-                } catch (e) {
-                    setStatus(`MediaPipe failed: ${e?.message ?? e}`, true);
-                } finally {
-                    document.getElementById("btnReloadMp").disabled = false;
-                }
+                try { await reloadMediaPipe(); }
+                catch (e) { setStatus(`MediaPipe failed: ${e?.message ?? e}`, true); }
+                finally { document.getElementById("btnReloadMp").disabled = false; }
             });
 
             document.getElementById("btnReloadDepth").addEventListener("click", async () => {
                 document.getElementById("btnReloadDepth").disabled = true;
+                try { await reloadDepthModel(); } catch (_) { /* status set */ }
+                finally { document.getElementById("btnReloadDepth").disabled = false; }
+            });
+
+            btnExportSvg.addEventListener("click", async () => {
+                if (!lastExportSnapshot || lastExportLineCount === 0) return;
+                playExportFlash();
+                setStatus("Exporting SVG…");
                 try {
-                    await reloadDepthModel();
-                } catch (_) {
-                    /* status set */
-                } finally {
-                    document.getElementById("btnReloadDepth").disabled = false;
+                    const font = await ensureHersheySansFont();
+                    const { svg } = buildHatchSvg(lastExportSnapshot, HP.svgPageSize, HP.svgCaption, font);
+                    const blob = new Blob([svg], { type: "image/svg+xml" });
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `depth-hatch-${HP.svgPageSize}-${Date.now()}.svg`;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+                    setStatus("Camera running");
+                } catch (e) {
+                    console.error(e);
+                    setStatus("SVG export failed.");
                 }
             });
 
@@ -979,9 +2442,9 @@
                 closeQuietly(drawUtils);
             });
 
-            window.addEventListener("resize", () => {
-                fitStageToVideo();
-            });
+            window.addEventListener("resize", () => { fitStageToVideo(); });
+
+            /* ── Init ────────────────────────────────────────────── */
 
             if (!navigator.gpu) {
                 const o = selDepthDevice.querySelector('option[value="webgpu"]');
