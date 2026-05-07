@@ -616,6 +616,10 @@
                     <button type="button" id="btnReloadDepth" class="secondary">Reload depth model</button>
                 </details>
 
+                <h2>Preferences</h2>
+                <button type="button" id="btnResetDefaults" class="secondary">Reset to defaults</button>
+                <p class="hint">All settings are auto-saved to this browser.</p>
+
                 <h2>Last pass (JSON)</h2>
                 <textarea id="jsonPanel" readonly spellcheck="false"></textarea>
             </aside>
@@ -682,9 +686,6 @@
             const btnExportSvg = document.getElementById("btnExportSvg");
             const exportFlash = document.getElementById("exportFlash");
 
-            document.getElementById("inpFaceModel").value = MODELS.faceLandmarker;
-            document.getElementById("inpHandModel").value = MODELS.handLandmarker;
-
             /* ── SVG page constants ──────────────────────────────── */
 
             const SVG_PAGE_LANDSCAPE_MM = { a6: [148, 105], a5: [210, 148], a4: [297, 210], a3: [420, 297] };
@@ -696,9 +697,15 @@
             const SVG_HATCH_VERTICAL_BIAS = 0.18;
             const SVG_ART_INSET = 0.92;
 
-            /* ── Hatch params ────────────────────────────────────── */
+            /* ══════════════════════════════════════════════════════
+               SETTINGS — single source of truth for every preference.
+               DEFAULTS is the only place values are declared.
+               ══════════════════════════════════════════════════════ */
 
-            const HP = {
+            const STORAGE_KEY = "dxviie:camera-depth-compositor:settings:v1";
+
+            const DEFAULTS = Object.freeze({
+                /* Hatch params */
                 analysisW: 96,
                 seedCount: 72,
                 gridDiv: 20,
@@ -735,7 +742,82 @@
                 featureRightBrow:   { hole: false, outline: false },
                 featureFaceOval:    { hole: false, outline: false },
                 featureHandsHull:   { hole: false, outline: false },
-            };
+
+                /* View / camera */
+                view: "combined",
+                threshold: 55,
+                cameraDeviceId: "",
+
+                /* MediaPipe */
+                mpFace: true,
+                mpHands: true,
+                mpDelegate: "auto",
+                mpFaceCount: 1,
+                mpHandCount: 2,
+                mpFaceConf: 0.5,
+                mpHandConf: 0.5,
+                mpFaceModel: "",   /* empty → resolved to MODELS.faceLandmarker */
+                mpHandModel: "",   /* empty → resolved to MODELS.handLandmarker */
+
+                /* Depth */
+                depthModel: "onnx-community/depth-anything-v2-small",
+                depthDevice: "wasm",
+                depthDtype: "q8",
+                maxSide: 384,
+                targetMs: 100,
+            });
+
+            function deepClone(o) { return JSON.parse(JSON.stringify(o)); }
+
+            function mergeSettings(base, stored) {
+                const out = deepClone(base);
+                if (!stored || typeof stored !== "object") return out;
+                for (const k of Object.keys(stored)) {
+                    if (!(k in out)) continue;
+                    const def = out[k], val = stored[k];
+                    if (def !== null && typeof def === "object" && !Array.isArray(def)) {
+                        if (val && typeof val === "object" && !Array.isArray(val)) {
+                            out[k] = { ...def, ...val };
+                        }
+                    } else {
+                        out[k] = val;
+                    }
+                }
+                return out;
+            }
+
+            function loadSettings() {
+                let stored = null;
+                try { stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (_) { stored = null; }
+                const out = mergeSettings(DEFAULTS, stored);
+                if (!stored && navigator.gpu) {
+                    /* First-time GPU bootstrap: prefer WebGPU/fp16 when no saved choice. */
+                    out.depthDevice = "webgpu";
+                    out.depthDtype = "fp16";
+                }
+                if (!out.mpFaceModel) out.mpFaceModel = MODELS.faceLandmarker;
+                if (!out.mpHandModel) out.mpHandModel = MODELS.handLandmarker;
+                if (out.depthDevice === "webgpu" && !navigator.gpu) {
+                    out.depthDevice = "wasm";
+                    if (out.depthDtype === "fp16") out.depthDtype = "q8";
+                }
+                return out;
+            }
+
+            const HP = loadSettings();
+
+            function persistSettings() {
+                try { localStorage.setItem(STORAGE_KEY, JSON.stringify(HP)); } catch (_) { /* quota / private mode */ }
+            }
+
+            function resetSettings() {
+                Object.assign(HP, deepClone(DEFAULTS));
+                if (!HP.mpFaceModel) HP.mpFaceModel = MODELS.faceLandmarker;
+                if (!HP.mpHandModel) HP.mpHandModel = MODELS.handLandmarker;
+                if (navigator.gpu) { HP.depthDevice = "webgpu"; HP.depthDtype = "fp16"; }
+                applySettingsToUI();
+                persistSettings();
+            }
 
             /* ── MediaPipe landmark ring indices ─────────────────── */
 
@@ -960,7 +1042,7 @@
                 if (!navigator.mediaDevices?.enumerateDevices) return;
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const cameras = devices.filter((d) => d.kind === "videoinput");
-                const prev = selCamera.value;
+                const prev = selCamera.value || HP.cameraDeviceId || "";
                 selCamera.innerHTML = `<option value="">Default camera</option>`;
                 cameras.forEach((cam, i) => {
                     const opt = document.createElement("option");
@@ -2495,70 +2577,170 @@
                 if (running && !paused) raf = requestAnimationFrame(loop);
             }
 
-            /* ── UI wiring ───────────────────────────────────────── */
+            /* ══════════════════════════════════════════════════════
+               UI wiring — every control binds to a HP/SETTINGS key,
+               persists on change, and is hydrated on load + reset.
+               ══════════════════════════════════════════════════════ */
 
-            function syncRangeReadout(rngId, valId, paramKey, toFixed) {
-                const rng = document.getElementById(rngId);
-                const val = document.getElementById(valId);
-                const update = () => {
-                    val.textContent = Number(rng.value).toFixed(toFixed ?? 2);
-                    HP[paramKey] = Number(rng.value);
-                };
-                rng.addEventListener("input", update);
-                update();
-            }
+            /* Numeric ranges with a "v-…" readout span. */
+            const RANGE_BINDINGS = [
+                ["rngAnalysisW", "v-analysisW", "analysisW", 0],
+                ["rngSeedCount", "v-seedCount", "seedCount", 0],
+                ["rngGridDiv", "v-gridDiv", "gridDiv", 0],
+                ["rngDetailGamma", "v-detailGamma", "detailGamma", 2],
+                ["rngDetailGain", "v-detailGain", "detailGain", 2],
+                ["rngDetailSmooth", "v-detailSmooth", "detailSmooth", 0],
+                ["rngHatchSpacingMinMm", "v-hatchSpacingMinMm", "hatchSpacingMinMm", 2],
+                ["rngHatchSpacingMaxMm", "v-hatchSpacingMaxMm", "hatchSpacingMaxMm", 2],
+                ["rngHatchLineWidthMm", "v-hatchLineWidthMm", "hatchLineWidthMm", 2],
+                ["rngLumDensityAmt", "v-lumDensityAmt", "lumDensityAmt", 2],
+                ["rngHueAngleScale", "v-hueAngleScale", "hueAngleScale", 2],
+                ["rngAngleOffset", "v-angleOffset", "angleOffset", 0],
+                ["rngSatAngleAmt", "v-satAngleAmt", "satAngleAmt", 0],
+                ["rngShadingAngleAmt", "v-shadingAngleAmt", "shadingAngleAmt", 2],
+                ["rngShadingDensityAmt", "v-shadingDensityAmt", "shadingDensityAmt", 2],
+                ["rngHolePadMm", "v-holePadMm", "holePadMm", 2],
+                ["rngSilhouetteSimplifyMm", "v-silhouetteSimplifyMm", "silhouetteSimplifyMm", 2],
+                ["rngWatershedSimilarity", "v-watershedSimilarity", "watershedSimilarity", 2],
+                ["rngWatershedCutoff", "v-watershedCutoff", "watershedCutoff", 2],
+            ];
 
-            syncRangeReadout("rngAnalysisW", "v-analysisW", "analysisW", 0);
-            syncRangeReadout("rngSeedCount", "v-seedCount", "seedCount", 0);
-            syncRangeReadout("rngGridDiv", "v-gridDiv", "gridDiv", 0);
-            syncRangeReadout("rngDetailGamma", "v-detailGamma", "detailGamma", 2);
-            syncRangeReadout("rngDetailGain", "v-detailGain", "detailGain", 2);
-            syncRangeReadout("rngDetailSmooth", "v-detailSmooth", "detailSmooth", 0);
-            syncRangeReadout("rngHatchSpacingMinMm", "v-hatchSpacingMinMm", "hatchSpacingMinMm", 2);
-            syncRangeReadout("rngHatchSpacingMaxMm", "v-hatchSpacingMaxMm", "hatchSpacingMaxMm", 2);
-            syncRangeReadout("rngHatchLineWidthMm", "v-hatchLineWidthMm", "hatchLineWidthMm", 2);
-            syncRangeReadout("rngLumDensityAmt", "v-lumDensityAmt", "lumDensityAmt", 2);
-            syncRangeReadout("rngHueAngleScale", "v-hueAngleScale", "hueAngleScale", 2);
-            syncRangeReadout("rngAngleOffset", "v-angleOffset", "angleOffset", 0);
-            syncRangeReadout("rngSatAngleAmt", "v-satAngleAmt", "satAngleAmt", 0);
-            syncRangeReadout("rngShadingAngleAmt", "v-shadingAngleAmt", "shadingAngleAmt", 2);
-            syncRangeReadout("rngShadingDensityAmt", "v-shadingDensityAmt", "shadingDensityAmt", 2);
-            syncRangeReadout("rngHolePadMm", "v-holePadMm", "holePadMm", 2);
-            syncRangeReadout("rngSilhouetteSimplifyMm", "v-silhouetteSimplifyMm", "silhouetteSimplifyMm", 2);
-            syncRangeReadout("rngWatershedSimilarity", "v-watershedSimilarity", "watershedSimilarity", 2);
-            syncRangeReadout("rngWatershedCutoff", "v-watershedCutoff", "watershedCutoff", 2);
+            /* Feature hole/outline checkbox pairs. */
+            const FEATURE_BINDINGS = [
+                ["chkHoleLipsOuter", "chkOutlineLipsOuter", "featureLipsOuter"],
+                ["chkHoleLipsInner", "chkOutlineLipsInner", "featureLipsInner"],
+                ["chkHoleLeftEye", "chkOutlineLeftEye", "featureLeftEye"],
+                ["chkHoleRightEye", "chkOutlineRightEye", "featureRightEye"],
+                ["chkHoleLeftIris", "chkOutlineLeftIris", "featureLeftIris"],
+                ["chkHoleRightIris", "chkOutlineRightIris", "featureRightIris"],
+                ["chkHoleLeftBrow", "chkOutlineLeftBrow", "featureLeftBrow"],
+                ["chkHoleRightBrow", "chkOutlineRightBrow", "featureRightBrow"],
+                ["chkHoleFaceOval", "chkOutlineFaceOval", "featureFaceOval"],
+                ["chkHoleHandsHull", "chkOutlineHandsHull", "featureHandsHull"],
+            ];
 
             const watershedControls = document.getElementById("watershedControls");
             const selRegionAlgo = document.getElementById("selRegionAlgo");
-            selRegionAlgo.addEventListener("change", (e) => {
-                HP.regionAlgo = e.target.value;
-                watershedControls.hidden = HP.regionAlgo !== "watershed";
-            });
-            watershedControls.hidden = HP.regionAlgo !== "watershed";
+            const selShadingMode = document.getElementById("selShadingMode");
+            const selSvgPageSize = document.getElementById("selSvgPageSize");
+            const selHatchDensityChannel = document.getElementById("selHatchDensityChannel");
+            const selMpDelegate = document.getElementById("selMpDelegate");
+            const chkSvgMirror = document.getElementById("chkSvgMirror");
+            const chkSilhouette = document.getElementById("chkSilhouette");
+            const chkFace = document.getElementById("chkFace");
+            const chkHands = document.getElementById("chkHands");
+            const inpSvgCaption = document.getElementById("inpSvgCaption");
+            const inpFaceModel = document.getElementById("inpFaceModel");
+            const inpHandModel = document.getElementById("inpHandModel");
+            const inpFaces = document.getElementById("inpFaces");
+            const inpHands = document.getElementById("inpHands");
+            const inpFaceConf = document.getElementById("inpFaceConf");
+            const inpHandConf = document.getElementById("inpHandConf");
+            const inpDepthModel = document.getElementById("inpDepthModel");
+            const inpTargetMs = document.getElementById("inpTargetMs");
+            const btnResetDefaults = document.getElementById("btnResetDefaults");
 
-            document.getElementById("selHatchDensityChannel").addEventListener("change", (e) => { HP.hatchDensityChannel = e.target.value; });
-            document.getElementById("selShadingMode").addEventListener("change", (e) => { HP.shadingMode = e.target.value; });
-            document.getElementById("selSvgPageSize").addEventListener("change", (e) => { HP.svgPageSize = e.target.value; });
-            document.getElementById("chkSvgMirror").addEventListener("change", (e) => { HP.svgMirror = e.target.checked; });
-            document.getElementById("inpSvgCaption").addEventListener("input", (e) => { HP.svgCaption = e.target.value; });
-            document.getElementById("chkSilhouette").addEventListener("change", (e) => { HP.silhouetteEnabled = e.target.checked; });
-
-            function bindFeatureToggle(holeId, outlineId, featureKey) {
-                const hEl = document.getElementById(holeId);
-                const oEl = document.getElementById(outlineId);
-                hEl.addEventListener("change", () => { HP[featureKey].hole = hEl.checked; });
-                oEl.addEventListener("change", () => { HP[featureKey].outline = oEl.checked; });
+            function setRangeReadout(rngId, valId, value, toFixed) {
+                const rng = document.getElementById(rngId);
+                const val = document.getElementById(valId);
+                rng.value = value;
+                if (val) val.textContent = Number(value).toFixed(toFixed ?? 2);
             }
-            bindFeatureToggle("chkHoleLipsOuter", "chkOutlineLipsOuter", "featureLipsOuter");
-            bindFeatureToggle("chkHoleLipsInner", "chkOutlineLipsInner", "featureLipsInner");
-            bindFeatureToggle("chkHoleLeftEye", "chkOutlineLeftEye", "featureLeftEye");
-            bindFeatureToggle("chkHoleRightEye", "chkOutlineRightEye", "featureRightEye");
-            bindFeatureToggle("chkHoleLeftIris", "chkOutlineLeftIris", "featureLeftIris");
-            bindFeatureToggle("chkHoleRightIris", "chkOutlineRightIris", "featureRightIris");
-            bindFeatureToggle("chkHoleLeftBrow", "chkOutlineLeftBrow", "featureLeftBrow");
-            bindFeatureToggle("chkHoleRightBrow", "chkOutlineRightBrow", "featureRightBrow");
-            bindFeatureToggle("chkHoleFaceOval", "chkOutlineFaceOval", "featureFaceOval");
-            bindFeatureToggle("chkHoleHandsHull", "chkOutlineHandsHull", "featureHandsHull");
+
+            function applySettingsToUI() {
+                for (const [rngId, valId, key, prec] of RANGE_BINDINGS) {
+                    setRangeReadout(rngId, valId, HP[key], prec);
+                }
+                rngThreshold.value = HP.threshold;
+                lblThreshold.textContent = HP.threshold;
+                rngMaxSide.value = HP.maxSide;
+                lblMaxSide.textContent = HP.maxSide;
+
+                selView.value = HP.view;
+                selRegionAlgo.value = HP.regionAlgo;
+                selHatchDensityChannel.value = HP.hatchDensityChannel;
+                selShadingMode.value = HP.shadingMode;
+                selSvgPageSize.value = HP.svgPageSize;
+                selMpDelegate.value = HP.mpDelegate;
+                if ([...selDepthDevice.options].some((o) => o.value === HP.depthDevice && !o.disabled)) {
+                    selDepthDevice.value = HP.depthDevice;
+                }
+                selDepthDtype.value = HP.depthDtype;
+                if ([...selCamera.options].some((o) => o.value === HP.cameraDeviceId)) {
+                    selCamera.value = HP.cameraDeviceId;
+                }
+
+                chkSvgMirror.checked = HP.svgMirror;
+                chkSilhouette.checked = HP.silhouetteEnabled;
+                chkFace.checked = HP.mpFace;
+                chkHands.checked = HP.mpHands;
+
+                inpSvgCaption.value = HP.svgCaption;
+                inpFaceModel.value = HP.mpFaceModel;
+                inpHandModel.value = HP.mpHandModel;
+                inpFaces.value = HP.mpFaceCount;
+                inpHands.value = HP.mpHandCount;
+                inpFaceConf.value = HP.mpFaceConf;
+                inpHandConf.value = HP.mpHandConf;
+                inpDepthModel.value = HP.depthModel;
+                inpTargetMs.value = HP.targetMs;
+
+                for (const [hId, oId, key] of FEATURE_BINDINGS) {
+                    document.getElementById(hId).checked = HP[key].hole;
+                    document.getElementById(oId).checked = HP[key].outline;
+                }
+
+                watershedControls.hidden = HP.regionAlgo !== "watershed";
+            }
+
+            /* Wire change → update HP + persist (+ optional side effect). */
+
+            for (const [rngId, valId, key, prec] of RANGE_BINDINGS) {
+                const rng = document.getElementById(rngId);
+                const val = document.getElementById(valId);
+                rng.addEventListener("input", () => {
+                    const v = Number(rng.value);
+                    if (val) val.textContent = v.toFixed(prec ?? 2);
+                    HP[key] = v;
+                    persistSettings();
+                });
+            }
+
+            for (const [hId, oId, key] of FEATURE_BINDINGS) {
+                const hEl = document.getElementById(hId);
+                const oEl = document.getElementById(oId);
+                hEl.addEventListener("change", () => { HP[key].hole = hEl.checked; persistSettings(); });
+                oEl.addEventListener("change", () => { HP[key].outline = oEl.checked; persistSettings(); });
+            }
+
+            selRegionAlgo.addEventListener("change", () => {
+                HP.regionAlgo = selRegionAlgo.value;
+                watershedControls.hidden = HP.regionAlgo !== "watershed";
+                persistSettings();
+            });
+            selHatchDensityChannel.addEventListener("change", () => { HP.hatchDensityChannel = selHatchDensityChannel.value; persistSettings(); });
+            selShadingMode.addEventListener("change", () => { HP.shadingMode = selShadingMode.value; persistSettings(); });
+            selSvgPageSize.addEventListener("change", () => { HP.svgPageSize = selSvgPageSize.value; persistSettings(); });
+            chkSvgMirror.addEventListener("change", () => { HP.svgMirror = chkSvgMirror.checked; persistSettings(); });
+            inpSvgCaption.addEventListener("input", () => { HP.svgCaption = inpSvgCaption.value; persistSettings(); });
+            chkSilhouette.addEventListener("change", () => { HP.silhouetteEnabled = chkSilhouette.checked; persistSettings(); });
+
+            selView.addEventListener("change", () => { HP.view = selView.value; persistSettings(); });
+
+            chkFace.addEventListener("change", () => { HP.mpFace = chkFace.checked; persistSettings(); });
+            chkHands.addEventListener("change", () => { HP.mpHands = chkHands.checked; persistSettings(); });
+            selMpDelegate.addEventListener("change", () => { HP.mpDelegate = selMpDelegate.value; persistSettings(); });
+            inpFaces.addEventListener("input", () => { HP.mpFaceCount = Number(inpFaces.value); persistSettings(); });
+            inpHands.addEventListener("input", () => { HP.mpHandCount = Number(inpHands.value); persistSettings(); });
+            inpFaceConf.addEventListener("input", () => { HP.mpFaceConf = Number(inpFaceConf.value); persistSettings(); });
+            inpHandConf.addEventListener("input", () => { HP.mpHandConf = Number(inpHandConf.value); persistSettings(); });
+            inpFaceModel.addEventListener("input", () => { HP.mpFaceModel = inpFaceModel.value; persistSettings(); });
+            inpHandModel.addEventListener("input", () => { HP.mpHandModel = inpHandModel.value; persistSettings(); });
+
+            inpDepthModel.addEventListener("input", () => { HP.depthModel = inpDepthModel.value; persistSettings(); });
+            selDepthDevice.addEventListener("change", () => { HP.depthDevice = selDepthDevice.value; persistSettings(); });
+            selDepthDtype.addEventListener("change", () => { HP.depthDtype = selDepthDtype.value; persistSettings(); });
+            inpTargetMs.addEventListener("input", () => { HP.targetMs = Number(inpTargetMs.value); persistSettings(); });
 
             document.getElementById("btnCam").addEventListener("click", async () => {
                 if (stream) stopCamera();
@@ -2574,14 +2756,24 @@
                 setStatus(paused ? "Paused" : "Camera running");
             });
 
-            selCamera.addEventListener("change", () => { if (stream) void startCamera(); });
+            selCamera.addEventListener("change", () => {
+                HP.cameraDeviceId = selCamera.value;
+                persistSettings();
+                if (stream) void startCamera();
+            });
 
             rngThreshold.addEventListener("input", () => {
+                HP.threshold = Number(rngThreshold.value);
                 lblThreshold.textContent = rngThreshold.value;
+                persistSettings();
                 rebuildMaskCanvas();
             });
 
-            rngMaxSide.addEventListener("input", () => { lblMaxSide.textContent = rngMaxSide.value; });
+            rngMaxSide.addEventListener("input", () => {
+                HP.maxSide = Number(rngMaxSide.value);
+                lblMaxSide.textContent = rngMaxSide.value;
+                persistSettings();
+            });
 
             document.getElementById("btnReloadMp").addEventListener("click", async () => {
                 document.getElementById("btnReloadMp").disabled = true;
@@ -2594,6 +2786,13 @@
                 document.getElementById("btnReloadDepth").disabled = true;
                 try { await reloadDepthModel(); } catch (_) { /* status set */ }
                 finally { document.getElementById("btnReloadDepth").disabled = false; }
+            });
+
+            btnResetDefaults.addEventListener("click", () => {
+                if (!confirm("Reset all settings to their defaults?")) return;
+                resetSettings();
+                if (latestDepthValue) rebuildMaskCanvas();
+                setStatus("Settings reset to defaults");
             });
 
             btnExportSvg.addEventListener("click", async () => {
@@ -2630,19 +2829,19 @@
             if (!navigator.gpu) {
                 const o = selDepthDevice.querySelector('option[value="webgpu"]');
                 if (o) o.disabled = true;
-                selDepthDevice.value = "wasm";
-                selDepthDtype.value = "q8";
             } else {
-                selDepthDevice.value = "webgpu";
-                selDepthDtype.value = "fp16";
                 env.backends.onnx.webgpu = env.backends.onnx.webgpu ?? {};
                 env.backends.onnx.webgpu.powerPreference = "high-performance";
             }
+
+            applySettingsToUI();
 
             if (glCtx) setStatus("GPU available · loading defaults");
             else setStatus("CPU/WebGL2 fallback · loading defaults");
 
             Promise.allSettled([reloadMediaPipe(), reloadDepthModel(), refreshCameras()]).then((results) => {
+                /* Re-apply once camera options are populated, so HP.cameraDeviceId can latch. */
+                applySettingsToUI();
                 const rejected = results.find((r) => r.status === "rejected");
                 if (rejected) setStatus(`Default load issue: ${rejected.reason?.message ?? rejected.reason}`, true);
                 else setStatus("Ready · start camera");
