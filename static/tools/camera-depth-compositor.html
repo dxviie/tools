@@ -390,6 +390,27 @@
                         <input type="range" id="rngDetailSmooth" min="0" max="4" step="1" value="1" />
                     </label>
 
+                    <h2>Region algorithm</h2>
+                    <label class="row block">
+                        <span>Algorithm</span>
+                        <select id="selRegionAlgo">
+                            <option value="voronoi" selected>Voronoi (geometric)</option>
+                            <option value="watershed">Watershed (color similarity)</option>
+                        </select>
+                    </label>
+                    <div id="watershedControls" hidden>
+                        <label class="row">
+                            <span>Similarity — <span class="val" id="v-watershedSimilarity">0.18</span></span>
+                            <input type="range" id="rngWatershedSimilarity" min="0" max="1" step="0.01" value="0.18" />
+                        </label>
+                        <p class="hint">Max color delta inside a region (0–1). Lower = tighter shapes, more unhatched gaps.</p>
+                    </div>
+                    <label class="row">
+                        <span>Cutoff — <span class="val" id="v-watershedCutoff">0.00</span></span>
+                        <input type="range" id="rngWatershedCutoff" min="0" max="1" step="0.01" value="0" />
+                    </label>
+                    <p class="hint">Drops regions whose mean falls below this value in the density channel.</p>
+
                     <h2>Hatch geometry</h2>
                     <label class="row">
                         <span>Spacing min mm — <span class="val" id="v-hatchSpacingMinMm">1.25</span></span>
@@ -688,6 +709,9 @@
                 hatchSpacingMaxMm: 5.5,
                 hatchLineWidthMm: 0.45,
                 hatchDensityChannel: "lum",
+                regionAlgo: "voronoi",
+                watershedSimilarity: 0.18,
+                watershedCutoff: 0.0,
                 lumDensityAmt: 1.0,
                 hueAngleScale: 1.1,
                 angleOffset: 12,
@@ -1498,6 +1522,134 @@
                 return labs;
             }
 
+            /* ── Watershed labeling (color similarity) ───────────── */
+
+            class BucketQueue {
+                constructor(numBuckets = 256) {
+                    this.numBuckets = numBuckets;
+                    this.buckets = new Array(numBuckets);
+                    for (let i = 0; i < numBuckets; i++) this.buckets[i] = [];
+                    this.cursor = 0;
+                }
+                clear() {
+                    for (let i = 0; i < this.numBuckets; i++) this.buckets[i].length = 0;
+                    this.cursor = 0;
+                }
+                push(bucket, p, lid) {
+                    if (bucket < this.cursor) bucket = this.cursor;
+                    else if (bucket >= this.numBuckets) bucket = this.numBuckets - 1;
+                    const arr = this.buckets[bucket];
+                    arr.push(p, lid);
+                }
+                pop(out) {
+                    while (this.cursor < this.numBuckets && this.buckets[this.cursor].length === 0) this.cursor++;
+                    if (this.cursor >= this.numBuckets) return false;
+                    const arr = this.buckets[this.cursor];
+                    out[2] = arr.pop();
+                    out[1] = arr.pop();
+                    out[0] = this.cursor;
+                    return true;
+                }
+            }
+
+            let wsQueue = null;
+
+            function labelMapWatershed(seedList, similarity) {
+                const w = analysisW, h = analysisH;
+                const labs = new Int32Array(w * h);
+                labs.fill(-1);
+                const nseed = seedList.length;
+                if (nseed === 0) return labs;
+
+                const refR = new Uint8Array(nseed);
+                const refG = new Uint8Array(nseed);
+                const refB = new Uint8Array(nseed);
+                for (let lid = 0; lid < nseed; lid++) {
+                    const sx = Math.min(w - 1, Math.max(0, seedList[lid][0] | 0));
+                    const sy = Math.min(h - 1, Math.max(0, seedList[lid][1] | 0));
+                    const i3 = (sy * w + sx) * 3;
+                    refR[lid] = rgbBuf[i3];
+                    refG[lid] = rgbBuf[i3 + 1];
+                    refB[lid] = rgbBuf[i3 + 2];
+                }
+
+                if (!wsQueue) wsQueue = new BucketQueue(256);
+                const queue = wsQueue;
+                queue.clear();
+
+                /* Scale 0..sqrt(3*255^2)=441.673 RGB Euclidean distance to 0..255 buckets. */
+                const INV_DIST = 255 / 441.6729559;
+
+                function pushNeighbours(x, y, p, lid, parentBucket) {
+                    const rr = refR[lid], rg = refG[lid], rb = refB[lid];
+                    if (x + 1 < w) {
+                        const np = p + 1;
+                        if (labs[np] === -1 && effMask[np]) {
+                            const i3 = np * 3;
+                            const dr = rgbBuf[i3] - rr, dg = rgbBuf[i3 + 1] - rg, db = rgbBuf[i3 + 2] - rb;
+                            let b = (Math.sqrt(dr * dr + dg * dg + db * db) * INV_DIST) | 0;
+                            if (b < parentBucket) b = parentBucket;
+                            queue.push(b, np, lid);
+                        }
+                    }
+                    if (x - 1 >= 0) {
+                        const np = p - 1;
+                        if (labs[np] === -1 && effMask[np]) {
+                            const i3 = np * 3;
+                            const dr = rgbBuf[i3] - rr, dg = rgbBuf[i3 + 1] - rg, db = rgbBuf[i3 + 2] - rb;
+                            let b = (Math.sqrt(dr * dr + dg * dg + db * db) * INV_DIST) | 0;
+                            if (b < parentBucket) b = parentBucket;
+                            queue.push(b, np, lid);
+                        }
+                    }
+                    if (y + 1 < h) {
+                        const np = p + w;
+                        if (labs[np] === -1 && effMask[np]) {
+                            const i3 = np * 3;
+                            const dr = rgbBuf[i3] - rr, dg = rgbBuf[i3 + 1] - rg, db = rgbBuf[i3 + 2] - rb;
+                            let b = (Math.sqrt(dr * dr + dg * dg + db * db) * INV_DIST) | 0;
+                            if (b < parentBucket) b = parentBucket;
+                            queue.push(b, np, lid);
+                        }
+                    }
+                    if (y - 1 >= 0) {
+                        const np = p - w;
+                        if (labs[np] === -1 && effMask[np]) {
+                            const i3 = np * 3;
+                            const dr = rgbBuf[i3] - rr, dg = rgbBuf[i3 + 1] - rg, db = rgbBuf[i3 + 2] - rb;
+                            let b = (Math.sqrt(dr * dr + dg * dg + db * db) * INV_DIST) | 0;
+                            if (b < parentBucket) b = parentBucket;
+                            queue.push(b, np, lid);
+                        }
+                    }
+                }
+
+                for (let lid = 0; lid < nseed; lid++) {
+                    const sx = Math.min(w - 1, Math.max(0, seedList[lid][0] | 0));
+                    const sy = Math.min(h - 1, Math.max(0, seedList[lid][1] | 0));
+                    const p = sy * w + sx;
+                    if (!effMask[p]) continue;
+                    if (labs[p] !== -1) continue;
+                    labs[p] = lid;
+                    pushNeighbours(sx, sy, p, lid, 0);
+                }
+
+                const simBucket = Math.max(0, Math.min(255, (similarity * 255) | 0));
+                const out = [0, 0, 0];
+                while (queue.pop(out)) {
+                    const cb = out[0];
+                    if (cb > simBucket) break;
+                    const p = out[1], lid = out[2];
+                    if (labs[p] !== -1) continue;
+                    if (!effMask[p]) continue;
+                    labs[p] = lid;
+                    const y = (p / w) | 0;
+                    const x = p - y * w;
+                    pushNeighbours(x, y, p, lid, cb);
+                }
+                return labs;
+            }
+
             /* ── Cell means ──────────────────────────────────────── */
 
             function collectCellMeans(labs) {
@@ -1534,6 +1686,17 @@
                     }
                 }
                 return { means, labelCounts };
+            }
+
+            /* ── Cutoff filter (applies in both algorithms) ──────── */
+
+            function applyHatchCutoff(labelCounts, means, cutoff, channel) {
+                if (cutoff <= 0) return;
+                for (let lid = 0; lid < means.length; lid++) {
+                    if (!labelCounts[lid]) continue;
+                    const v = normalizedHatchDensityDrive(means[lid], channel);
+                    if (v < cutoff) labelCounts[lid] = 0;
+                }
             }
 
             /* ── EMA smoothing ───────────────────────────────────── */
@@ -1982,8 +2145,11 @@
                 }
 
                 seeds = buildAdaptiveSeeds(stratDetailSmooth);
-                labels = labelMapVoronoi(seeds);
+                labels = HP.regionAlgo === "watershed"
+                    ? labelMapWatershed(seeds, HP.watershedSimilarity)
+                    : labelMapVoronoi(seeds);
                 const { means, labelCounts } = collectCellMeans(labels);
+                applyHatchCutoff(labelCounts, means, HP.watershedCutoff, HP.hatchDensityChannel);
                 updateStyleEma(means);
 
                 if (HP.shadingMode === "depth") {
@@ -2359,6 +2525,16 @@
             syncRangeReadout("rngShadingDensityAmt", "v-shadingDensityAmt", "shadingDensityAmt", 2);
             syncRangeReadout("rngHolePadMm", "v-holePadMm", "holePadMm", 2);
             syncRangeReadout("rngSilhouetteSimplifyMm", "v-silhouetteSimplifyMm", "silhouetteSimplifyMm", 2);
+            syncRangeReadout("rngWatershedSimilarity", "v-watershedSimilarity", "watershedSimilarity", 2);
+            syncRangeReadout("rngWatershedCutoff", "v-watershedCutoff", "watershedCutoff", 2);
+
+            const watershedControls = document.getElementById("watershedControls");
+            const selRegionAlgo = document.getElementById("selRegionAlgo");
+            selRegionAlgo.addEventListener("change", (e) => {
+                HP.regionAlgo = e.target.value;
+                watershedControls.hidden = HP.regionAlgo !== "watershed";
+            });
+            watershedControls.hidden = HP.regionAlgo !== "watershed";
 
             document.getElementById("selHatchDensityChannel").addEventListener("change", (e) => { HP.hatchDensityChannel = e.target.value; });
             document.getElementById("selShadingMode").addEventListener("change", (e) => { HP.shadingMode = e.target.value; });
