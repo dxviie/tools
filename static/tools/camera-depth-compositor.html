@@ -905,8 +905,10 @@
 
             function loop(ts) {
                 if (!running || paused) return;
-                render();
-                updateMetrics(ts);
+                if (ts - lastRenderTs >= 1000 / 60) {
+                    render();
+                    updateMetrics(ts);
+                }
 
                 const targetMs = Math.max(50, Number(document.getElementById("inpTargetMs").value) || 100);
                 if (performance.now() >= nextInferAllowedAt && !inferBusy) {
