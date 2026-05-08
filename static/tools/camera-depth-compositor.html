@@ -618,6 +618,10 @@
                         <span>Caption</span>
                         <input type="text" id="inpSvgCaption" value="" />
                     </label>
+                    <label class="row">
+                        <span>Invert colors (black on white)</span>
+                        <input type="checkbox" id="chkInvertColors" />
+                    </label>
                     <button type="button" id="btnExportSvg" class="secondary" disabled>Export SVG</button>
                 </details>
 
@@ -842,6 +846,7 @@
                 svgPageSize: "a4",
                 svgMirror: true,
                 svgCaption: "",
+                invertColors: false,
                 featureLipsOuter:   { hole: true,  outline: false },
                 featureLipsInner:   { hole: true,  outline: false },
                 featureLeftEye:     { hole: true,  outline: false },
@@ -1058,6 +1063,8 @@
 
                 { group: "SVG export",     key: "svgPageSize",          label: "Page size",              type: "select",   elemId: "selSvgPageSize" },
                 { group: "SVG export",     key: "svgMirror",            label: "Mirror SVG",             type: "checkbox", elemId: "chkSvgMirror" },
+                { group: "SVG export",     key: "invertColors",         label: "Invert colors",          type: "checkbox", elemId: "chkInvertColors" },
+                { group: "SVG export",     key: "svgExport",            label: "Export SVG",             type: "button",   elemId: "btnExportSvg" },
             ];
 
             let midiAccess = null;
@@ -1188,6 +1195,10 @@
                     if (prev <= 64 && value > 64) {
                         elem.checked = !elem.checked;
                         elem.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+                } else if (param.type === "button") {
+                    if (prev <= 64 && value > 64) {
+                        elem.click();
                     }
                 } else if (param.type === "select") {
                     const opts = elem.options;
@@ -2727,11 +2738,11 @@
 
                 const shadeOpt = HP.shadingMode !== "off" && seedShadeAngle ? { angle: seedShadeAngle, density: seedShadeDensity } : null;
 
-                ctx.fillStyle = "#0c0c0c";
+                ctx.fillStyle = HP.invertColors ? "#f3f3f3" : "#0c0c0c";
                 ctx.fillRect(0, 0, cw, ch);
 
                 ctx.save();
-                ctx.strokeStyle = "#e8e8e8";
+                ctx.strokeStyle = HP.invertColors ? "#1a1a1a" : "#e8e8e8";
                 const mmPerPx = computeHatchExportInnerScale(cw, ch, HP.svgPageSize);
                 ctx.lineWidth = Math.max(0.15, HP.hatchLineWidthMm / Math.max(1e-6, mmPerPx));
                 ctx.lineCap = "round";
@@ -2799,7 +2810,7 @@
 
             /* ── SVG export ──────────────────────────────────────── */
 
-            function buildHatchSvg(snap, formatKey, captionText, font) {
+            function buildHatchSvg(snap, formatKey, captionText, font, invertColors) {
                 const fmt = SVG_PAGE_LANDSCAPE_MM[formatKey] || SVG_PAGE_LANDSCAPE_MM.a4;
                 const [fmtW, fmtH] = fmt;
                 const isA3 = formatKey === "a3";
@@ -2823,8 +2834,10 @@
                 const slackY = Math.max(0, hatchRegionH - hatchPadTop - th);
                 const ty = innerY + hatchPadTop + slackY * SVG_HATCH_VERTICAL_BIAS;
 
-                const strokeHex = "#1a1a1a";
-                const guideStroke = "#999";
+                const darkMode = !invertColors;
+                const strokeHex = darkMode ? "#e8e8e8" : "#1a1a1a";
+                const bgFill = darkMode ? "#0c0c0c" : null;
+                const guideStroke = darkMode ? "#555" : "#999";
                 const sw = Math.max(0.05, snap.hatchLineWidthMm);
                 const hatchGAttrs = `fill="none" stroke="${strokeHex}" stroke-width="${sw.toFixed(4)}" stroke-linecap="round" stroke-linejoin="round"`;
 
@@ -2837,6 +2850,12 @@
                 const parts = [];
                 parts.push('<?xml version="1.0" encoding="UTF-8"?>');
                 parts.push(`<svg xmlns="http://www.w3.org/2000/svg" ${ink} width="${A3W}mm" height="${A3H}mm" viewBox="0 0 ${A3W} ${A3H}">`);
+
+                if (bgFill) {
+                    parts.push(`<g id="layer-background" inkscape:label="Background" inkscape:groupmode="layer">`);
+                    parts.push(`<rect x="0" y="0" width="${A3W}" height="${A3H}" fill="${bgFill}"/>`);
+                    parts.push(`</g>`);
+                }
 
                 parts.push(`<g id="layer-outline-a3" inkscape:label="Outline — A3 sheet" inkscape:groupmode="layer" fill="none">`);
                 parts.push(`<rect x="0" y="0" width="${A3W}" height="${A3H}" stroke="${guideStroke}" stroke-width="0.35"/>`);
@@ -2899,7 +2918,8 @@
 
                 parts.push(`</g></g></g>`);
 
-                const textSa = `stroke="${strokeHex}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="0.22"`;
+                const captionStroke = darkMode ? "#d0d0d0" : strokeHex;
+                const textSa = `stroke="${captionStroke}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="0.22"`;
                 const capSizeMm = 2.75 * 1.25;
                 const maxCapW = innerW - 6;
                 const capLines = captionLinesFromText(captionText || "", maxCapW, capSizeMm, font);
@@ -3105,6 +3125,7 @@
             const selHatchDensityChannel = document.getElementById("selHatchDensityChannel");
             const selMpDelegate = document.getElementById("selMpDelegate");
             const chkSvgMirror = document.getElementById("chkSvgMirror");
+            const chkInvertColors = document.getElementById("chkInvertColors");
             const chkSilhouette = document.getElementById("chkSilhouette");
             const chkFace = document.getElementById("chkFace");
             const chkHands = document.getElementById("chkHands");
@@ -3150,6 +3171,7 @@
                 }
 
                 chkSvgMirror.checked = HP.svgMirror;
+                chkInvertColors.checked = HP.invertColors;
                 chkSilhouette.checked = HP.silhouetteEnabled;
                 chkFace.checked = HP.mpFace;
                 chkHands.checked = HP.mpHands;
@@ -3215,6 +3237,7 @@
             selShadingMode.addEventListener("change", () => { HP.shadingMode = selShadingMode.value; persistSettings(); });
             selSvgPageSize.addEventListener("change", () => { HP.svgPageSize = selSvgPageSize.value; persistSettings(); });
             chkSvgMirror.addEventListener("change", () => { HP.svgMirror = chkSvgMirror.checked; persistSettings(); });
+            chkInvertColors.addEventListener("change", () => { HP.invertColors = chkInvertColors.checked; persistSettings(); });
             inpSvgCaption.addEventListener("input", () => { HP.svgCaption = inpSvgCaption.value; persistSettings(); });
             chkSilhouette.addEventListener("change", () => { HP.silhouetteEnabled = chkSilhouette.checked; persistSettings(); });
 
@@ -3345,7 +3368,7 @@
                 setStatus("Exporting SVG…");
                 try {
                     const font = await ensureHersheySansFont();
-                    const { svg } = buildHatchSvg(lastExportSnapshot, HP.svgPageSize, HP.svgCaption, font);
+                    const { svg } = buildHatchSvg(lastExportSnapshot, HP.svgPageSize, HP.svgCaption, font, HP.invertColors);
                     const blob = new Blob([svg], { type: "image/svg+xml" });
                     const a = document.createElement("a");
                     a.href = URL.createObjectURL(blob);
