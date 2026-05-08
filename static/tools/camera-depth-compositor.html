@@ -107,6 +107,26 @@
                 transition: opacity 0.045s ease-out;
             }
 
+            /* ── Fullscreen mode ───────────────────────────────── */
+
+            body.fullscreen-mode header,
+            body.fullscreen-mode aside {
+                display: none !important;
+            }
+
+            body.fullscreen-mode .layout {
+                grid-template-columns: 1fr;
+            }
+
+            body.fullscreen-mode .stage {
+                padding: 0;
+                background: #000;
+            }
+
+            body.fullscreen-mode .mirror-stack canvas {
+                box-shadow: none;
+            }
+
             .mirror-stack {
                 position: relative;
                 display: inline-block;
@@ -619,6 +639,10 @@
                         <input type="text" id="inpSvgCaption" value="" />
                     </label>
                     <label class="row">
+                        <span>Caption font size mm — <span class="val" id="v-svgCaptionFontSize">3.44</span></span>
+                        <input type="range" id="rngSvgCaptionFontSize" min="1" max="8" step="0.1" value="3.44" />
+                    </label>
+                    <label class="row">
                         <span>Invert colors (black on white)</span>
                         <input type="checkbox" id="chkInvertColors" />
                     </label>
@@ -798,6 +822,8 @@
             const btnExportSvg = document.getElementById("btnExportSvg");
             const exportFlash = document.getElementById("exportFlash");
 
+            let isFullscreen = false;
+
             /* ── SVG page constants ──────────────────────────────── */
 
             const SVG_PAGE_LANDSCAPE_MM = { a6: [148, 105], a5: [210, 148], a4: [297, 210], a3: [420, 297] };
@@ -846,6 +872,7 @@
                 svgPageSize: "a4",
                 svgMirror: true,
                 svgCaption: "",
+                svgCaptionFontSize: 3.44,
                 invertColors: false,
                 featureLipsOuter:   { hole: true,  outline: false },
                 featureLipsInner:   { hole: true,  outline: false },
@@ -1063,6 +1090,7 @@
 
                 { group: "SVG export",     key: "svgPageSize",          label: "Page size",              type: "select",   elemId: "selSvgPageSize" },
                 { group: "SVG export",     key: "svgMirror",            label: "Mirror SVG",             type: "checkbox", elemId: "chkSvgMirror" },
+                { group: "SVG export",     key: "svgCaptionFontSize",   label: "Caption font size mm",   type: "range",    elemId: "rngSvgCaptionFontSize" },
                 { group: "SVG export",     key: "invertColors",         label: "Invert colors",          type: "checkbox", elemId: "chkInvertColors" },
                 { group: "SVG export",     key: "svgExport",            label: "Export SVG",             type: "button",   elemId: "btnExportSvg" },
             ];
@@ -1406,8 +1434,9 @@
                 const vw = video.videoWidth, vh = video.videoHeight;
                 if (!vw || !vh) return false;
                 const rect = stage.getBoundingClientRect();
-                const stageW = Math.max(1, rect.width - 28);
-                const stageH = Math.max(1, rect.height - 28);
+                const pad = isFullscreen ? 0 : 28;
+                const stageW = Math.max(1, rect.width - pad);
+                const stageH = Math.max(1, rect.height - pad);
                 const scale = Math.min(stageW / vw, stageH / vh);
                 mirrorStack.style.width = `${Math.max(1, Math.floor(vw * scale))}px`;
                 mirrorStack.style.height = `${Math.max(1, Math.floor(vh * scale))}px`;
@@ -2639,43 +2668,51 @@
 
             function parseHersheyFontSvg(svgText) {
                 const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
+                if (doc.querySelector("parsererror")) throw new Error("Hershey font parse error");
                 const fontEl = doc.querySelector("font");
                 const faceEl = doc.querySelector("font-face");
                 if (!fontEl || !faceEl) throw new Error("SVG font not found");
-                const unitsPerEm = Number(faceEl.getAttribute("units-per-em")) || 1000;
-                const defaultAdv = Number(fontEl.getAttribute("horiz-adv-x")) || 600;
-                const glyphs = new Map();
-                for (const g of fontEl.querySelectorAll("glyph")) {
+                const unitsPerEm = parseFloat(faceEl.getAttribute("units-per-em") || "1000");
+                const defaultAdv = parseFloat(fontEl.getAttribute("horiz-adv-x") || "600");
+                const glyphs = {};
+                for (const g of doc.querySelectorAll("glyph")) {
                     const u = g.getAttribute("unicode");
                     if (!u) continue;
-                    glyphs.set(u, {
+                    glyphs[u] = {
                         d: g.getAttribute("d") || "",
-                        horizAdvX: Number(g.getAttribute("horiz-adv-x")) || defaultAdv,
-                    });
+                        horizAdvX: parseFloat(g.getAttribute("horiz-adv-x") || defaultAdv),
+                    };
                 }
+                if (!glyphs[" "]) glyphs[" "] = { horizAdvX: defaultAdv * 0.5, d: "" };
                 return { unitsPerEm, defaultAdv, glyphs };
             }
 
             function measureHersheyText(text, sizeMm, font) {
+                if (!font || !text) return 0;
                 const sc = sizeMm / font.unitsPerEm;
                 let w = 0;
                 for (const ch of text) {
-                    const g = font.glyphs.get(ch);
+                    const g = font.glyphs[ch];
                     w += (g ? g.horizAdvX : font.defaultAdv) * sc;
                 }
                 return w;
             }
 
-            function renderHersheyText(text, x, y, sizeMm, font, strokeAttrs, maxW) {
-                const sc = sizeMm / font.unitsPerEm;
+            function renderHersheyText(text, x, y, sizeMm, font, strokeAttrs, maxWidthMm) {
+                if (!font || !text) return { paths: "", width: 0 };
+                let sc = sizeMm / font.unitsPerEm;
+                if (maxWidthMm > 0) {
+                    const w = measureHersheyText(text, sizeMm, font);
+                    if (w > maxWidthMm) sc *= maxWidthMm / w;
+                }
                 let cx = x, paths = "";
                 for (const ch of text) {
-                    const g = font.glyphs.get(ch);
+                    const g = font.glyphs[ch];
                     const adv = (g ? g.horizAdvX : font.defaultAdv) * sc;
-                    if (maxW && cx + adv - x > maxW + 0.1) break;
                     if (g && g.d) {
+                        const s = sc.toFixed(6);
                         const ns = (-sc).toFixed(6);
-                        paths += `<path d="${g.d}" transform="translate(${cx.toFixed(4)},${y.toFixed(4)}) scale(${sc.toFixed(6)},${ns})" ${strokeAttrs}/>`;
+                        paths += `<path transform="translate(${cx.toFixed(4)},${y.toFixed(4)}) scale(${s},${ns})" d="${g.d}" ${strokeAttrs} vector-effect="non-scaling-stroke"/>`;
                     }
                     cx += adv;
                 }
@@ -2683,17 +2720,23 @@
             }
 
             function captionLinesFromText(raw, maxW, sizeMm, font) {
-                if (!raw || !font) return [];
-                const words = raw.split(/\s+/);
+                if (!font) return [raw.trim()].filter(Boolean);
+                if (!raw) return [];
                 const lines = [];
-                let cur = "";
-                for (const w of words) {
-                    const test = cur ? cur + " " + w : w;
-                    if (measureHersheyText(test, sizeMm, font) > maxW && cur) {
-                        lines.push(cur); cur = w;
-                    } else { cur = test; }
+                for (const block of raw.replace(/\r\n/g, "\n").split("\n")) {
+                    if (!block.trim()) { lines.push(""); continue; }
+                    let cur = "";
+                    for (const word of block.split(/\s+/)) {
+                        const cand = cur ? cur + " " + word : word;
+                        if (!cur || measureHersheyText(cand, sizeMm, font) <= maxW) {
+                            cur = cand;
+                        } else {
+                            if (cur) lines.push(cur);
+                            cur = word;
+                        }
+                    }
+                    if (cur) lines.push(cur);
                 }
-                if (cur) lines.push(cur);
                 return lines;
             }
 
@@ -2918,13 +2961,12 @@
 
                 parts.push(`</g></g></g>`);
 
-                const captionStroke = darkMode ? "#d0d0d0" : strokeHex;
-                const textSa = `stroke="${captionStroke}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="0.22"`;
-                const capSizeMm = 2.75 * 1.25;
+                const textSa = `stroke="${strokeHex}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="0.22"`;
+                const capSizeMm = HP.svgCaptionFontSize;
                 const maxCapW = innerW - 6;
                 const capLines = captionLinesFromText(captionText || "", maxCapW, capSizeMm, font);
                 parts.push(`<g id="layer-caption" inkscape:label="Caption" inkscape:groupmode="layer">`);
-                if (font && capLines.length > 0) {
+                if (font) {
                     const bandTop = innerY + innerH - capBandH;
                     const lineStep = capSizeMm * 1.38;
                     const nonEmpty = capLines.filter((l) => l.trim()).length;
@@ -3102,6 +3144,7 @@
                 ["rngSilhouetteSimplifyMm", "v-silhouetteSimplifyMm", "silhouetteSimplifyMm", 2],
                 ["rngWatershedSimilarity", "v-watershedSimilarity", "watershedSimilarity", 2],
                 ["rngWatershedCutoff", "v-watershedCutoff", "watershedCutoff", 2],
+                ["rngSvgCaptionFontSize", "v-svgCaptionFontSize", "svgCaptionFontSize", 2],
             ];
 
             /* Feature hole/outline checkbox pairs. */
@@ -3390,6 +3433,39 @@
             });
 
             window.addEventListener("resize", () => { fitStageToVideo(); });
+
+            /* ── Fullscreen toggle (F key) ────────────────────────── */
+
+            function enterFullscreen() {
+                const el = document.documentElement;
+                (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen).call(el);
+            }
+
+            function exitFullscreen() {
+                (document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen).call(document);
+            }
+
+            function applyFullscreenLayout(on) {
+                isFullscreen = on;
+                document.body.classList.toggle("fullscreen-mode", on);
+                fitStageToVideo();
+            }
+
+            document.addEventListener("fullscreenchange", () => {
+                applyFullscreenLayout(!!document.fullscreenElement);
+            });
+            document.addEventListener("webkitfullscreenchange", () => {
+                applyFullscreenLayout(!!document.webkitFullscreenElement);
+            });
+
+            window.addEventListener("keydown", (e) => {
+                if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA") return;
+                if (e.key === "f" || e.key === "F") {
+                    e.preventDefault();
+                    if (!isFullscreen) enterFullscreen();
+                    else exitFullscreen();
+                }
+            });
 
             /* ── Init ────────────────────────────────────────────── */
 
