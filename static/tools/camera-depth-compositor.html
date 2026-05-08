@@ -306,6 +306,89 @@
             .err {
                 color: var(--danger);
             }
+
+            /* ── MIDI panel ─────────────────────────────────────── */
+            .midi-info {
+                font-size: 10px;
+                color: var(--muted);
+                line-height: 1.45;
+                margin: 6px 0 8px;
+            }
+
+            .midi-info .ok {
+                color: var(--accent2);
+            }
+
+            .midi-section-label {
+                font-size: 9px;
+                text-transform: uppercase;
+                letter-spacing: 0.1em;
+                color: var(--muted);
+                margin: 10px 0 4px;
+                padding-top: 4px;
+                border-top: 1px dashed #1f1f1f;
+            }
+
+            .midi-section-label:first-child {
+                border-top: none;
+                padding-top: 0;
+            }
+
+            .midi-row {
+                display: grid;
+                grid-template-columns: 1fr auto auto auto;
+                gap: 6px;
+                align-items: center;
+                padding: 3px 0;
+                font-size: 11px;
+            }
+
+            .midi-row + .midi-row {
+                border-top: 1px solid #161616;
+            }
+
+            .midi-row .midi-row-label {
+                color: var(--text);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .midi-row .midi-row-mapping {
+                color: var(--accent);
+                font-variant-numeric: tabular-nums;
+                font-size: 10px;
+                min-width: 9ch;
+                text-align: right;
+                white-space: nowrap;
+            }
+
+            .midi-row .midi-row-mapping.empty {
+                color: #444;
+            }
+
+            .midi-row.armed {
+                background: #1c2010;
+            }
+
+            .midi-row.armed .midi-row-label {
+                color: var(--accent2);
+            }
+
+            .midi-row.has-mapping .midi-row-label {
+                color: var(--text);
+            }
+
+            .midi-row button {
+                padding: 2px 6px;
+                font-size: 9px;
+                letter-spacing: 0.04em;
+            }
+
+            #btnMidiLearn.on {
+                border-color: var(--accent2);
+                color: var(--accent2);
+            }
         </style>
     </head>
     <body>
@@ -616,6 +699,26 @@
                     <button type="button" id="btnReloadDepth" class="secondary">Reload depth model</button>
                 </details>
 
+                <details id="detailsMidi">
+                    <summary>MIDI input</summary>
+
+                    <p class="midi-info" id="midiSupportInfo">Checking Web MIDI support…</p>
+
+                    <label class="row block">
+                        <span>MIDI device</span>
+                        <select id="selMidiDevice">
+                            <option value="">No device</option>
+                        </select>
+                    </label>
+
+                    <button type="button" id="btnMidiLearn" class="secondary">Enable MIDI learn</button>
+                    <p class="midi-info" id="midiLearnStatus">Turn on learn, click a parameter to arm it, then move a control on your MIDI device to bind.</p>
+
+                    <div id="midiMappingList"></div>
+
+                    <button type="button" id="btnMidiClearAll" class="secondary">Clear all MIDI mappings</button>
+                </details>
+
                 <h2>Preferences</h2>
                 <button type="button" id="btnResetDefaults" class="secondary">Reset to defaults</button>
                 <div class="row" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">
@@ -772,6 +875,11 @@
                 depthDtype: "q8",
                 maxSide: 384,
                 targetMs: 100,
+
+                /* MIDI */
+                midiDeviceId: "",
+                /* midiMappings: { [paramKey]: { type: "cc"|"note", channel: 0..15, number: 0..127 } } */
+                midiMappings: {},
             });
 
             function deepClone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -822,7 +930,15 @@
                 if (!HP.mpFaceModel) HP.mpFaceModel = MODELS.faceLandmarker;
                 if (!HP.mpHandModel) HP.mpHandModel = MODELS.handLandmarker;
                 if (navigator.gpu) { HP.depthDevice = "webgpu"; HP.depthDtype = "fp16"; }
+                /* Defaults wipe MIDI mappings; turn off learn so stale armed state can't survive. */
+                midiLearnMode = false;
+                midiArmedKey = null;
                 applySettingsToUI();
+                const learnBtn = document.getElementById("btnMidiLearn");
+                if (learnBtn) {
+                    learnBtn.classList.remove("on");
+                    learnBtn.textContent = "Enable MIDI learn";
+                }
                 persistSettings();
             }
 
@@ -867,8 +983,311 @@
                     HP.depthDevice = "wasm";
                     if (HP.depthDtype === "fp16") HP.depthDtype = "q8";
                 }
+                /* Drop transient learn state on import so the new mappings are authoritative. */
+                midiLearnMode = false;
+                midiArmedKey = null;
                 applySettingsToUI();
+                const learnBtn = document.getElementById("btnMidiLearn");
+                if (learnBtn) {
+                    learnBtn.classList.remove("on");
+                    learnBtn.textContent = "Enable MIDI learn";
+                }
                 persistSettings();
+            }
+
+            /* ══════════════════════════════════════════════════════
+               MIDI INPUT — Web MIDI bindings for hatch / SVG / mask params.
+               - range:    continuous; CC/note value 0..127 → linear scale of input min..max (snapped to step).
+               - checkbox: edge-triggered; rising edge (prev ≤ 64, new > 64) toggles state.
+               - select:   value 0..127 maps to option index.
+               ══════════════════════════════════════════════════════ */
+
+            const MIDI_PARAMS = [
+                { group: "Mask threshold", key: "threshold",            label: "Mask threshold",         type: "range",    elemId: "rngThreshold" },
+
+                { group: "Analysis",       key: "analysisW",            label: "Analysis width",         type: "range",    elemId: "rngAnalysisW" },
+
+                { group: "Detail / Seeding", key: "seedCount",          label: "Seed count",             type: "range",    elemId: "rngSeedCount" },
+                { group: "Detail / Seeding", key: "gridDiv",            label: "Grid div",               type: "range",    elemId: "rngGridDiv" },
+                { group: "Detail / Seeding", key: "detailGamma",        label: "Detail gamma",           type: "range",    elemId: "rngDetailGamma" },
+                { group: "Detail / Seeding", key: "detailGain",         label: "Detail gain",            type: "range",    elemId: "rngDetailGain" },
+                { group: "Detail / Seeding", key: "detailSmooth",       label: "Detail smooth",          type: "range",    elemId: "rngDetailSmooth" },
+
+                { group: "Region algorithm", key: "regionAlgo",         label: "Algorithm",              type: "select",   elemId: "selRegionAlgo" },
+                { group: "Region algorithm", key: "watershedSimilarity",label: "Watershed similarity",   type: "range",    elemId: "rngWatershedSimilarity" },
+                { group: "Region algorithm", key: "watershedCutoff",    label: "Watershed cutoff",       type: "range",    elemId: "rngWatershedCutoff" },
+
+                { group: "Hatch geometry", key: "hatchSpacingMinMm",    label: "Spacing min mm",         type: "range",    elemId: "rngHatchSpacingMinMm" },
+                { group: "Hatch geometry", key: "hatchSpacingMaxMm",    label: "Spacing max mm",         type: "range",    elemId: "rngHatchSpacingMaxMm" },
+                { group: "Hatch geometry", key: "hatchLineWidthMm",     label: "Line width mm",          type: "range",    elemId: "rngHatchLineWidthMm" },
+                { group: "Hatch geometry", key: "hatchDensityChannel", label: "Density channel",        type: "select",   elemId: "selHatchDensityChannel" },
+
+                { group: "Hatch styling",  key: "lumDensityAmt",        label: "Lum density",            type: "range",    elemId: "rngLumDensityAmt" },
+                { group: "Hatch styling",  key: "hueAngleScale",        label: "Hue → angle",            type: "range",    elemId: "rngHueAngleScale" },
+                { group: "Hatch styling",  key: "angleOffset",          label: "Angle offset",           type: "range",    elemId: "rngAngleOffset" },
+                { group: "Hatch styling",  key: "satAngleAmt",          label: "Sat → angle",            type: "range",    elemId: "rngSatAngleAmt" },
+
+                { group: "Depth shading",  key: "shadingMode",          label: "Shading mode",           type: "select",   elemId: "selShadingMode" },
+                { group: "Depth shading",  key: "shadingAngleAmt",      label: "Shading angle",          type: "range",    elemId: "rngShadingAngleAmt" },
+                { group: "Depth shading",  key: "shadingDensityAmt",    label: "Shading density",        type: "range",    elemId: "rngShadingDensityAmt" },
+
+                { group: "Feature holes & outlines", key: "feature.lipsOuter.hole",    label: "Lips outer · hole",    type: "checkbox", elemId: "chkHoleLipsOuter" },
+                { group: "Feature holes & outlines", key: "feature.lipsOuter.outline", label: "Lips outer · outline", type: "checkbox", elemId: "chkOutlineLipsOuter" },
+                { group: "Feature holes & outlines", key: "feature.lipsInner.hole",    label: "Lips inner · hole",    type: "checkbox", elemId: "chkHoleLipsInner" },
+                { group: "Feature holes & outlines", key: "feature.lipsInner.outline", label: "Lips inner · outline", type: "checkbox", elemId: "chkOutlineLipsInner" },
+                { group: "Feature holes & outlines", key: "feature.leftEye.hole",      label: "Left eye · hole",      type: "checkbox", elemId: "chkHoleLeftEye" },
+                { group: "Feature holes & outlines", key: "feature.leftEye.outline",   label: "Left eye · outline",   type: "checkbox", elemId: "chkOutlineLeftEye" },
+                { group: "Feature holes & outlines", key: "feature.rightEye.hole",     label: "Right eye · hole",     type: "checkbox", elemId: "chkHoleRightEye" },
+                { group: "Feature holes & outlines", key: "feature.rightEye.outline",  label: "Right eye · outline",  type: "checkbox", elemId: "chkOutlineRightEye" },
+                { group: "Feature holes & outlines", key: "feature.leftIris.hole",     label: "Left iris · hole",     type: "checkbox", elemId: "chkHoleLeftIris" },
+                { group: "Feature holes & outlines", key: "feature.leftIris.outline",  label: "Left iris · outline",  type: "checkbox", elemId: "chkOutlineLeftIris" },
+                { group: "Feature holes & outlines", key: "feature.rightIris.hole",    label: "Right iris · hole",    type: "checkbox", elemId: "chkHoleRightIris" },
+                { group: "Feature holes & outlines", key: "feature.rightIris.outline", label: "Right iris · outline", type: "checkbox", elemId: "chkOutlineRightIris" },
+                { group: "Feature holes & outlines", key: "feature.leftBrow.hole",     label: "Left brow · hole",     type: "checkbox", elemId: "chkHoleLeftBrow" },
+                { group: "Feature holes & outlines", key: "feature.leftBrow.outline",  label: "Left brow · outline",  type: "checkbox", elemId: "chkOutlineLeftBrow" },
+                { group: "Feature holes & outlines", key: "feature.rightBrow.hole",    label: "Right brow · hole",    type: "checkbox", elemId: "chkHoleRightBrow" },
+                { group: "Feature holes & outlines", key: "feature.rightBrow.outline", label: "Right brow · outline", type: "checkbox", elemId: "chkOutlineRightBrow" },
+                { group: "Feature holes & outlines", key: "feature.faceOval.hole",     label: "Face oval · hole",     type: "checkbox", elemId: "chkHoleFaceOval" },
+                { group: "Feature holes & outlines", key: "feature.faceOval.outline",  label: "Face oval · outline",  type: "checkbox", elemId: "chkOutlineFaceOval" },
+                { group: "Feature holes & outlines", key: "feature.handsHull.hole",    label: "Hands hull · hole",    type: "checkbox", elemId: "chkHoleHandsHull" },
+                { group: "Feature holes & outlines", key: "feature.handsHull.outline", label: "Hands hull · outline", type: "checkbox", elemId: "chkOutlineHandsHull" },
+                { group: "Feature holes & outlines", key: "holePadMm",                 label: "Hole pad mm",          type: "range",    elemId: "rngHolePadMm" },
+
+                { group: "Silhouette",     key: "silhouetteEnabled",    label: "Silhouette enabled",     type: "checkbox", elemId: "chkSilhouette" },
+                { group: "Silhouette",     key: "silhouetteSimplifyMm", label: "Silhouette simplify mm", type: "range",    elemId: "rngSilhouetteSimplifyMm" },
+
+                { group: "SVG export",     key: "svgPageSize",          label: "Page size",              type: "select",   elemId: "selSvgPageSize" },
+                { group: "SVG export",     key: "svgMirror",            label: "Mirror SVG",             type: "checkbox", elemId: "chkSvgMirror" },
+            ];
+
+            let midiAccess = null;
+            let activeMidiInput = null;
+            let midiLearnMode = false;
+            let midiArmedKey = null;
+            const midiLastValues = Object.create(null);
+
+            function midiSupported() {
+                return typeof navigator !== "undefined" && typeof navigator.requestMIDIAccess === "function";
+            }
+
+            async function initMidi() {
+                const info = document.getElementById("midiSupportInfo");
+                renderMidiMappingList();
+                updateMidiLearnStatus();
+                if (!midiSupported()) {
+                    info.textContent = "Web MIDI is not supported in this browser. Try Chrome or Edge.";
+                    document.getElementById("selMidiDevice").disabled = true;
+                    document.getElementById("btnMidiLearn").disabled = true;
+                    return;
+                }
+                try {
+                    midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+                    info.innerHTML = '<span class="ok">Web MIDI ready.</span> Select an input device below.';
+                    midiAccess.onstatechange = () => { refreshMidiInputs(); };
+                    refreshMidiInputs();
+                } catch (e) {
+                    info.textContent = `MIDI access denied: ${e?.message ?? e}`;
+                }
+            }
+
+            function refreshMidiInputs() {
+                const sel = document.getElementById("selMidiDevice");
+                if (!sel) return;
+                const prev = HP.midiDeviceId || "";
+                sel.innerHTML = '<option value="">No device</option>';
+                if (!midiAccess) return;
+                let found = false;
+                for (const inp of midiAccess.inputs.values()) {
+                    const opt = document.createElement("option");
+                    opt.value = inp.id;
+                    opt.textContent = inp.name + (inp.manufacturer ? ` · ${inp.manufacturer}` : "");
+                    sel.appendChild(opt);
+                    if (inp.id === prev) found = true;
+                }
+                sel.value = found ? prev : "";
+                selectMidiDevice(sel.value);
+            }
+
+            function selectMidiDevice(id) {
+                if (activeMidiInput) {
+                    try { activeMidiInput.onmidimessage = null; } catch (_) { /* noop */ }
+                    activeMidiInput = null;
+                }
+                if (!id || !midiAccess) return;
+                const inp = midiAccess.inputs.get(id);
+                if (!inp) return;
+                inp.onmidimessage = onMidiMessage;
+                activeMidiInput = inp;
+            }
+
+            function describeMidiMapping(m) {
+                if (!m) return "—";
+                const ch = m.channel + 1;
+                if (m.type === "cc") return `CC ch${ch} #${m.number}`;
+                if (m.type === "note") return `Note ch${ch} #${m.number}`;
+                return "—";
+            }
+
+            function onMidiMessage(e) {
+                const data = e.data;
+                if (!data || data.length < 2) return;
+                const status = data[0];
+                const cmd = status & 0xF0;
+                const channel = status & 0x0F;
+                const d1 = data[1];
+                const d2 = data.length > 2 ? data[2] : 0;
+                let inMsg = null;
+                if (cmd === 0xB0) inMsg = { type: "cc", channel, number: d1, value: d2 };
+                else if (cmd === 0x90) inMsg = { type: "note", channel, number: d1, value: d2 };
+                else if (cmd === 0x80) inMsg = { type: "note", channel, number: d1, value: 0 };
+                else return;
+
+                if (midiLearnMode && midiArmedKey) {
+                    /* Don't bind on note-off / zero-velocity events. */
+                    if (inMsg.type === "note" && inMsg.value === 0) return;
+                    const param = MIDI_PARAMS.find((p) => p.key === midiArmedKey);
+                    if (!param) { midiArmedKey = null; return; }
+                    HP.midiMappings[midiArmedKey] = { type: inMsg.type, channel: inMsg.channel, number: inMsg.number };
+                    persistSettings();
+                    midiArmedKey = null;
+                    renderMidiMappingList();
+                    updateMidiLearnStatus();
+                    return;
+                }
+
+                for (const [key, mapping] of Object.entries(HP.midiMappings)) {
+                    if (mapping && mapping.type === inMsg.type && mapping.channel === inMsg.channel && mapping.number === inMsg.number) {
+                        applyMidiValue(key, inMsg.value);
+                    }
+                }
+            }
+
+            function applyMidiValue(paramKey, value) {
+                const param = MIDI_PARAMS.find((p) => p.key === paramKey);
+                if (!param) return;
+                const elem = document.getElementById(param.elemId);
+                if (!elem) return;
+                const prev = midiLastValues[paramKey] ?? 0;
+                midiLastValues[paramKey] = value;
+
+                if (param.type === "range") {
+                    const min = Number(elem.min);
+                    const max = Number(elem.max);
+                    const step = Number(elem.step) || 1;
+                    const t = Math.max(0, Math.min(1, value / 127));
+                    let v = min + t * (max - min);
+                    v = Math.round(v / step) * step;
+                    /* Avoid floating-point drift accumulating across messages. */
+                    const decimals = (String(step).split(".")[1] || "").length;
+                    if (decimals > 0) v = Number(v.toFixed(decimals));
+                    if (Number(elem.value) !== v) {
+                        elem.value = String(v);
+                        elem.dispatchEvent(new Event("input", { bubbles: true }));
+                    }
+                } else if (param.type === "checkbox") {
+                    if (prev <= 64 && value > 64) {
+                        elem.checked = !elem.checked;
+                        elem.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+                } else if (param.type === "select") {
+                    const opts = elem.options;
+                    if (!opts.length) return;
+                    const idx = Math.min(opts.length - 1, Math.floor((value / 128) * opts.length));
+                    const target = opts[idx]?.value;
+                    if (target != null && elem.value !== target) {
+                        elem.value = target;
+                        elem.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+                }
+            }
+
+            function setMidiLearnMode(on) {
+                midiLearnMode = !!on;
+                if (!midiLearnMode) midiArmedKey = null;
+                const btn = document.getElementById("btnMidiLearn");
+                if (btn) {
+                    btn.classList.toggle("on", midiLearnMode);
+                    btn.textContent = midiLearnMode ? "Disable MIDI learn" : "Enable MIDI learn";
+                }
+                updateMidiLearnStatus();
+                renderMidiMappingList();
+            }
+
+            function updateMidiLearnStatus() {
+                const el = document.getElementById("midiLearnStatus");
+                if (!el) return;
+                if (!midiLearnMode) {
+                    el.textContent = "Turn on learn, click a parameter to arm it, then move a control on your MIDI device to bind.";
+                    return;
+                }
+                if (midiArmedKey) {
+                    const param = MIDI_PARAMS.find((p) => p.key === midiArmedKey);
+                    el.innerHTML = `Armed: <span class="ok">${param?.label ?? midiArmedKey}</span>. Move a control or press a note to bind.`;
+                } else {
+                    el.textContent = "Learn mode is on. Click any parameter row below to arm it.";
+                }
+            }
+
+            function renderMidiMappingList() {
+                const root = document.getElementById("midiMappingList");
+                if (!root) return;
+                root.innerHTML = "";
+                let lastGroup = null;
+                for (const param of MIDI_PARAMS) {
+                    if (param.group !== lastGroup) {
+                        const head = document.createElement("div");
+                        head.className = "midi-section-label";
+                        head.textContent = param.group;
+                        root.appendChild(head);
+                        lastGroup = param.group;
+                    }
+                    const row = document.createElement("div");
+                    row.className = "midi-row";
+                    const mapping = HP.midiMappings[param.key];
+                    if (mapping) row.classList.add("has-mapping");
+                    if (midiLearnMode && midiArmedKey === param.key) row.classList.add("armed");
+
+                    const lab = document.createElement("span");
+                    lab.className = "midi-row-label";
+                    lab.textContent = param.label;
+                    row.appendChild(lab);
+
+                    const map = document.createElement("span");
+                    map.className = "midi-row-mapping" + (mapping ? "" : " empty");
+                    map.textContent = describeMidiMapping(mapping);
+                    row.appendChild(map);
+
+                    const learnBtn = document.createElement("button");
+                    learnBtn.type = "button";
+                    learnBtn.textContent = midiLearnMode && midiArmedKey === param.key ? "Cancel" : "Learn";
+                    learnBtn.addEventListener("click", () => {
+                        if (!midiLearnMode) setMidiLearnMode(true);
+                        midiArmedKey = midiArmedKey === param.key ? null : param.key;
+                        renderMidiMappingList();
+                        updateMidiLearnStatus();
+                    });
+                    row.appendChild(learnBtn);
+
+                    const clearBtn = document.createElement("button");
+                    clearBtn.type = "button";
+                    clearBtn.textContent = "×";
+                    clearBtn.title = "Clear mapping";
+                    clearBtn.disabled = !mapping;
+                    clearBtn.addEventListener("click", () => {
+                        delete HP.midiMappings[param.key];
+                        persistSettings();
+                        renderMidiMappingList();
+                    });
+                    row.appendChild(clearBtn);
+
+                    root.appendChild(row);
+                }
+            }
+
+            function clearAllMidiMappings() {
+                HP.midiMappings = {};
+                persistSettings();
+                renderMidiMappingList();
             }
 
             /* ── MediaPipe landmark ring indices ─────────────────── */
@@ -2743,6 +3162,20 @@
                 }
 
                 watershedControls.hidden = HP.regionAlgo !== "watershed";
+
+                /* MIDI device + mapping list. The device select is repopulated by
+                   refreshMidiInputs(); only mirror the current value here. */
+                const sm = document.getElementById("selMidiDevice");
+                if (sm) {
+                    if (HP.midiDeviceId && [...sm.options].some((o) => o.value === HP.midiDeviceId)) {
+                        sm.value = HP.midiDeviceId;
+                    } else {
+                        sm.value = "";
+                    }
+                    selectMidiDevice(sm.value);
+                }
+                renderMidiMappingList();
+                updateMidiLearnStatus();
             }
 
             /* Wire change → update HP + persist (+ optional side effect). */
@@ -2878,6 +3311,26 @@
                 }
             });
 
+            /* ── MIDI wiring ──────────────────────────────────── */
+
+            const selMidiDevice = document.getElementById("selMidiDevice");
+            selMidiDevice.addEventListener("change", () => {
+                HP.midiDeviceId = selMidiDevice.value;
+                persistSettings();
+                selectMidiDevice(selMidiDevice.value);
+            });
+
+            document.getElementById("btnMidiLearn").addEventListener("click", () => {
+                setMidiLearnMode(!midiLearnMode);
+            });
+
+            document.getElementById("btnMidiClearAll").addEventListener("click", () => {
+                if (Object.keys(HP.midiMappings || {}).length === 0) return;
+                if (!confirm("Clear all MIDI mappings?")) return;
+                clearAllMidiMappings();
+                setStatus("MIDI mappings cleared");
+            });
+
             btnExportSvg.addEventListener("click", async () => {
                 if (!lastExportSnapshot || lastExportLineCount === 0) return;
                 playExportFlash();
@@ -2921,6 +3374,9 @@
 
             if (glCtx) setStatus("GPU available · loading defaults");
             else setStatus("CPU/WebGL2 fallback · loading defaults");
+
+            /* Kick off MIDI; the prompt resolves independently from camera/model loading. */
+            void initMidi();
 
             Promise.allSettled([reloadMediaPipe(), reloadDepthModel(), refreshCameras()]).then((results) => {
                 /* Re-apply once camera options are populated, so HP.cameraDeviceId can latch. */
