@@ -1665,6 +1665,9 @@
                     case "r": v = m.r / 255; break;
                     case "g": v = m.g / 255; break;
                     case "b": v = m.b / 255; break;
+                    case "sat": { const hsl = hslFromRgb(m.r, m.g, m.b); v = hsl.s; break; }
+                    case "hue": { const hsl = hslFromRgb(m.r, m.g, m.b); v = hsl.h; break; }
+                    case "lum":
                     default: { const hsl = hslFromRgb(m.r, m.g, m.b); v = hsl.l; }
                 }
                 return Math.max(0, Math.min(1, v));
@@ -2303,7 +2306,7 @@
                 return Math.min(availW / Math.max(1, outW), availH / Math.max(1, outH));
             }
 
-            function cellStyleFromMeans(mAngle, mDensity, lid, shadeOpt) {
+            function cellStyleFromMeans(mAngle, mDensity, lid, shadeOpt, sFit) {
                 const hsl = hslFromRgb(mAngle.r, mAngle.g, mAngle.b);
                 let angle = HP.angleOffset + hsl.h * 360 * HP.hueAngleScale + hsl.s * HP.satAngleAmt;
                 let v = normalizedHatchDensityDrive(mDensity, HP.hatchDensityChannel);
@@ -2316,14 +2319,19 @@
                     vMix += shadeOpt.density[lid];
                     vMix = Math.max(0, Math.min(1, vMix));
                 }
+                /* Work in mm so the user's min/max sliders are the source of truth, then
+                   convert to drawing-coord units (analysis-px × sFit) at the very end. */
+                let minMm = HP.hatchSpacingMinMm;
+                let maxMm = HP.hatchSpacingMaxMm;
+                if (maxMm < minMm) { const s = minMm; minMm = maxMm; maxMm = s; }
+                let spacingMm = minMm + (1 - vMix) * (maxMm - minMm);
+                spacingMm = Math.round(spacingMm * 20) / 20;
+                spacingMm = Math.max(minMm, Math.min(maxMm, spacingMm));
                 const mmPerPx = computeHatchExportInnerScale(analysisW, analysisH, HP.svgPageSize);
-                let minPx = HP.hatchSpacingMinMm / mmPerPx;
-                let maxPx = HP.hatchSpacingMaxMm / mmPerPx;
-                if (maxPx < minPx) { const s = minPx; minPx = maxPx; maxPx = s; }
-                let spacing = minPx + (1 - vMix) * (maxPx - minPx);
-                spacing = Math.max(1.25, spacing);
+                const sScale = sFit > 0 ? sFit : 1;
+                let spacing = (spacingMm / Math.max(1e-6, mmPerPx)) * sScale;
+                spacing = Math.max(0.5, spacing);
                 angle = Math.round(angle * 2) / 2;
-                spacing = Math.round(spacing * 4) / 4;
                 return { angle, spacing };
             }
 
@@ -2477,7 +2485,7 @@
                 cx /= n; cy /= n;
                 const rad = (angleDeg * Math.PI) / 180;
                 const ux = Math.cos(rad), uy = Math.sin(rad);
-                const half = Math.max(spacing * sFit * 8, sFit * 14);
+                const half = Math.max(spacing * 8, sFit * 14);
                 const px0 = ox + cx * sFit - ux * half, py0 = oy + cy * sFit - uy * half;
                 const px1 = ox + cx * sFit + ux * half, py1 = oy + cy * sFit + uy * half;
                 const steps = Math.min(256, Math.max(48, (2 * half) | 0));
@@ -2490,7 +2498,7 @@
                     if (!labelCounts[lid]) continue;
                     const mA = meanForHatch(lid, means, emaOverride);
                     const mD = means[lid];
-                    const st = cellStyleFromMeans(mA, mD, lid, shadeOpt);
+                    const st = cellStyleFromMeans(mA, mD, lid, shadeOpt, sFit);
                     let lines = regionHatchLines(lid, labs, st.angle, st.spacing, sFit, ox, oy);
                     if (lines.length === 0) lines = fallbackHatchLinesForLabel(lid, labs, st.angle, st.spacing, sFit, ox, oy);
                     for (const seg of lines) visitor(seg[0], seg[1]);
