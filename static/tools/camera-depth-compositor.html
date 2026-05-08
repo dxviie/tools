@@ -618,6 +618,11 @@
 
                 <h2>Preferences</h2>
                 <button type="button" id="btnResetDefaults" class="secondary">Reset to defaults</button>
+                <div class="row" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">
+                    <button type="button" id="btnExportSettings">Export JSON</button>
+                    <button type="button" id="btnImportSettings">Import JSON</button>
+                </div>
+                <input type="file" id="inpImportSettings" accept="application/json,.json" hidden />
                 <p class="hint">All settings are auto-saved to this browser.</p>
 
                 <h2>Last pass (JSON)</h2>
@@ -703,6 +708,8 @@
                ══════════════════════════════════════════════════════ */
 
             const STORAGE_KEY = "dxviie:camera-depth-compositor:settings:v1";
+            const SETTINGS_EXPORT_TYPE = "dxviie:camera-depth-compositor:settings";
+            const SETTINGS_EXPORT_VERSION = 1;
 
             const DEFAULTS = Object.freeze({
                 /* Hatch params */
@@ -815,6 +822,51 @@
                 if (!HP.mpFaceModel) HP.mpFaceModel = MODELS.faceLandmarker;
                 if (!HP.mpHandModel) HP.mpHandModel = MODELS.handLandmarker;
                 if (navigator.gpu) { HP.depthDevice = "webgpu"; HP.depthDtype = "fp16"; }
+                applySettingsToUI();
+                persistSettings();
+            }
+
+            function exportSettingsAsJson() {
+                const payload = {
+                    type: SETTINGS_EXPORT_TYPE,
+                    version: SETTINGS_EXPORT_VERSION,
+                    exportedAt: new Date().toISOString(),
+                    settings: deepClone(HP),
+                };
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                const stamp = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "_").replace("Z", "");
+                a.download = `camera-depth-compositor-settings-${stamp}.json`;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+            }
+
+            async function importSettingsFromFile(file) {
+                const text = await file.text();
+                let parsed;
+                try { parsed = JSON.parse(text); }
+                catch (_) { throw new Error("not valid JSON"); }
+
+                /* Accept either the wrapped export payload or a raw settings object. */
+                let candidate = null;
+                if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                    if (parsed.type === SETTINGS_EXPORT_TYPE && parsed.settings && typeof parsed.settings === "object") {
+                        candidate = parsed.settings;
+                    } else if (Object.keys(parsed).some((k) => k in DEFAULTS)) {
+                        candidate = parsed;
+                    }
+                }
+                if (!candidate) throw new Error("no recognizable settings");
+
+                const merged = mergeSettings(DEFAULTS, candidate);
+                Object.assign(HP, merged);
+                if (!HP.mpFaceModel) HP.mpFaceModel = MODELS.faceLandmarker;
+                if (!HP.mpHandModel) HP.mpHandModel = MODELS.handLandmarker;
+                if (HP.depthDevice === "webgpu" && !navigator.gpu) {
+                    HP.depthDevice = "wasm";
+                    if (HP.depthDtype === "fp16") HP.depthDtype = "q8";
+                }
                 applySettingsToUI();
                 persistSettings();
             }
@@ -2793,6 +2845,37 @@
                 resetSettings();
                 if (latestDepthValue) rebuildMaskCanvas();
                 setStatus("Settings reset to defaults");
+            });
+
+            document.getElementById("btnExportSettings").addEventListener("click", () => {
+                try {
+                    exportSettingsAsJson();
+                    setStatus("Settings exported");
+                } catch (e) {
+                    console.error(e);
+                    setStatus(`Export failed: ${e?.message ?? e}`, true);
+                }
+            });
+
+            const inpImportSettings = document.getElementById("inpImportSettings");
+            document.getElementById("btnImportSettings").addEventListener("click", () => {
+                inpImportSettings.value = "";
+                inpImportSettings.click();
+            });
+
+            inpImportSettings.addEventListener("change", async () => {
+                const f = inpImportSettings.files?.[0];
+                if (!f) return;
+                try {
+                    await importSettingsFromFile(f);
+                    if (latestDepthValue) rebuildMaskCanvas();
+                    setStatus(`Settings imported · ${f.name}`);
+                } catch (e) {
+                    console.error(e);
+                    setStatus(`Import failed: ${e?.message ?? e}`, true);
+                } finally {
+                    inpImportSettings.value = "";
+                }
             });
 
             btnExportSvg.addEventListener("click", async () => {
