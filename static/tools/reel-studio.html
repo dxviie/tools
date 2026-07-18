@@ -1,0 +1,2097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- tool-meta: {"name":"Reel Studio","slug":"reel-studio","description":"Timeline reel editor for socials — sequence images and trimmed video clips, assign reusable zoom/pan animation presets, add cued text overlays with saveable styles and snippets, save the whole layout as a template to refill with new assets, and export square or portrait MP4 (H.264 via WebCodecs) ready for Reels / TikTok / Shorts.","tags":["video","reel","social","mp4","timeline","template","text","animation"]} -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reel Studio</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
+  :root {
+    --bg:#0e0e0e; --panel:#161616; --panel2:#131313; --border:#2a2a2a; --border-hi:#404040;
+    --accent:#c8f060; --accent-dim:#8aaa3a; --text:#d4d4d4; --text-dim:#666;
+    --text-muted:#444; --input-bg:#1c1c1c; --danger:#e05656; --warn:#e0a856;
+    --mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:12px;
+       display:flex;flex-direction:column;overflow:hidden;}
+  button{font-family:var(--mono);}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:#2e2e2e;border-radius:4px;}
+  ::-webkit-scrollbar-thumb:hover{background:#3a3a3a;}
+
+  /* ── header ─────────────────────────────────────────────────────────── */
+  header{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--border);
+         background:var(--panel);flex-shrink:0;flex-wrap:wrap;}
+  .logo{font-size:11px;font-weight:600;letter-spacing:.18em;color:var(--accent);text-transform:uppercase;white-space:nowrap;}
+  .proj-name{background:var(--input-bg);border:1px solid var(--border);color:var(--text);
+             font-family:var(--mono);font-size:11px;padding:4px 8px;outline:none;width:150px;}
+  .proj-name:focus{border-color:var(--border-hi);}
+  .header-right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .badge{font-size:10px;padding:3px 8px;border:1px solid var(--border-hi);color:var(--text-dim);
+         letter-spacing:.08em;white-space:nowrap;}
+  .badge.warn{border-color:var(--warn);color:var(--warn);}
+
+  /* ── buttons / inputs ───────────────────────────────────────────────── */
+  .btn{background:var(--input-bg);border:1px solid var(--border);color:var(--text);font-size:11px;
+       padding:5px 10px;cursor:pointer;letter-spacing:.04em;white-space:nowrap;}
+  .btn:hover{border-color:var(--border-hi);background:#222;}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#101400;font-weight:600;}
+  .btn.primary:hover{background:#d6fa74;}
+  .btn.ghost{background:transparent;}
+  .btn.danger{color:var(--danger);}
+  .btn.danger:hover{border-color:var(--danger);}
+  .btn.tiny{padding:2px 6px;font-size:10px;}
+  .btn:disabled{opacity:.4;cursor:default;}
+  .btn.icon{padding:4px 7px;}
+  select,input[type=text],input[type=number],textarea{
+    background:var(--input-bg);border:1px solid var(--border);color:var(--text);
+    font-family:var(--mono);font-size:11px;padding:4px 7px;outline:none;}
+  select:focus,input:focus,textarea:focus{border-color:var(--border-hi);}
+  input[type=color]{width:26px;height:26px;padding:1px;border:1px solid var(--border);background:var(--input-bg);cursor:pointer;}
+  input[type=range]{accent-color:var(--accent);}
+  input[type=checkbox]{accent-color:var(--accent);}
+  .seg{display:flex;gap:0;}
+  .seg button{background:var(--input-bg);border:1px solid var(--border);color:var(--text-dim);
+              font-size:10px;padding:4px 9px;cursor:pointer;margin-left:-1px;letter-spacing:.06em;}
+  .seg button:first-child{margin-left:0;}
+  .seg button.active{background:#232815;border-color:var(--accent-dim);color:var(--accent);z-index:1;position:relative;}
+
+  /* ── main layout ────────────────────────────────────────────────────── */
+  .main{display:grid;grid-template-columns:minmax(250px,290px) 1fr minmax(270px,310px);
+        flex:1;overflow:hidden;min-height:0;}
+
+  /* ── sidebar ────────────────────────────────────────────────────────── */
+  .sidebar{border-right:1px solid var(--border);background:var(--panel);display:flex;flex-direction:column;overflow:hidden;}
+  .sidebar-scroll{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0;}
+  .section{padding:11px 13px;border-bottom:1px solid var(--border);}
+  .section-label{font-size:9px;font-weight:500;letter-spacing:.16em;color:var(--text-dim);text-transform:uppercase;
+                 margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+  .section-label::after{content:'';flex:1;height:1px;background:var(--border);}
+  .section-label .btn{margin-left:auto;}
+  .hint{font-size:10px;color:var(--text-dim);line-height:1.5;margin-top:6px;}
+
+  .dropzone{border:1px dashed var(--border-hi);padding:12px 10px;text-align:center;color:var(--text-dim);
+            font-size:10px;cursor:pointer;letter-spacing:.05em;line-height:1.6;}
+  .dropzone:hover,.dropzone.over{border-color:var(--accent-dim);color:var(--text);background:#181a12;}
+  .asset-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px;}
+  .asset{position:relative;border:1px solid var(--border);background:#000 center/cover no-repeat;
+         aspect-ratio:4/3;cursor:pointer;overflow:hidden;}
+  .asset:hover{border-color:var(--border-hi);}
+  .asset.armed{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+  .asset .a-name{position:absolute;left:0;right:0;bottom:0;padding:2px 4px;font-size:9px;
+                 background:rgba(0,0,0,.72);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .asset .a-kind{position:absolute;top:3px;left:3px;font-size:8px;padding:1px 4px;background:rgba(0,0,0,.72);
+                 color:var(--accent);letter-spacing:.08em;}
+  .asset .a-del{position:absolute;top:2px;right:2px;font-size:10px;width:16px;height:16px;line-height:14px;
+                background:rgba(0,0,0,.72);color:var(--text-dim);border:none;cursor:pointer;display:none;}
+  .asset:hover .a-del{display:block;}
+  .asset .a-del:hover{color:var(--danger);}
+
+  .rowlist{display:flex;flex-direction:column;gap:4px;}
+  .rowitem{display:flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--panel2);
+           padding:5px 7px;cursor:pointer;font-size:11px;}
+  .rowitem:hover{border-color:var(--border-hi);}
+  .rowitem .r-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);}
+  .rowitem .r-sub{font-size:9px;color:var(--text-dim);white-space:nowrap;}
+  .rowitem .r-btn{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:11px;padding:1px 3px;font-family:var(--mono);}
+  .rowitem .r-btn:hover{color:var(--text);}
+  .rowitem .r-btn.del:hover{color:var(--danger);}
+  .rowitem.builtin .r-name{color:var(--text-dim);}
+
+  /* ── stage ──────────────────────────────────────────────────────────── */
+  .stage{display:flex;flex-direction:column;overflow:hidden;background:var(--panel2);min-width:0;}
+  .canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:14px;position:relative;}
+  #preview{max-width:100%;max-height:100%;background:#000;border:1px solid var(--border);
+           box-shadow:0 0 40px rgba(0,0,0,.5);}
+  #emptyHint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+             color:var(--text-dim);font-size:11px;pointer-events:none;text-align:center;line-height:1.8;}
+  .transport{display:flex;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid var(--border);
+             background:var(--panel);flex-shrink:0;}
+  .time-lbl{font-size:11px;color:var(--text);min-width:110px;}
+  .time-lbl span{color:var(--text-dim);}
+  .transport .spacer{flex:1;}
+
+  /* ── inspector ──────────────────────────────────────────────────────── */
+  .inspector{border-left:1px solid var(--border);background:var(--panel);overflow-y:auto;overflow-x:hidden;}
+  .insp-body{padding:12px 13px;display:flex;flex-direction:column;gap:10px;}
+  .insp-title{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
+              padding-bottom:7px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;}
+  .insp-title .sub{color:var(--text-dim);text-transform:none;letter-spacing:0;margin-left:auto;
+                   max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field>label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);}
+  .frow{display:flex;align-items:center;gap:7px;}
+  .frow>*{min-width:0;}
+  .frow input[type=number]{width:64px;}
+  .frow input[type=range]{flex:1;}
+  .frow select{flex:1;}
+  .frow .rv{font-size:10px;color:var(--accent);min-width:40px;text-align:right;}
+  .fgrid2{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+  .btnrow{display:flex;gap:6px;flex-wrap:wrap;}
+  .btnrow .btn{flex:1;}
+  textarea.cue-text{width:100%;min-height:56px;resize:vertical;line-height:1.5;}
+
+  /* trim bar */
+  .trimbar{position:relative;height:34px;background:#0a0a0a;border:1px solid var(--border);cursor:pointer;
+           background-size:auto 100%;background-repeat:repeat-x;}
+  .trim-dim{position:absolute;top:0;bottom:0;background:rgba(0,0,0,.72);pointer-events:none;}
+  .trim-handle{position:absolute;top:-3px;bottom:-3px;width:9px;background:var(--accent);cursor:ew-resize;z-index:2;}
+  .trim-handle::after{content:'';position:absolute;top:50%;left:3px;width:3px;height:12px;transform:translateY(-50%);
+                      background:#101400;}
+  .trim-handle.h-out{transform:translateX(-100%);}
+
+  /* ── timeline ───────────────────────────────────────────────────────── */
+  .timeline{border-top:1px solid var(--border);background:var(--panel);flex-shrink:0;display:flex;flex-direction:column;}
+  .tl-bar{display:flex;align-items:center;gap:8px;padding:6px 14px;border-bottom:1px solid var(--border);}
+  .tl-bar .lbl{font-size:9px;letter-spacing:.16em;color:var(--text-dim);text-transform:uppercase;}
+  .tl-scroll{overflow-x:auto;overflow-y:hidden;position:relative;}
+  .tl-inner{position:relative;padding:0 16px 10px;min-width:100%;width:max-content;}
+  .tl-ruler{position:relative;height:20px;cursor:col-resize;user-select:none;}
+  .tl-tick{position:absolute;bottom:0;width:1px;height:5px;background:var(--border-hi);}
+  .tl-tick.major{height:9px;}
+  .tl-tick-lbl{position:absolute;bottom:8px;font-size:8px;color:var(--text-dim);transform:translateX(2px);}
+  .tl-clips{position:relative;height:56px;margin-bottom:6px;}
+  .tl-clip{position:absolute;top:0;height:56px;border:1px solid var(--border-hi);background:#000 center/cover;
+           cursor:pointer;overflow:hidden;user-select:none;}
+  .tl-clip .c-shade{position:absolute;inset:0;background:linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,.15) 40%,rgba(0,0,0,.6));}
+  .tl-clip .c-name{position:absolute;top:2px;left:4px;right:4px;font-size:9px;color:#fff;
+                   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .tl-clip .c-anim{position:absolute;bottom:2px;left:4px;font-size:8px;color:var(--accent);letter-spacing:.04em;
+                   white-space:nowrap;overflow:hidden;max-width:70%;}
+  .tl-clip .c-dur{position:absolute;bottom:2px;right:4px;font-size:8px;color:var(--text);}
+  .tl-clip .c-fade{position:absolute;top:0;left:0;bottom:0;width:0;border-left:9px solid rgba(200,240,96,.5);
+                   border-top:28px solid transparent;border-bottom:28px solid transparent;pointer-events:none;}
+  .tl-clip.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);z-index:2;}
+  .tl-clip.empty{border-style:dashed;background:#141414;}
+  .tl-clip.empty .c-name{color:var(--text-dim);}
+  .tl-clip.drag-over-left{box-shadow:-3px 0 0 var(--accent);}
+  .tl-clip.drag-over-right{box-shadow:3px 0 0 var(--accent);}
+  .tl-clip.dragging{opacity:.4;}
+  .tl-texts{position:relative;min-height:24px;}
+  .tl-text{position:absolute;height:18px;line-height:16px;border:1px solid #4a5a2a;background:#1d2412;color:#cbe390;
+           font-size:9px;padding:0 6px;cursor:grab;user-select:none;white-space:nowrap;overflow:hidden;
+           text-overflow:ellipsis;}
+  .tl-text.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);z-index:2;}
+  .playhead{position:absolute;top:0;bottom:0;width:1px;background:var(--accent);pointer-events:none;z-index:5;}
+  .playhead::before{content:'';position:absolute;top:0;left:-4px;border:4px solid transparent;border-top:6px solid var(--accent);}
+
+  /* ── modal ──────────────────────────────────────────────────────────── */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;
+                  justify-content:center;z-index:50;}
+  .modal-backdrop.open{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--border-hi);min-width:340px;max-width:560px;
+         max-height:86vh;overflow-y:auto;padding:16px 18px;box-shadow:0 12px 60px rgba(0,0,0,.6);}
+  .modal h3{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+            font-weight:600;margin-bottom:12px;}
+  .modal .mrow{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .modal .mrow>label{font-size:10px;color:var(--text-dim);width:96px;flex-shrink:0;letter-spacing:.06em;}
+  .modal .mrow input[type=range]{flex:1;}
+  .modal .mrow input[type=number]{width:64px;}
+  .modal .mrow select,.modal .mrow input[type=text]{flex:1;}
+  .modal .mfoot{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;padding-top:12px;
+                border-top:1px solid var(--border);}
+  .modal .mnote{font-size:10px;color:var(--text-dim);line-height:1.6;margin:8px 0;}
+  .modal .mpreview{display:flex;justify-content:center;margin:10px 0;}
+  .modal .mpreview canvas{border:1px solid var(--border);background:#000;}
+  .progress{height:14px;border:1px solid var(--border-hi);background:var(--input-bg);position:relative;margin:10px 0;}
+  .progress .p-fill{position:absolute;inset:0;width:0%;background:var(--accent);transition:width .15s;}
+  .progress .p-lbl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                   font-size:9px;color:var(--text);mix-blend-mode:difference;}
+
+  /* ── toasts ─────────────────────────────────────────────────────────── */
+  .toasts{position:fixed;left:14px;bottom:14px;display:flex;flex-direction:column;gap:6px;z-index:60;pointer-events:none;}
+  .toast{background:var(--panel);border:1px solid var(--border-hi);border-left:3px solid var(--accent);
+         padding:7px 12px;font-size:11px;color:var(--text);max-width:380px;opacity:0;transform:translateY(6px);
+         transition:opacity .2s,transform .2s;}
+  .toast.show{opacity:1;transform:none;}
+  .toast.err{border-left-color:var(--danger);}
+  .toast.warn{border-left-color:var(--warn);}
+
+  kbd{border:1px solid var(--border-hi);border-radius:3px;padding:0 4px;font-size:10px;color:var(--text);background:var(--input-bg);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Reel Studio</div>
+  <input id="projName" class="proj-name" value="my-reel" spellcheck="false" title="project name (used for the exported filename)">
+  <div class="seg" id="formatSeg" title="output format">
+    <button data-f="9x16">9:16</button><button data-f="1x1">1:1</button><button data-f="4x5">4:5</button>
+  </div>
+  <select id="fpsSel" title="frame rate">
+    <option value="30">30 fps</option><option value="25">25 fps</option>
+    <option value="24">24 fps</option><option value="60">60 fps</option>
+  </select>
+  <input type="color" id="bgColor" value="#000000" title="background colour">
+  <div class="header-right">
+    <span class="badge" id="durBadge">0.0s</span>
+    <button class="btn ghost" id="safeBtn" title="toggle social UI safe-zone guides">safe zones</button>
+    <button class="btn ghost" id="helpBtn" title="help">?</button>
+    <button class="btn primary" id="exportBtn">Export MP4</button>
+  </div>
+</header>
+
+<div class="main">
+  <aside class="sidebar">
+    <div class="sidebar-scroll">
+
+      <div class="section" id="assetSection">
+        <div class="section-label">Assets</div>
+        <div class="dropzone" id="dropzone">drop images / videos here<br>or click to browse</div>
+        <div class="asset-grid" id="assetGrid"></div>
+        <div class="hint" id="assetHint">Click an asset to append it to the timeline — or to fill the selected
+          empty slot. Drag onto a clip to swap it.</div>
+        <div class="btnrow" style="margin-top:8px;">
+          <button class="btn tiny ghost" id="demoBtn" title="generate a few placeholder images to play with">+ demo images</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Animations<button class="btn tiny" id="newAnimBtn">+ new</button></div>
+        <div class="rowlist" id="animList"></div>
+        <div class="hint">Click to apply to the selected clip. Presets are reusable — edit one and every
+          clip using it follows.</div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Text snippets</div>
+        <div class="rowlist" id="snipList"></div>
+        <div class="hint">Reusable text bits. Click to drop one on the timeline at the playhead. Save new
+          ones from a selected text cue.</div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Templates<button class="btn tiny" id="saveTplBtn">save current</button></div>
+        <div class="rowlist" id="tplList"></div>
+        <div class="btnrow" style="margin-top:8px;">
+          <button class="btn tiny ghost" id="importTplBtn">import</button>
+          <button class="btn tiny ghost" id="newProjBtn">clear project</button>
+        </div>
+        <div class="hint">A template stores the whole layout — slot durations, animations, transitions and
+          text cues — without the assets. Apply it and drop new assets into the empty slots.</div>
+      </div>
+
+    </div>
+  </aside>
+
+  <main class="stage">
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="preview"></canvas>
+      <div id="emptyHint">add images or videos on the left,<br>then click them to build your timeline</div>
+    </div>
+    <div class="transport">
+      <button class="btn icon" id="toStartBtn" title="jump to start (Home)">⏮</button>
+      <button class="btn icon" id="playBtn" title="play / pause (Space)">▶</button>
+      <button class="btn icon" id="loopBtn" title="loop playback" style="color:var(--accent)">⟳</button>
+      <div class="time-lbl"><span id="timeCur">0.00</span><span> / </span><span id="timeTot">0.00</span><span>s</span></div>
+      <div class="spacer"></div>
+      <span class="hint" id="selHint"></span>
+    </div>
+  </main>
+
+  <aside class="inspector"><div class="insp-body" id="insp"></div></aside>
+</div>
+
+<div class="timeline">
+  <div class="tl-bar">
+    <span class="lbl">Timeline</span>
+    <button class="btn tiny" id="addTextBtn">+ text cue</button>
+    <span class="hint" style="margin:0 0 0 auto;">drag clips to reorder · drag text cues to re-time · <kbd>del</kbd> removes selection</span>
+  </div>
+  <div class="tl-scroll" id="tlScroll">
+    <div class="tl-inner" id="tlInner">
+      <div class="tl-ruler" id="ruler"></div>
+      <div class="tl-clips" id="clipTrack"></div>
+      <div class="tl-texts" id="textTrack"></div>
+      <div class="playhead" id="playhead" style="left:16px;"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal"><div class="modal" id="modalBox"></div></div>
+<div class="toasts" id="toasts"></div>
+
+<input type="file" id="fileInput" accept="image/*,video/*" multiple hidden>
+<input type="file" id="tplFileInput" accept="application/json,.json" hidden>
+<canvas id="exportCanvas" hidden></canvas>
+
+<!-- mp4-muxer v5.2.1 — (c) Vanilagy, MIT license — https://github.com/Vanilagy/mp4-muxer
+     Embedded (jsDelivr terser build) so this tool stays a single offline-capable file. -->
+<script>
+/**
+ * Minified by jsDelivr using Terser v5.39.0.
+ * Original file: /npm/mp4-muxer@5.2.1/build/mp4-muxer.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+"use strict";var Mp4Muxer=(()=>{var e=Object.defineProperty,t=Object.getOwnPropertyDescriptor,i=Object.getOwnPropertyNames,s=Object.prototype.hasOwnProperty,a=(e,t,i)=>{if(!t.has(e))throw TypeError("Cannot "+i)},r=(e,t,i)=>(a(e,t,"read from private field"),i?i.call(e):t.get(e)),n=(e,t,i)=>{if(t.has(e))throw TypeError("Cannot add the same private member more than once");t instanceof WeakSet?t.add(e):t.set(e,i)},o=(e,t,i,s)=>(a(e,t,"write to private field"),s?s.call(e,i):t.set(e,i),i),h=(e,t,i)=>(a(e,t,"access private method"),i),l={};((t,i)=>{for(var s in i)e(t,s,{get:i[s],enumerable:!0})})(l,{ArrayBufferTarget:()=>Me,FileSystemWritableFileStreamTarget:()=>Oe,Muxer:()=>Rt,StreamTarget:()=>We});var d,f,u,m,p,c,w,g,b=new Uint8Array(8),y=new DataView(b.buffer),k=e=>[(e%256+256)%256],T=e=>(y.setUint16(0,e,!1),[b[0],b[1]]),C=e=>(y.setUint32(0,e,!1),[b[1],b[2],b[3]]),v=e=>(y.setUint32(0,e,!1),[b[0],b[1],b[2],b[3]]),S=e=>(y.setUint32(0,Math.floor(e/2**32),!1),y.setUint32(4,e,!1),[b[0],b[1],b[2],b[3],b[4],b[5],b[6],b[7]]),x=e=>(y.setInt16(0,256*e,!1),[b[0],b[1]]),z=e=>(y.setInt32(0,65536*e,!1),[b[0],b[1],b[2],b[3]]),E=e=>(y.setInt32(0,2**30*e,!1),[b[0],b[1],b[2],b[3]]),A=(e,t=!1)=>{let i=Array(e.length).fill(null).map(((t,i)=>e.charCodeAt(i)));return t&&i.push(0),i},M=e=>e&&e[e.length-1],W=e=>{let t;for(let i of e)(!t||i.presentationTimestamp>t.presentationTimestamp)&&(t=i);return t},O=(e,t,i=!0)=>{let s=e*t;return i?Math.round(s):s},B=e=>{let t=e*(Math.PI/180),i=Math.cos(t),s=Math.sin(t);return[i,s,0,-s,i,0,0,0,1]},U=B(0),D=e=>[z(e[0]),z(e[1]),E(e[2]),z(e[3]),z(e[4]),E(e[5]),z(e[6]),z(e[7]),E(e[8])],j=e=>e?"object"!=typeof e?e:Array.isArray(e)?e.map(j):Object.fromEntries(Object.entries(e).map((([e,t])=>[e,j(t)]))):e,R=e=>e>=0&&e<2**32,I=(e,t,i)=>({type:e,contents:t&&new Uint8Array(t.flat(10)),children:i}),N=(e,t,i,s,a)=>I(e,[k(t),C(i),s??[]],a),V=e=>({type:"mdat",largeSize:e}),F=(e,t,i=!1)=>I("moov",null,[L(t,e),...e.map((e=>$(e,t))),i?me(e):null]),L=(e,t)=>{let i=O(Math.max(0,...t.filter((e=>e.samples.length>0)).map((e=>{const t=W(e.samples);return t.presentationTimestamp+t.duration}))),Bt),s=Math.max(...t.map((e=>e.id)))+1,a=!R(e)||!R(i),r=a?S:v;return N("mvhd",+a,0,[r(e),r(e),v(Bt),r(i),z(1),x(1),Array(10).fill(0),D(U),Array(24).fill(0),v(s)])},$=(e,t)=>I("trak",null,[P(e,t),H(e,t)]),P=(e,t)=>{let i,s=W(e.samples),a=O(s?s.presentationTimestamp+s.duration:0,Bt),r=!R(t)||!R(a),n=r?S:v;return i="video"===e.info.type?"number"==typeof e.info.rotation?B(e.info.rotation):e.info.rotation:U,N("tkhd",+r,3,[n(t),n(t),v(e.id),v(0),n(a),Array(8).fill(0),T(0),T(0),x("audio"===e.info.type?1:0),T(0),D(i),z("video"===e.info.type?e.info.width:0),z("video"===e.info.type?e.info.height:0)])},H=(e,t)=>I("mdia",null,[_(e,t),q("video"===e.info.type?"vide":"soun"),G(e)]),_=(e,t)=>{let i=W(e.samples),s=O(i?i.presentationTimestamp+i.duration:0,e.timescale),a=!R(t)||!R(s),r=a?S:v;return N("mdhd",+a,0,[r(t),r(t),v(e.timescale),r(s),T(21956),T(0)])},q=e=>N("hdlr",0,0,[A("mhlr"),A(e),v(0),v(0),v(0),A("mp4-muxer-hdlr",!0)]),G=e=>I("minf",null,["video"===e.info.type?J():K(),Q(),Z(e)]),J=()=>N("vmhd",0,1,[T(0),T(0),T(0),T(0)]),K=()=>N("smhd",0,0,[T(0),T(0)]),Q=()=>I("dinf",null,[X()]),X=()=>N("dref",0,0,[v(1)],[Y()]),Y=()=>N("url ",0,1),Z=e=>{const t=e.compositionTimeOffsetTable.length>1||e.compositionTimeOffsetTable.some((e=>0!==e.sampleCompositionTimeOffset));return I("stbl",null,[ee(e),oe(e),he(e),le(e),de(e),fe(e),t?ue(e):null])},ee=e=>N("stsd",0,0,[v(1)],["video"===e.info.type?te(Se[e.info.codec],e):ne(ze[e.info.codec],e)]),te=(e,t)=>{return I(e,[Array(6).fill(0),T(1),T(0),T(0),Array(12).fill(0),T(t.info.width),T(t.info.height),v(4718592),v(4718592),v(0),T(1),Array(32).fill(0),T(24),(i=65535,y.setInt16(0,i,!1),[b[0],b[1]])],[xe[t.info.codec](t),t.info.decoderConfig.colorSpace?re(t):null]);var i},ie={bt709:1,bt470bg:5,smpte170m:6},se={bt709:1,smpte170m:6,"iec61966-2-1":13},ae={rgb:0,bt709:1,bt470bg:5,smpte170m:6},re=e=>I("colr",[A("nclx"),T(ie[e.info.decoderConfig.colorSpace.primaries]),T(se[e.info.decoderConfig.colorSpace.transfer]),T(ae[e.info.decoderConfig.colorSpace.matrix]),k((e.info.decoderConfig.colorSpace.fullRange?1:0)<<7)]),ne=(e,t)=>I(e,[Array(6).fill(0),T(1),T(0),T(0),v(0),T(t.info.numberOfChannels),T(16),T(0),T(0),z(t.info.sampleRate)],[Ee[t.info.codec](t)]),oe=e=>N("stts",0,0,[v(e.timeToSampleTable.length),e.timeToSampleTable.map((e=>[v(e.sampleCount),v(e.sampleDelta)]))]),he=e=>{if(e.samples.every((e=>"key"===e.type)))return null;let t=[...e.samples.entries()].filter((([,e])=>"key"===e.type));return N("stss",0,0,[v(t.length),t.map((([e])=>v(e+1)))])},le=e=>N("stsc",0,0,[v(e.compactlyCodedChunkTable.length),e.compactlyCodedChunkTable.map((e=>[v(e.firstChunk),v(e.samplesPerChunk),v(1)]))]),de=e=>N("stsz",0,0,[v(0),v(e.samples.length),e.samples.map((e=>v(e.size)))]),fe=e=>e.finalizedChunks.length>0&&M(e.finalizedChunks).offset>=2**32?N("co64",0,0,[v(e.finalizedChunks.length),e.finalizedChunks.map((e=>S(e.offset)))]):N("stco",0,0,[v(e.finalizedChunks.length),e.finalizedChunks.map((e=>v(e.offset)))]),ue=e=>N("ctts",0,0,[v(e.compositionTimeOffsetTable.length),e.compositionTimeOffsetTable.map((e=>[v(e.sampleCount),v(e.sampleCompositionTimeOffset)]))]),me=e=>I("mvex",null,e.map(pe)),pe=e=>N("trex",0,0,[v(e.id),v(1),v(0),v(0),v(0)]),ce=(e,t)=>I("moof",null,[we(e),...t.map(be)]),we=e=>N("mfhd",0,0,[v(e)]),ge=e=>{let t=0,i=0,s="delta"===e.type;return i|=+s,t|=s?1:2,t<<24|i<<16},be=e=>I("traf",null,[ye(e),ke(e),Te(e)]),ye=e=>{let t=0;t|=8,t|=16,t|=32,t|=131072;let i=e.currentChunk.samples[1]??e.currentChunk.samples[0],s={duration:i.timescaleUnitsToNextSample,size:i.size,flags:ge(i)};return N("tfhd",0,131128,[v(e.id),v(s.duration),v(s.size),v(s.flags)])},ke=e=>N("tfdt",1,0,[S(O(e.currentChunk.startTimestamp,e.timescale))]),Te=e=>{let t=e.currentChunk.samples.map((e=>e.timescaleUnitsToNextSample)),i=e.currentChunk.samples.map((e=>e.size)),s=e.currentChunk.samples.map(ge),a=e.currentChunk.samples.map((t=>O(t.presentationTimestamp-t.decodeTimestamp,e.timescale))),r=new Set(t),n=new Set(i),o=new Set(s),h=new Set(a),l=2===o.size&&s[0]!==s[1],d=r.size>1,f=n.size>1,u=!l&&o.size>1,m=h.size>1||[...h].some((e=>0!==e)),p=0;return p|=1,p|=4*+l,p|=256*+d,p|=512*+f,p|=1024*+u,p|=2048*+m,N("trun",1,p,[v(e.currentChunk.samples.length),v(e.currentChunk.offset-e.currentChunk.moofOffset||0),l?v(s[0]):[],e.currentChunk.samples.map(((e,r)=>{return[d?v(t[r]):[],f?v(i[r]):[],u?v(s[r]):[],m?(n=a[r],y.setInt32(0,n,!1),[b[0],b[1],b[2],b[3]]):[]];var n}))])},Ce=(e,t)=>N("tfra",1,0,[v(e.id),v(63),v(e.finalizedChunks.length),e.finalizedChunks.map((i=>[S(O(i.startTimestamp,e.timescale)),S(i.moofOffset),v(t+1),v(1),v(1)]))]),ve=()=>N("mfro",0,0,[v(0)]),Se={avc:"avc1",hevc:"hvc1",vp9:"vp09",av1:"av01"},xe={avc:e=>e.info.decoderConfig&&I("avcC",[...new Uint8Array(e.info.decoderConfig.description)]),hevc:e=>e.info.decoderConfig&&I("hvcC",[...new Uint8Array(e.info.decoderConfig.description)]),vp9:e=>{if(!e.info.decoderConfig)return null;let t=e.info.decoderConfig;if(!t.colorSpace)throw new Error("'colorSpace' is required in the decoder config for VP9.");let i=t.codec.split("."),s=Number(i[1]),a=Number(i[2]),r=0+(Number(i[3])<<4)+Number(t.colorSpace.fullRange);return N("vpcC",1,0,[k(s),k(a),k(r),k(2),k(2),k(2),T(0)])},av1:()=>I("av1C",[129,0,0,0])},ze={aac:"mp4a",opus:"Opus"},Ee={aac:e=>{let t=new Uint8Array(e.info.decoderConfig.description);return N("esds",0,0,[v(58753152),k(32+t.byteLength),T(1),k(0),v(75530368),k(18+t.byteLength),k(64),k(21),C(0),v(130071),v(130071),v(92307584),k(t.byteLength),...t,v(109084800),k(1),k(2)])},opus:e=>{let t=3840,i=0;const s=e.info.decoderConfig?.description;if(s){if(s.byteLength<18)throw new TypeError("Invalid decoder description provided for Opus; must be at least 18 bytes long.");const e=ArrayBuffer.isView(s)?new DataView(s.buffer,s.byteOffset,s.byteLength):new DataView(s);t=e.getUint16(10,!0),i=e.getInt16(14,!0)}return I("dOps",[k(0),k(e.info.numberOfChannels),T(t),v(e.info.sampleRate),x(i),k(0)])}},Ae=(Symbol("isTarget"),class{}),Me=class extends Ae{constructor(){super(...arguments),this.buffer=null}},We=class extends Ae{constructor(e){if(super(),this.options=e,"object"!=typeof e)throw new TypeError("StreamTarget requires an options object to be passed to its constructor.");if(e.onData){if("function"!=typeof e.onData)throw new TypeError("options.onData, when provided, must be a function.");if(e.onData.length<2)throw new TypeError("options.onData, when provided, must be a function that takes in at least two arguments (data and position). Ignoring the position argument, which specifies the byte offset at which the data is to be written, can lead to broken outputs.")}if(void 0!==e.chunked&&"boolean"!=typeof e.chunked)throw new TypeError("options.chunked, when provided, must be a boolean.");if(void 0!==e.chunkSize&&(!Number.isInteger(e.chunkSize)||e.chunkSize<1024))throw new TypeError("options.chunkSize, when provided, must be an integer and not smaller than 1024.")}},Oe=class extends Ae{constructor(e,t){if(super(),this.stream=e,this.options=t,!(e instanceof FileSystemWritableFileStream))throw new TypeError("FileSystemWritableFileStreamTarget requires a FileSystemWritableFileStream instance.");if(void 0!==t&&"object"!=typeof t)throw new TypeError("FileSystemWritableFileStreamTarget's options, when provided, must be an object.");if(t&&void 0!==t.chunkSize&&(!Number.isInteger(t.chunkSize)||t.chunkSize<=0))throw new TypeError("options.chunkSize, when provided, must be a positive integer")}},Be=class{constructor(){this.pos=0,n(this,d,new Uint8Array(8)),n(this,f,new DataView(r(this,d).buffer)),this.offsets=new WeakMap}seek(e){this.pos=e}writeU32(e){r(this,f).setUint32(0,e,!1),this.write(r(this,d).subarray(0,4))}writeU64(e){r(this,f).setUint32(0,Math.floor(e/2**32),!1),r(this,f).setUint32(4,e,!1),this.write(r(this,d).subarray(0,8))}writeAscii(e){for(let t=0;t<e.length;t++)r(this,f).setUint8(t%8,e.charCodeAt(t)),t%8==7&&this.write(r(this,d));e.length%8!=0&&this.write(r(this,d).subarray(0,e.length%8))}writeBox(e){if(this.offsets.set(e,this.pos),e.contents&&!e.children)this.writeBoxHeader(e,e.size??e.contents.byteLength+8),this.write(e.contents);else{let t=this.pos;if(this.writeBoxHeader(e,0),e.contents&&this.write(e.contents),e.children)for(let t of e.children)t&&this.writeBox(t);let i=this.pos,s=e.size??i-t;this.seek(t),this.writeBoxHeader(e,s),this.seek(i)}}writeBoxHeader(e,t){this.writeU32(e.largeSize?1:t),this.writeAscii(e.type),e.largeSize&&this.writeU64(t)}measureBoxHeader(e){return 8+(e.largeSize?8:0)}patchBox(e){let t=this.pos;this.seek(this.offsets.get(e)),this.writeBox(e),this.seek(t)}measureBox(e){if(e.contents&&!e.children){return this.measureBoxHeader(e)+e.contents.byteLength}{let t=this.measureBoxHeader(e);if(e.contents&&(t+=e.contents.byteLength),e.children)for(let i of e.children)i&&(t+=this.measureBox(i));return t}}};d=new WeakMap,f=new WeakMap;var Ue=class extends Be{constructor(e){super(),n(this,w),n(this,u,void 0),n(this,m,new ArrayBuffer(65536)),n(this,p,new Uint8Array(r(this,m))),n(this,c,0),o(this,u,e)}write(e){h(this,w,g).call(this,this.pos+e.byteLength),r(this,p).set(e,this.pos),this.pos+=e.byteLength,o(this,c,Math.max(r(this,c),this.pos))}finalize(){h(this,w,g).call(this,this.pos),r(this,u).buffer=r(this,m).slice(0,Math.max(r(this,c),this.pos))}};u=new WeakMap,m=new WeakMap,p=new WeakMap,c=new WeakMap,w=new WeakSet,g=function(e){let t=r(this,m).byteLength;for(;t<e;)t*=2;if(t===r(this,m).byteLength)return;let i=new ArrayBuffer(t),s=new Uint8Array(i);s.set(r(this,p),0),o(this,m,i),o(this,p,s)};var De,je,Re,Ie,Ne,Ve,Fe,Le,$e,Pe,He,_e,qe,Ge=class extends Be{constructor(e){super(),n(this,Ve),n(this,Le),n(this,Pe),n(this,_e),n(this,De,void 0),n(this,je,[]),n(this,Re,void 0),n(this,Ie,void 0),n(this,Ne,[]),o(this,De,e),o(this,Re,e.options?.chunked??!1),o(this,Ie,e.options?.chunkSize??16777216)}write(e){r(this,je).push({data:e.slice(),start:this.pos}),this.pos+=e.byteLength}flush(){if(0===r(this,je).length)return;let e=[],t=[...r(this,je)].sort(((e,t)=>e.start-t.start));e.push({start:t[0].start,size:t[0].data.byteLength});for(let i=1;i<t.length;i++){let s=e[e.length-1],a=t[i];a.start<=s.start+s.size?s.size=Math.max(s.size,a.start+a.data.byteLength-s.start):e.push({start:a.start,size:a.data.byteLength})}for(let t of e){t.data=new Uint8Array(t.size);for(let e of r(this,je))t.start<=e.start&&e.start<t.start+t.size&&t.data.set(e.data,e.start-t.start);r(this,Re)?(h(this,Ve,Fe).call(this,t.data,t.start),h(this,_e,qe).call(this)):r(this,De).options.onData?.(t.data,t.start)}r(this,je).length=0}finalize(){r(this,Re)&&h(this,_e,qe).call(this,!0)}};De=new WeakMap,je=new WeakMap,Re=new WeakMap,Ie=new WeakMap,Ne=new WeakMap,Ve=new WeakSet,Fe=function(e,t){let i=r(this,Ne).findIndex((e=>e.start<=t&&t<e.start+r(this,Ie)));-1===i&&(i=h(this,Pe,He).call(this,t));let s=r(this,Ne)[i],a=t-s.start,n=e.subarray(0,Math.min(r(this,Ie)-a,e.byteLength));s.data.set(n,a);let o={start:a,end:a+n.byteLength};if(h(this,Le,$e).call(this,s,o),0===s.written[0].start&&s.written[0].end===r(this,Ie)&&(s.shouldFlush=!0),r(this,Ne).length>2){for(let e=0;e<r(this,Ne).length-1;e++)r(this,Ne)[e].shouldFlush=!0;h(this,_e,qe).call(this)}n.byteLength<e.byteLength&&h(this,Ve,Fe).call(this,e.subarray(n.byteLength),t+n.byteLength)},Le=new WeakSet,$e=function(e,t){let i=0,s=e.written.length-1,a=-1;for(;i<=s;){let r=Math.floor(i+(s-i+1)/2);e.written[r].start<=t.start?(i=r+1,a=r):s=r-1}for(e.written.splice(a+1,0,t),(-1===a||e.written[a].end<t.start)&&a++;a<e.written.length-1&&e.written[a].end>=e.written[a+1].start;)e.written[a].end=Math.max(e.written[a].end,e.written[a+1].end),e.written.splice(a+1,1)},Pe=new WeakSet,He=function(e){let t={start:Math.floor(e/r(this,Ie))*r(this,Ie),data:new Uint8Array(r(this,Ie)),written:[],shouldFlush:!1};return r(this,Ne).push(t),r(this,Ne).sort(((e,t)=>e.start-t.start)),r(this,Ne).indexOf(t)},_e=new WeakSet,qe=function(e=!1){for(let t=0;t<r(this,Ne).length;t++){let i=r(this,Ne)[t];if(i.shouldFlush||e){for(let e of i.written)r(this,De).options.onData?.(i.data.subarray(e.start,e.end),i.start+e.start);r(this,Ne).splice(t--,1)}}};var Je,Ke,Qe,Xe,Ye,Ze,et,tt,it,st,at,rt,nt,ot,ht,lt,dt,ft,ut,mt,pt,ct,wt,gt,bt,yt,kt,Tt,Ct,vt,St,xt,zt,Et,At,Mt,Wt,Ot=class extends Ge{constructor(e){super(new We({onData:(t,i)=>e.stream.write({type:"write",data:t,position:i}),chunked:!0,chunkSize:e.options?.chunkSize}))}},Bt=1e3,Ut=["avc","hevc","vp9","av1"],Dt=["aac","opus"],jt=["strict","offset","cross-track-offset"],Rt=class{constructor(e){if(n(this,nt),n(this,ht),n(this,dt),n(this,ut),n(this,pt),n(this,wt),n(this,bt),n(this,kt),n(this,Ct),n(this,St),n(this,zt),n(this,At),n(this,Je,void 0),n(this,Ke,void 0),n(this,Qe,void 0),n(this,Xe,void 0),n(this,Ye,null),n(this,Ze,null),n(this,et,Math.floor(Date.now()/1e3)+2082844800),n(this,tt,[]),n(this,it,1),n(this,st,[]),n(this,at,[]),n(this,rt,!1),h(this,nt,ot).call(this,e),e.video=j(e.video),e.audio=j(e.audio),e.fastStart=j(e.fastStart),this.target=e.target,o(this,Je,{firstTimestampBehavior:"strict",...e}),e.target instanceof Me)o(this,Ke,new Ue(e.target));else if(e.target instanceof We)o(this,Ke,new Ge(e.target));else{if(!(e.target instanceof Oe))throw new Error(`Invalid target: ${e.target}`);o(this,Ke,new Ot(e.target))}h(this,ut,mt).call(this),h(this,ht,lt).call(this)}addVideoChunk(e,t,i,s){if(!(e instanceof EncodedVideoChunk))throw new TypeError("addVideoChunk's first argument (sample) must be of type EncodedVideoChunk.");if(t&&"object"!=typeof t)throw new TypeError("addVideoChunk's second argument (meta), when provided, must be an object.");if(void 0!==i&&(!Number.isFinite(i)||i<0))throw new TypeError("addVideoChunk's third argument (timestamp), when provided, must be a non-negative real number.");if(void 0!==s&&!Number.isFinite(s))throw new TypeError("addVideoChunk's fourth argument (compositionTimeOffset), when provided, must be a real number.");let a=new Uint8Array(e.byteLength);e.copyTo(a),this.addVideoChunkRaw(a,e.type,i??e.timestamp,e.duration,t,s)}addVideoChunkRaw(e,t,i,s,a,n){if(!(e instanceof Uint8Array))throw new TypeError("addVideoChunkRaw's first argument (data) must be an instance of Uint8Array.");if("key"!==t&&"delta"!==t)throw new TypeError("addVideoChunkRaw's second argument (type) must be either 'key' or 'delta'.");if(!Number.isFinite(i)||i<0)throw new TypeError("addVideoChunkRaw's third argument (timestamp) must be a non-negative real number.");if(!Number.isFinite(s)||s<0)throw new TypeError("addVideoChunkRaw's fourth argument (duration) must be a non-negative real number.");if(a&&"object"!=typeof a)throw new TypeError("addVideoChunkRaw's fifth argument (meta), when provided, must be an object.");if(void 0!==n&&!Number.isFinite(n))throw new TypeError("addVideoChunkRaw's sixth argument (compositionTimeOffset), when provided, must be a real number.");if(h(this,At,Mt).call(this),!r(this,Je).video)throw new Error("No video track declared.");if("object"==typeof r(this,Je).fastStart&&r(this,Ye).samples.length===r(this,Je).fastStart.expectedVideoChunks)throw new Error(`Cannot add more video chunks than specified in 'fastStart' (${r(this,Je).fastStart.expectedVideoChunks}).`);let o=h(this,wt,gt).call(this,r(this,Ye),e,t,i,s,a,n);if("fragmented"===r(this,Je).fastStart&&r(this,Ze)){for(;r(this,at).length>0&&r(this,at)[0].decodeTimestamp<=o.decodeTimestamp;){let e=r(this,at).shift();h(this,bt,yt).call(this,r(this,Ze),e)}o.decodeTimestamp<=r(this,Ze).lastDecodeTimestamp?h(this,bt,yt).call(this,r(this,Ye),o):r(this,st).push(o)}else h(this,bt,yt).call(this,r(this,Ye),o)}addAudioChunk(e,t,i){if(!(e instanceof EncodedAudioChunk))throw new TypeError("addAudioChunk's first argument (sample) must be of type EncodedAudioChunk.");if(t&&"object"!=typeof t)throw new TypeError("addAudioChunk's second argument (meta), when provided, must be an object.");if(void 0!==i&&(!Number.isFinite(i)||i<0))throw new TypeError("addAudioChunk's third argument (timestamp), when provided, must be a non-negative real number.");let s=new Uint8Array(e.byteLength);e.copyTo(s),this.addAudioChunkRaw(s,e.type,i??e.timestamp,e.duration,t)}addAudioChunkRaw(e,t,i,s,a){if(!(e instanceof Uint8Array))throw new TypeError("addAudioChunkRaw's first argument (data) must be an instance of Uint8Array.");if("key"!==t&&"delta"!==t)throw new TypeError("addAudioChunkRaw's second argument (type) must be either 'key' or 'delta'.");if(!Number.isFinite(i)||i<0)throw new TypeError("addAudioChunkRaw's third argument (timestamp) must be a non-negative real number.");if(!Number.isFinite(s)||s<0)throw new TypeError("addAudioChunkRaw's fourth argument (duration) must be a non-negative real number.");if(a&&"object"!=typeof a)throw new TypeError("addAudioChunkRaw's fifth argument (meta), when provided, must be an object.");if(h(this,At,Mt).call(this),!r(this,Je).audio)throw new Error("No audio track declared.");if("object"==typeof r(this,Je).fastStart&&r(this,Ze).samples.length===r(this,Je).fastStart.expectedAudioChunks)throw new Error(`Cannot add more audio chunks than specified in 'fastStart' (${r(this,Je).fastStart.expectedAudioChunks}).`);let n=h(this,wt,gt).call(this,r(this,Ze),e,t,i,s,a);if("fragmented"===r(this,Je).fastStart&&r(this,Ye)){for(;r(this,st).length>0&&r(this,st)[0].decodeTimestamp<=n.decodeTimestamp;){let e=r(this,st).shift();h(this,bt,yt).call(this,r(this,Ye),e)}n.decodeTimestamp<=r(this,Ye).lastDecodeTimestamp?h(this,bt,yt).call(this,r(this,Ze),n):r(this,at).push(n)}else h(this,bt,yt).call(this,r(this,Ze),n)}finalize(){if(r(this,rt))throw new Error("Cannot finalize a muxer more than once.");if("fragmented"===r(this,Je).fastStart){for(let e of r(this,st))h(this,bt,yt).call(this,r(this,Ye),e);for(let e of r(this,at))h(this,bt,yt).call(this,r(this,Ze),e);h(this,St,xt).call(this,!1)}else r(this,Ye)&&h(this,Ct,vt).call(this,r(this,Ye)),r(this,Ze)&&h(this,Ct,vt).call(this,r(this,Ze));let e=[r(this,Ye),r(this,Ze)].filter(Boolean);if("in-memory"===r(this,Je).fastStart){let t;for(let i=0;i<2;i++){let i=F(e,r(this,et)),s=r(this,Ke).measureBox(i);t=r(this,Ke).measureBox(r(this,Xe));let a=r(this,Ke).pos+s+t;for(let e of r(this,tt)){e.offset=a;for(let{data:i}of e.samples)a+=i.byteLength,t+=i.byteLength}if(a<2**32)break;t>=2**32&&(r(this,Xe).largeSize=!0)}let i=F(e,r(this,et));r(this,Ke).writeBox(i),r(this,Xe).size=t,r(this,Ke).writeBox(r(this,Xe));for(let e of r(this,tt))for(let t of e.samples)r(this,Ke).write(t.data),t.data=null}else if("fragmented"===r(this,Je).fastStart){let t=r(this,Ke).pos,i=(e=>I("mfra",null,[...e.map(Ce),ve()]))(e);r(this,Ke).writeBox(i);let s=r(this,Ke).pos-t;r(this,Ke).seek(r(this,Ke).pos-4),r(this,Ke).writeU32(s)}else{let t=r(this,Ke).offsets.get(r(this,Xe)),i=r(this,Ke).pos-t;r(this,Xe).size=i,r(this,Xe).largeSize=i>=2**32,r(this,Ke).patchBox(r(this,Xe));let s=F(e,r(this,et));if("object"==typeof r(this,Je).fastStart){r(this,Ke).seek(r(this,Qe)),r(this,Ke).writeBox(s);let e=t-r(this,Ke).pos;r(this,Ke).writeBox({type:"free",size:e})}else r(this,Ke).writeBox(s)}h(this,zt,Et).call(this),r(this,Ke).finalize(),o(this,rt,!0)}};return Je=new WeakMap,Ke=new WeakMap,Qe=new WeakMap,Xe=new WeakMap,Ye=new WeakMap,Ze=new WeakMap,et=new WeakMap,tt=new WeakMap,it=new WeakMap,st=new WeakMap,at=new WeakMap,rt=new WeakMap,nt=new WeakSet,ot=function(e){if("object"!=typeof e)throw new TypeError("The muxer requires an options object to be passed to its constructor.");if(!(e.target instanceof Ae))throw new TypeError("The target must be provided and an instance of Target.");if(e.video){if(!Ut.includes(e.video.codec))throw new TypeError(`Unsupported video codec: ${e.video.codec}`);if(!Number.isInteger(e.video.width)||e.video.width<=0)throw new TypeError(`Invalid video width: ${e.video.width}. Must be a positive integer.`);if(!Number.isInteger(e.video.height)||e.video.height<=0)throw new TypeError(`Invalid video height: ${e.video.height}. Must be a positive integer.`);const t=e.video.rotation;if("number"==typeof t&&![0,90,180,270].includes(t))throw new TypeError(`Invalid video rotation: ${t}. Has to be 0, 90, 180 or 270.`);if(Array.isArray(t)&&(9!==t.length||t.some((e=>"number"!=typeof e))))throw new TypeError(`Invalid video transformation matrix: ${t.join()}`);if(void 0!==e.video.frameRate&&(!Number.isInteger(e.video.frameRate)||e.video.frameRate<=0))throw new TypeError(`Invalid video frame rate: ${e.video.frameRate}. Must be a positive integer.`)}if(e.audio){if(!Dt.includes(e.audio.codec))throw new TypeError(`Unsupported audio codec: ${e.audio.codec}`);if(!Number.isInteger(e.audio.numberOfChannels)||e.audio.numberOfChannels<=0)throw new TypeError(`Invalid number of audio channels: ${e.audio.numberOfChannels}. Must be a positive integer.`);if(!Number.isInteger(e.audio.sampleRate)||e.audio.sampleRate<=0)throw new TypeError(`Invalid audio sample rate: ${e.audio.sampleRate}. Must be a positive integer.`)}if(e.firstTimestampBehavior&&!jt.includes(e.firstTimestampBehavior))throw new TypeError(`Invalid first timestamp behavior: ${e.firstTimestampBehavior}`);if("object"==typeof e.fastStart){if(e.video){if(void 0===e.fastStart.expectedVideoChunks)throw new TypeError("'fastStart' is an object but is missing property 'expectedVideoChunks'.");if(!Number.isInteger(e.fastStart.expectedVideoChunks)||e.fastStart.expectedVideoChunks<0)throw new TypeError("'expectedVideoChunks' must be a non-negative integer.")}if(e.audio){if(void 0===e.fastStart.expectedAudioChunks)throw new TypeError("'fastStart' is an object but is missing property 'expectedAudioChunks'.");if(!Number.isInteger(e.fastStart.expectedAudioChunks)||e.fastStart.expectedAudioChunks<0)throw new TypeError("'expectedAudioChunks' must be a non-negative integer.")}}else if(![!1,"in-memory","fragmented"].includes(e.fastStart))throw new TypeError("'fastStart' option must be false, 'in-memory', 'fragmented' or an object.");if(void 0!==e.minFragmentDuration&&(!Number.isFinite(e.minFragmentDuration)||e.minFragmentDuration<0))throw new TypeError("'minFragmentDuration' must be a non-negative number.")},ht=new WeakSet,lt=function(){var e;if(r(this,Ke).writeBox((e={holdsAvc:"avc"===r(this,Je).video?.codec,fragmented:"fragmented"===r(this,Je).fastStart}).fragmented?I("ftyp",[A("iso5"),v(512),A("iso5"),A("iso6"),A("mp41")]):I("ftyp",[A("isom"),v(512),A("isom"),e.holdsAvc?A("avc1"):[],A("mp41")])),o(this,Qe,r(this,Ke).pos),"in-memory"===r(this,Je).fastStart)o(this,Xe,V(!1));else if("fragmented"===r(this,Je).fastStart);else{if("object"==typeof r(this,Je).fastStart){let e=h(this,dt,ft).call(this);r(this,Ke).seek(r(this,Ke).pos+e)}o(this,Xe,V(!0)),r(this,Ke).writeBox(r(this,Xe))}h(this,zt,Et).call(this)},dt=new WeakSet,ft=function(){if("object"!=typeof r(this,Je).fastStart)return;let e=0,t=[r(this,Je).fastStart.expectedVideoChunks,r(this,Je).fastStart.expectedAudioChunks];for(let i of t)i&&(e+=8*Math.ceil(2/3*i),e+=4*i,e+=12*Math.ceil(2/3*i),e+=4*i,e+=8*i);return e+=4096,e},ut=new WeakSet,mt=function(){if(r(this,Je).video&&o(this,Ye,{id:1,info:{type:"video",codec:r(this,Je).video.codec,width:r(this,Je).video.width,height:r(this,Je).video.height,rotation:r(this,Je).video.rotation??0,decoderConfig:null},timescale:r(this,Je).video.frameRate??57600,samples:[],finalizedChunks:[],currentChunk:null,firstDecodeTimestamp:void 0,lastDecodeTimestamp:-1,timeToSampleTable:[],compositionTimeOffsetTable:[],lastTimescaleUnits:null,lastSample:null,compactlyCodedChunkTable:[]}),r(this,Je).audio&&(o(this,Ze,{id:r(this,Je).video?2:1,info:{type:"audio",codec:r(this,Je).audio.codec,numberOfChannels:r(this,Je).audio.numberOfChannels,sampleRate:r(this,Je).audio.sampleRate,decoderConfig:null},timescale:r(this,Je).audio.sampleRate,samples:[],finalizedChunks:[],currentChunk:null,firstDecodeTimestamp:void 0,lastDecodeTimestamp:-1,timeToSampleTable:[],compositionTimeOffsetTable:[],lastTimescaleUnits:null,lastSample:null,compactlyCodedChunkTable:[]}),"aac"===r(this,Je).audio.codec)){let e=h(this,pt,ct).call(this,2,r(this,Je).audio.sampleRate,r(this,Je).audio.numberOfChannels);r(this,Ze).info.decoderConfig={codec:r(this,Je).audio.codec,description:e,numberOfChannels:r(this,Je).audio.numberOfChannels,sampleRate:r(this,Je).audio.sampleRate}}},pt=new WeakSet,ct=function(e,t,i){let s=[96e3,88200,64e3,48e3,44100,32e3,24e3,22050,16e3,12e3,11025,8e3,7350].indexOf(t),a=i,r="";r+=e.toString(2).padStart(5,"0"),r+=s.toString(2).padStart(4,"0"),15===s&&(r+=t.toString(2).padStart(24,"0")),r+=a.toString(2).padStart(4,"0");let n=8*Math.ceil(r.length/8);r=r.padEnd(n,"0");let o=new Uint8Array(r.length/8);for(let e=0;e<r.length;e+=8)o[e/8]=parseInt(r.slice(e,e+8),2);return o},wt=new WeakSet,gt=function(e,t,i,s,a,r,n){let o=s/1e6,l=(s-(n??0))/1e6,d=a/1e6,f=h(this,kt,Tt).call(this,o,l,e);return o=f.presentationTimestamp,l=f.decodeTimestamp,r?.decoderConfig&&(null===e.info.decoderConfig?e.info.decoderConfig=r.decoderConfig:Object.assign(e.info.decoderConfig,r.decoderConfig)),{presentationTimestamp:o,decodeTimestamp:l,duration:d,data:t,size:t.byteLength,type:i,timescaleUnitsToNextSample:O(d,e.timescale)}},bt=new WeakSet,yt=function(e,t){"fragmented"!==r(this,Je).fastStart&&e.samples.push(t);const i=O(t.presentationTimestamp-t.decodeTimestamp,e.timescale);if(null!==e.lastTimescaleUnits){let s=O(t.decodeTimestamp,e.timescale,!1),a=Math.round(s-e.lastTimescaleUnits);if(e.lastTimescaleUnits+=a,e.lastSample.timescaleUnitsToNextSample=a,"fragmented"!==r(this,Je).fastStart){let t=M(e.timeToSampleTable);1===t.sampleCount?(t.sampleDelta=a,t.sampleCount++):t.sampleDelta===a?t.sampleCount++:(t.sampleCount--,e.timeToSampleTable.push({sampleCount:2,sampleDelta:a}));const s=M(e.compositionTimeOffsetTable);s.sampleCompositionTimeOffset===i?s.sampleCount++:e.compositionTimeOffsetTable.push({sampleCount:1,sampleCompositionTimeOffset:i})}}else e.lastTimescaleUnits=0,"fragmented"!==r(this,Je).fastStart&&(e.timeToSampleTable.push({sampleCount:1,sampleDelta:O(t.duration,e.timescale)}),e.compositionTimeOffsetTable.push({sampleCount:1,sampleCompositionTimeOffset:i}));e.lastSample=t;let s=!1;if(e.currentChunk){let i=t.presentationTimestamp-e.currentChunk.startTimestamp;if("fragmented"===r(this,Je).fastStart){let a=r(this,Ye)??r(this,Ze);const n=r(this,Je).minFragmentDuration??1;e===a&&"key"===t.type&&i>=n&&(s=!0,h(this,St,xt).call(this))}else s=i>=.5}else s=!0;s&&(e.currentChunk&&h(this,Ct,vt).call(this,e),e.currentChunk={startTimestamp:t.presentationTimestamp,samples:[]}),e.currentChunk.samples.push(t)},kt=new WeakSet,Tt=function(e,t,i){const s="strict"===r(this,Je).firstTimestampBehavior,a=-1===i.lastDecodeTimestamp;if(s&&a&&0!==t)throw new Error(`The first chunk for your media track must have a timestamp of 0 (received DTS=${t}).Non-zero first timestamps are often caused by directly piping frames or audio data from a MediaStreamTrack into the encoder. Their timestamps are typically relative to the age of thedocument, which is probably what you want.\n\nIf you want to offset all timestamps of a track such that the first one is zero, set firstTimestampBehavior: 'offset' in the options.\n`);if("offset"===r(this,Je).firstTimestampBehavior||"cross-track-offset"===r(this,Je).firstTimestampBehavior){let s;void 0===i.firstDecodeTimestamp&&(i.firstDecodeTimestamp=t),s="offset"===r(this,Je).firstTimestampBehavior?i.firstDecodeTimestamp:Math.min(r(this,Ye)?.firstDecodeTimestamp??1/0,r(this,Ze)?.firstDecodeTimestamp??1/0),t-=s,e-=s}if(t<i.lastDecodeTimestamp)throw new Error(`Timestamps must be monotonically increasing (DTS went from ${1e6*i.lastDecodeTimestamp} to ${1e6*t}).`);return i.lastDecodeTimestamp=t,{presentationTimestamp:e,decodeTimestamp:t}},Ct=new WeakSet,vt=function(e){if("fragmented"===r(this,Je).fastStart)throw new Error("Can't finalize individual chunks if 'fastStart' is set to 'fragmented'.");if(e.currentChunk)if(e.finalizedChunks.push(e.currentChunk),r(this,tt).push(e.currentChunk),0!==e.compactlyCodedChunkTable.length&&M(e.compactlyCodedChunkTable).samplesPerChunk===e.currentChunk.samples.length||e.compactlyCodedChunkTable.push({firstChunk:e.finalizedChunks.length,samplesPerChunk:e.currentChunk.samples.length}),"in-memory"!==r(this,Je).fastStart){e.currentChunk.offset=r(this,Ke).pos;for(let t of e.currentChunk.samples)r(this,Ke).write(t.data),t.data=null;h(this,zt,Et).call(this)}else e.currentChunk.offset=0},St=new WeakSet,xt=function(e=!0){if("fragmented"!==r(this,Je).fastStart)throw new Error("Can't finalize a fragment unless 'fastStart' is set to 'fragmented'.");let t=[r(this,Ye),r(this,Ze)].filter((e=>e&&e.currentChunk));if(0===t.length)return;let i=(s=this,a=it,{set _(e){o(s,a,e,n)},get _(){return r(s,a,l)}})._++;var s,a,n,l;if(1===i){let e=F(t,r(this,et),!0);r(this,Ke).writeBox(e)}let d=r(this,Ke).pos,f=ce(i,t);r(this,Ke).writeBox(f);{let e=V(!1),i=0;for(let e of t)for(let t of e.currentChunk.samples)i+=t.size;let s=r(this,Ke).measureBox(e)+i;s>=2**32&&(e.largeSize=!0,s=r(this,Ke).measureBox(e)+i),e.size=s,r(this,Ke).writeBox(e)}for(let e of t){e.currentChunk.offset=r(this,Ke).pos,e.currentChunk.moofOffset=d;for(let t of e.currentChunk.samples)r(this,Ke).write(t.data),t.data=null}let u=r(this,Ke).pos;r(this,Ke).seek(r(this,Ke).offsets.get(f));let m=ce(i,t);r(this,Ke).writeBox(m),r(this,Ke).seek(u);for(let e of t)e.finalizedChunks.push(e.currentChunk),r(this,tt).push(e.currentChunk),e.currentChunk=null;e&&h(this,zt,Et).call(this)},zt=new WeakSet,Et=function(){r(this,Ke)instanceof Ge&&r(this,Ke).flush()},At=new WeakSet,Mt=function(){if(r(this,rt))throw new Error("Cannot add new video or audio chunks after the file has been finalized.")},Wt=l,((a,r,n,o)=>{if(r&&"object"==typeof r||"function"==typeof r)for(let h of i(r))s.call(a,h)||h===n||e(a,h,{get:()=>r[h],enumerable:!(o=t(r,h))||o.enumerable});return a})(e({},"__esModule",{value:!0}),Wt)})();"object"==typeof module&&"object"==typeof module.exports&&Object.assign(module.exports,Mp4Muxer);
+</script>
+<script type="module">
+'use strict';
+/* ════════════════════════════════════════════════════════════════════════
+   REEL STUDIO — timeline reel editor for socials
+   assets → clips with animation presets → text cues → template → MP4
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── tiny utils ────────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+const lerp = (a, b, p) => a + (b - a) * p;
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
+const fmt = (s, d = 1) => (Math.round(s * 10 ** d) / 10 ** d).toFixed(d);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const deep = o => JSON.parse(JSON.stringify(o));
+
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r); this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r); this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+  };
+}
+function toast(msg, kind = '') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind;
+  el.textContent = msg;
+  $('toasts').appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 250); }, 2800);
+}
+
+/* ── constants ─────────────────────────────────────────────────────────── */
+const FORMATS = {
+  '9x16': { w: 1080, h: 1920, label: '9:16 · 1080×1920 (Reels / TikTok / Shorts)' },
+  '1x1':  { w: 1080, h: 1080, label: '1:1 · 1080×1080 (feed square)' },
+  '4x5':  { w: 1080, h: 1350, label: '4:5 · 1080×1350 (IG portrait feed)' },
+};
+const EASE = {
+  linear:  p => p,
+  in:      p => p * p,
+  out:     p => 1 - (1 - p) * (1 - p),
+  inout:   p => p < .5 ? 2 * p * p : 1 - ((-2 * p + 2) ** 2) / 2,
+};
+const EASE_NAMES = { linear: 'linear', in: 'ease in', out: 'ease out', inout: 'ease in-out' };
+const FONTS = {
+  sans:   { label: 'Sans',      stack: `-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif` },
+  serif:  { label: 'Serif',     stack: `Georgia,'Times New Roman',serif` },
+  mono:   { label: 'Mono',      stack: `'IBM Plex Mono',Menlo,Consolas,monospace` },
+  cond:   { label: 'Condensed', stack: `'Arial Narrow','Helvetica Neue',Arial,sans-serif` },
+  impact: { label: 'Impact',    stack: `Impact,'Arial Black',sans-serif` },
+};
+const TRANS_TYPES = { cut: 'cut', fade: 'crossfade', black: 'fade in' };
+const LS = k => 'reel-studio:v1:' + k;
+
+/* ── built-in presets ──────────────────────────────────────────────────── */
+const anim = (id, name, sF, sT, xF, xT, yF, yT, easing = 'inout') =>
+  ({ id, name, scaleFrom: sF, scaleTo: sT, xFrom: xF, xTo: xT, yFrom: yF, yTo: yT, easing });
+const BUILTIN_ANIMS = [
+  anim('a-static',  'static',          1, 1, 0, 0, 0, 0, 'linear'),
+  anim('a-zoomin',  'zoom in',         1, 1.22, 0, 0, 0, 0),
+  anim('a-zoomout', 'zoom out',        1.22, 1, 0, 0, 0, 0),
+  anim('a-panl',    'pan left',        1.15, 1.15, 5, -5, 0, 0, 'linear'),
+  anim('a-panr',    'pan right',       1.15, 1.15, -5, 5, 0, 0, 'linear'),
+  anim('a-panu',    'pan up',          1.15, 1.15, 0, 0, 5, -5, 'linear'),
+  anim('a-pand',    'pan down',        1.15, 1.15, 0, 0, -5, 5, 'linear'),
+  anim('a-kenburns','ken burns ↗',     1, 1.25, -3, 3, 3, -3),
+  anim('a-punch',   'punch in',        1, 1.45, 0, 0, 0, 0, 'in'),
+  anim('a-reveal',  'zoom out reveal', 1.6, 1, 0, 0, 0, 0, 'out'),
+];
+const style = o => Object.assign({
+  font: 'sans', weight: 800, size: 4.4, color: '#ffffff',
+  bgOn: true, bg: '#000000', bgAlpha: .72, uppercase: false, lspace: 0,
+  lineHeight: 1.3, shadow: 'none', animIn: 'rise', animOut: 'fade', animDur: .35,
+}, o);
+const BUILTIN_STYLES = [
+  style({ id: 's-caption', name: 'caption pill' }),
+  style({ id: 's-impact',  name: 'big impact', font: 'impact', weight: 900, size: 8.5, bgOn: false,
+          uppercase: true, shadow: 'hard', animIn: 'pop', lspace: .02, lineHeight: 1.12 }),
+  style({ id: 's-typer',   name: 'typewriter', font: 'mono', weight: 600, size: 3.8, color: '#c8f060',
+          bg: '#000000', bgAlpha: .8, animIn: 'type', animOut: 'cut' }),
+  style({ id: 's-minimal', name: 'minimal', weight: 400, size: 3.4, bgOn: false, shadow: 'soft',
+          animIn: 'fade', animOut: 'fade', lspace: .12, uppercase: true }),
+  style({ id: 's-serif',   name: 'serif quote', font: 'serif', weight: 700, size: 5, bgOn: false,
+          shadow: 'soft', animIn: 'fade', animOut: 'fade', lineHeight: 1.35 }),
+];
+const DEFAULT_SNIPPETS = [
+  { id: 'n-hook',  content: 'WAIT FOR IT…', styleId: 's-impact',  duration: 1.6, posY: 46, scale: 1 },
+  { id: 'n-bio',   content: 'link in bio',  styleId: 's-caption', duration: 2.4, posY: 78, scale: 1 },
+  { id: 'n-sound', content: 'turn sound on 🔊', styleId: 's-caption', duration: 2, posY: 12, scale: .85 },
+];
+
+/* ── state ─────────────────────────────────────────────────────────────── */
+const state = {
+  assets: [],                 // {id, kind:'image'|'video', name, url, el, w, h, duration?, thumb}
+  animPresets: [],            // custom animation presets
+  textStyles: [],             // custom text styles
+  snippets: [],               // reusable text bits
+  templates: [],              // saved layouts
+  project: null,
+  sel: null,                  // {type:'clip'|'text', id}
+  t: 0, playing: false, loop: true, safe: false,
+  pps: 60,                    // timeline px per second
+  clipVideos: new Map(),      // clipId -> HTMLVideoElement
+  exporting: false,
+};
+const PAD = 16;               // timeline inner horizontal padding
+
+function freshProject() {
+  return { name: 'my-reel', format: '9x16', fps: 30, background: '#000000', clips: [], texts: [] };
+}
+function allAnims()  { return [...BUILTIN_ANIMS, ...state.animPresets]; }
+function allStyles() { return [...BUILTIN_STYLES, ...state.textStyles]; }
+function animById(id)  { return allAnims().find(a => a.id === id); }
+function styleById(id) { return allStyles().find(s => s.id === id); }
+function assetById(id) { return state.assets.find(a => a.id === id); }
+function clipById(id)  { return state.project.clips.find(c => c.id === id); }
+function textById(id)  { return state.project.texts.find(t => t.id === id); }
+function animOf(clip)  { return animById(clip.animId) || clip.animSnap || BUILTIN_ANIMS[0]; }
+function styleOf(cue)  { return styleById(cue.styleId) || cue.styleSnap || BUILTIN_STYLES[0]; }
+function fmtDims() { return FORMATS[state.project.format]; }
+
+/* ── persistence ───────────────────────────────────────────────────────── */
+function lsGet(key, fallback) {
+  try { const v = JSON.parse(localStorage.getItem(LS(key))); return v ?? fallback; }
+  catch { return fallback; }
+}
+function lsSet(key, val) {
+  try { localStorage.setItem(LS(key), JSON.stringify(val)); } catch {}
+}
+let saveTimer = null;
+function persistSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    lsSet('anims', state.animPresets);
+    lsSet('styles', state.textStyles);
+    lsSet('snippets', state.snippets);
+    lsSet('templates', state.templates);
+    const p = deep(state.project);
+    p.clips.forEach(c => { c.savedAssetName = assetById(c.assetId)?.name ?? c.savedAssetName; c.assetId = null; });
+    lsSet('project', p);
+  }, 400);
+}
+function loadPersisted() {
+  state.animPresets = lsGet('anims', []);
+  state.textStyles  = lsGet('styles', []);
+  state.snippets    = lsGet('snippets', deep(DEFAULT_SNIPPETS));
+  state.templates   = lsGet('templates', []);
+  const p = lsGet('project', null);
+  if (p && (p.clips?.length || p.texts?.length)) {
+    state.project = Object.assign(freshProject(), p);
+    if (p.clips.length) toast('restored last layout — assets need to be re-added', 'warn');
+  } else state.project = freshProject();
+}
+
+/* ── central update ────────────────────────────────────────────────────── */
+function commit(opts = {}) {
+  persistSoon();
+  if (opts.bin) renderAssetBin();
+  if (opts.side) renderSidebarLists();
+  renderTimeline();
+  if (opts.insp !== false) renderInspector();
+  needsFrame = true;
+}
+
+/* ── asset handling ────────────────────────────────────────────────────── */
+function loadImage(url) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error('image load failed'));
+    img.src = url;
+  });
+}
+function once(el, ev, timeout = 6000) {
+  return new Promise(res => {
+    const to = setTimeout(done, timeout);
+    function done() { clearTimeout(to); el.removeEventListener(ev, done); res(); }
+    el.addEventListener(ev, done);
+  });
+}
+async function makeThumb(el, w, h) {
+  const c = document.createElement('canvas');
+  const s = 120 / Math.max(w, h);
+  c.width = Math.max(2, Math.round(w * s));
+  c.height = Math.max(2, Math.round(h * s));
+  try { c.getContext('2d').drawImage(el, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', .7); }
+  catch { return ''; }
+}
+async function addFiles(files) {
+  let added = 0;
+  for (const f of files) {
+    try {
+      const url = URL.createObjectURL(f);
+      if (f.type.startsWith('image/')) {
+        const img = await loadImage(url);
+        state.assets.push({ id: uid(), kind: 'image', name: f.name, url, el: img,
+          w: img.naturalWidth, h: img.naturalHeight, thumb: await makeThumb(img, img.naturalWidth, img.naturalHeight) });
+        added++;
+      } else if (f.type.startsWith('video/')) {
+        const v = document.createElement('video');
+        v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+        if (v.readyState < 1) await once(v, 'loadedmetadata');
+        if (!v.videoWidth) throw new Error('video not decodable in this browser');
+        if (!isFinite(v.duration)) {
+          // streamed webm (e.g. screen recordings) reports Infinity until forced to the end
+          v.currentTime = 1e7;
+          await once(v, 'seeked', 5000);
+          if (!isFinite(v.duration)) throw new Error('could not determine video duration');
+        }
+        v.currentTime = Math.min(0.5, (v.duration || 1) * .2);
+        await once(v, 'seeked', 2500);
+        const a = { id: uid(), kind: 'video', name: f.name, url, el: v,
+          w: v.videoWidth, h: v.videoHeight, duration: v.duration || 0,
+          thumb: await makeThumb(v, v.videoWidth, v.videoHeight) };
+        state.assets.push(a);
+        added++;
+      } else toast(`unsupported file: ${f.name}`, 'err');
+    } catch (e) { toast(`could not load ${f.name} — ${e.message}`, 'err'); }
+  }
+  if (added) { toast(`added ${added} asset${added > 1 ? 's' : ''}`); commit({ bin: true }); }
+}
+function removeAsset(id) {
+  const users = state.project.clips.filter(c => c.assetId === id);
+  const done = () => {
+    const a = assetById(id);
+    users.forEach(c => { c.duration = clipDuration(c); c.savedAssetName = a?.name; c.assetId = null; });
+    if (a?.url.startsWith('blob:') ) URL.revokeObjectURL(a.url);
+    state.assets = state.assets.filter(a2 => a2.id !== id);
+    for (const [cid, v] of [...state.clipVideos]) {
+      const c = clipById(cid);
+      if (!c || c.assetId === id || !c.assetId) { v.pause(); v.removeAttribute('src'); state.clipVideos.delete(cid); }
+    }
+    commit({ bin: true });
+  };
+  if (users.length) dialogConfirm(`${users.length} clip(s) use this asset — they will become empty slots. Remove?`).then(ok => ok && done());
+  else done();
+}
+async function addDemoImages() {
+  const palettes = [['#1c2a4a','#4a8fe0','#c8f060'], ['#3a1a3a','#e05656','#f0d060'],
+                    ['#12332a','#2ab690','#eaf6e0'], ['#402812','#e08a2a','#101010']];
+  for (let i = 0; i < palettes.length; i++) {
+    const [c1, c2, c3] = palettes[i];
+    const c = document.createElement('canvas'); c.width = 1080; c.height = 1440;
+    const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 1080, 1440); g.addColorStop(0, c1); g.addColorStop(1, c2);
+    x.fillStyle = g; x.fillRect(0, 0, 1080, 1440);
+    x.fillStyle = c3;
+    for (let n = 0; n < 24; n++) {
+      const r = 12 + ((n * 37 + i * 13) % 90);
+      x.globalAlpha = .18 + (n % 5) * .1;
+      x.beginPath();
+      x.arc((n * 173 + i * 311) % 1080, (n * 297 + i * 127) % 1440, r, 0, Math.PI * 2); x.fill();
+    }
+    x.globalAlpha = 1; x.fillStyle = c3; x.font = '700 130px Arial';
+    x.fillText('0' + (i + 1), 60, 1360);
+    const img = await loadImage(c.toDataURL('image/png'));
+    state.assets.push({ id: uid(), kind: 'image', name: `demo-0${i + 1}.png`, url: img.src, el: img,
+      w: 1080, h: 1440, thumb: await makeThumb(img, 1080, 1440) });
+  }
+  toast('demo images added');
+  commit({ bin: true });
+}
+
+/* ── clips & text cues ─────────────────────────────────────────────────── */
+function makeClip(asset) {
+  const c = {
+    id: uid(), assetId: asset?.id ?? null, kind: asset?.kind ?? 'image',
+    duration: 3, trimIn: 0, trimOut: 0, fit: 'cover',
+    animId: 'a-zoomin', animSnap: deep(BUILTIN_ANIMS[1]),
+    transIn: { type: 'cut', duration: .5 },
+  };
+  if (asset?.kind === 'video') { c.trimOut = asset.duration; c.animId = 'a-static'; c.animSnap = deep(BUILTIN_ANIMS[0]); }
+  return c;
+}
+function clipDuration(c) {
+  return c.kind === 'video' && c.assetId ? Math.max(.1, c.trimOut - c.trimIn) : Math.max(.1, c.duration);
+}
+function useAsset(asset) {
+  const selClip = state.sel?.type === 'clip' ? clipById(state.sel.id) : null;
+  if (selClip && !selClip.assetId) { fillSlot(selClip, asset); return; }
+  const c = makeClip(asset);
+  state.project.clips.push(c);
+  selectItem('clip', c.id);
+  state.t = layout().items.find(i => i.clip.id === c.id)?.start ?? 0;
+  commit();
+}
+function fillSlot(clip, asset) {
+  const slotDur = clipDuration(clip);
+  clip.assetId = asset.id; clip.savedAssetName = asset.name;
+  const oldVid = state.clipVideos.get(clip.id);
+  if (oldVid) { oldVid.pause(); oldVid.removeAttribute('src'); state.clipVideos.delete(clip.id); }
+  if (asset.kind === 'video') {
+    clip.kind = 'video';
+    clip.trimIn = 0;
+    clip.trimOut = Math.min(asset.duration, slotDur);
+    if (asset.duration < slotDur - .05)
+      toast(`video is shorter than the ${fmt(slotDur)}s slot — slot shrank to ${fmt(asset.duration)}s`, 'warn');
+  } else {
+    clip.kind = 'image'; clip.duration = slotDur;
+  }
+  toast(`filled slot with ${asset.name}`);
+  commit();
+}
+function makeText(over = {}) {
+  const st = styleById(over.styleId) || BUILTIN_STYLES[0];
+  return Object.assign({ id: uid(), content: 'YOUR TEXT', start: state.t, duration: 2.4,
+    styleId: st.id, styleSnap: deep(st), posY: 74, scale: 1 }, over, { id: uid() });
+}
+function selectItem(type, id) {
+  state.sel = type ? { type, id } : null;
+  renderTimeline(); renderInspector(); renderAssetBin();
+}
+function removeSelection() {
+  if (!state.sel) return;
+  if (state.sel.type === 'clip') state.project.clips = state.project.clips.filter(c => c.id !== state.sel.id);
+  if (state.sel.type === 'text') state.project.texts = state.project.texts.filter(t => t.id !== state.sel.id);
+  state.sel = null;
+  commit();
+}
+
+/* ── timeline math ─────────────────────────────────────────────────────── */
+function layout() {
+  const items = [];
+  let t = 0;
+  state.project.clips.forEach((c, i) => {
+    const dur = clipDuration(c);
+    let start = t, fadeIn = 0;
+    const tt = c.transIn?.type ?? 'cut';
+    if (tt !== 'cut') {
+      fadeIn = clamp(c.transIn.duration, .1, dur * .9);
+      if (tt === 'fade' && i > 0) {
+        const prev = items[i - 1];
+        fadeIn = Math.min(fadeIn, prev.dur * .9);
+        start = Math.max(prev.start + .05, t - fadeIn);
+      }
+    }
+    items.push({ clip: c, start, dur, end: start + dur, fadeIn, index: i });
+    t = start + dur;
+  });
+  return { items, total: t };
+}
+
+/* ── video elements per clip ───────────────────────────────────────────── */
+function ensureClipVideo(clip) {
+  let v = state.clipVideos.get(clip.id);
+  const asset = assetById(clip.assetId);
+  if (!asset || asset.kind !== 'video') return null;
+  if (!v) {
+    v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.src = asset.url;
+    v.addEventListener('canplay', () => { needsFrame = true; }, { once: true });
+    state.clipVideos.set(clip.id, v);
+  }
+  return v;
+}
+function drawableFor(clip) {
+  const asset = assetById(clip.assetId);
+  if (!asset) return null;
+  if (asset.kind === 'image') return { el: asset.el, w: asset.w, h: asset.h };
+  const v = ensureClipVideo(clip);
+  return v && v.readyState >= 2 ? { el: v, w: asset.w, h: asset.h } : null;
+}
+function seekExact(v, time) {
+  time = clamp(time, 0, Math.max(0, (v.duration || 1e9) - .034));
+  if (Math.abs(v.currentTime - time) < .0045 && v.readyState >= 2) return Promise.resolve();
+  return new Promise(res => {
+    let done = false;
+    const to = setTimeout(finish, 2000);
+    function finish() { if (done) return; done = true; clearTimeout(to); v.removeEventListener('seeked', finish); res(); }
+    v.addEventListener('seeked', finish);
+    try { v.currentTime = time; } catch { finish(); }
+  });
+}
+
+/* ── rendering core (shared by preview + export) ───────────────────────── */
+function activeItems(t) {
+  const { items, total } = layout();
+  if (!items.length) return { vis: [], total };
+  const tt = clamp(t, 0, Math.max(0, total - .0001));
+  const vis = items.filter(it => tt >= it.start && tt < it.end);
+  if (!vis.length) vis.push(items[items.length - 1]);
+  return { vis, total };
+}
+function drawClipAt(ctx, it, t, W, H) {
+  const c = it.clip;
+  const p = clamp((t - it.start) / it.dur, 0, 1);
+  let alpha = 1;
+  if (it.fadeIn > 0 && t - it.start < it.fadeIn) alpha = clamp((t - it.start) / it.fadeIn, 0, 1);
+  const d = drawableFor(c);
+  if (!d) { drawEmptySlot(ctx, it, W, H, alpha); return; }
+  const a = animOf(c);
+  const e = (EASE[a.easing] || EASE.inout)(p);
+  const scale = lerp(a.scaleFrom, a.scaleTo, e);
+  const tx = lerp(a.xFrom, a.xTo, e) / 100 * W;
+  const ty = lerp(a.yFrom, a.yTo, e) / 100 * H;
+  const base = c.fit === 'contain' ? Math.min(W / d.w, H / d.h) : Math.max(W / d.w, H / d.h);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(W / 2 + tx, H / 2 + ty);
+  const s = base * scale;
+  ctx.scale(s, s);
+  try { ctx.drawImage(d.el, -d.w / 2, -d.h / 2, d.w, d.h); } catch {}
+  ctx.restore();
+}
+function drawEmptySlot(ctx, it, W, H, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (it.clip.assetId) {                      // asset attached but video not decodable yet
+    ctx.fillStyle = '#555';
+    ctx.font = `500 ${W * .035}px ${FONTS.mono.stack}`;
+    ctx.fillText('loading video…', W / 2, H / 2);
+    ctx.restore();
+    return;
+  }
+  ctx.strokeStyle = '#3a3a3a'; ctx.setLineDash([W * .02, W * .012]); ctx.lineWidth = W * .004;
+  ctx.strokeRect(W * .06, H * .06, W * .88, H * .88);
+  ctx.fillStyle = '#555';
+  ctx.font = `600 ${W * .045}px ${FONTS.mono.stack}`;
+  ctx.fillText('EMPTY SLOT ' + (it.index + 1), W / 2, H / 2 - W * .035);
+  ctx.font = `400 ${W * .028}px ${FONTS.mono.stack}`;
+  ctx.fillText(it.clip.savedAssetName ? `was: ${it.clip.savedAssetName}` : 'click an asset to fill', W / 2, H / 2 + W * .03);
+  ctx.restore();
+}
+function hexToRgba(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+function wrapLines(ctx, text, maxW) {
+  const out = [];
+  for (const raw of String(text).split('\n')) {
+    const words = raw.split(/\s+/).filter(Boolean);
+    if (!words.length) { out.push(''); continue; }
+    let line = words[0];
+    for (let i = 1; i < words.length; i++) {
+      const t2 = line + ' ' + words[i];
+      if (ctx.measureText(t2).width > maxW) { out.push(line); line = words[i]; }
+      else line = t2;
+    }
+    out.push(line);
+  }
+  return out;
+}
+function drawTexts(ctx, t, W, H, cues = state.project.texts) {
+  for (const cue of cues) {
+    if (t < cue.start || t >= cue.start + cue.duration) continue;
+    const st = styleOf(cue);
+    const local = t - cue.start;
+    const ad = clamp(st.animDur ?? .35, .05, cue.duration / 2);
+    const inP  = st.animIn  === 'cut' ? 1 : clamp(local / ad, 0, 1);
+    const outP = st.animOut === 'cut' ? 0 : clamp((local - (cue.duration - ad)) / ad, 0, 1);
+    const eIn = EASE.out(inP), eOut = EASE.in(outP);
+
+    let alpha = 1, dy = 0, popS = 1;
+    if (st.animIn === 'fade' || st.animIn === 'rise' || st.animIn === 'pop') alpha *= eIn;
+    if (st.animIn === 'rise') dy += (1 - eIn) * H * .03;
+    if (st.animIn === 'pop')  popS = .82 + .18 * eIn + Math.sin(Math.min(1, inP) * Math.PI) * .06;
+    if (st.animOut === 'fade') alpha *= 1 - eOut;
+    if (st.animOut === 'sink') { alpha *= 1 - eOut; dy += eOut * H * .03; }
+    if (alpha <= 0.003) continue;
+
+    let content = st.uppercase ? String(cue.content).toUpperCase() : String(cue.content);
+    if (st.animIn === 'type') {
+      const chars = content.replace(/\n/g, '').length;
+      const typDur = clamp(chars * .045, .3, Math.max(.3, cue.duration * .6));
+      const shown = Math.ceil(clamp(local / typDur, 0, 1) * content.length);
+      content = content.slice(0, shown);
+      if (!content.trim()) continue;
+    }
+
+    const size = (st.size / 100) * W * (cue.scale || 1);
+    ctx.save();
+    ctx.font = `${st.weight} ${size}px ${FONTS[st.font]?.stack || FONTS.sans.stack}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const lsp = (st.lspace || 0) * size;
+    if ('letterSpacing' in ctx) ctx.letterSpacing = lsp + 'px';
+    const lines = wrapLines(ctx, content, W * .86);
+    const lineH = size * (st.lineHeight || 1.3);
+    const blockH = lines.length * lineH;
+    let cy = clamp((cue.posY / 100) * H, blockH / 2 + H * .02, H - blockH / 2 - H * .02) + dy;
+
+    ctx.globalAlpha = alpha;
+    ctx.translate(W / 2, cy);
+    ctx.scale(popS, popS);
+    lines.forEach((ln, i) => {
+      const y = (i - (lines.length - 1) / 2) * lineH;
+      if (!ln.trim()) return;
+      const tw = ctx.measureText(ln).width;
+      if (st.bgOn) {
+        const padX = size * .42, padY = size * .26, r = size * .3;
+        ctx.fillStyle = hexToRgba(st.bg, st.bgAlpha);
+        const bx = -tw / 2 - padX, by = y - lineH / 2 + (lineH - size) / 2 - padY + size * .06;
+        const bw = tw + padX * 2, bh = size + padY * 2;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, r);
+        ctx.fill();
+      }
+      if (st.shadow !== 'none') {
+        ctx.shadowColor = 'rgba(0,0,0,.85)';
+        ctx.shadowBlur = st.shadow === 'soft' ? size * .3 : 0;
+        ctx.shadowOffsetX = st.shadow === 'hard' ? size * .05 : 0;
+        ctx.shadowOffsetY = st.shadow === 'hard' ? size * .06 : size * .04;
+      }
+      ctx.fillStyle = st.color;
+      ctx.fillText(ln, 0, y + size * .04);
+      ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    });
+    ctx.restore();
+  }
+}
+function drawSafeZones(ctx, W, H) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(224,168,86,.65)'; ctx.setLineDash([8, 6]); ctx.lineWidth = 2;
+  const m = { l: W * .055, r: W * .12, t: H * .07, b: H * .18 };   // approx reels UI chrome
+  ctx.strokeRect(m.l, m.t, W - m.l - m.r, H - m.t - m.b);
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(224,168,86,.75)';
+  ctx.font = `500 ${Math.round(W * .022)}px ${FONTS.mono.stack}`;
+  ctx.textAlign = 'left';
+  ctx.fillText('SAFE ZONE (feed UI)', m.l + 8, m.t + W * .03);
+  ctx.restore();
+}
+function renderFrame(ctx, W, H, t) {
+  ctx.fillStyle = state.project.background || '#000';
+  ctx.fillRect(0, 0, W, H);
+  const { vis } = activeItems(t);
+  vis.forEach(it => drawClipAt(ctx, it, clamp(t, it.start, it.end - .0001), W, H));
+  drawTexts(ctx, t, W, H);
+}
+
+/* ── preview loop & video sync ─────────────────────────────────────────── */
+const previewCanvas = $('preview');
+const pctx = previewCanvas.getContext('2d');
+let needsFrame = true;
+let lastTick = performance.now();
+let lastVideoSync = 0;
+
+function sizePreview() {
+  const { w, h } = fmtDims();
+  const cw = Math.round(w / 2), ch = Math.round(h / 2);
+  if (previewCanvas.width !== cw || previewCanvas.height !== ch) {
+    previewCanvas.width = cw; previewCanvas.height = ch;
+  }
+  const wrap = $('canvasWrap');
+  const avail = { w: wrap.clientWidth - 28, h: wrap.clientHeight - 28 };
+  const s = Math.min(avail.w / w, avail.h / h);
+  previewCanvas.style.width = Math.max(60, Math.round(w * s)) + 'px';
+  previewCanvas.style.height = Math.max(60, Math.round(h * s)) + 'px';
+}
+function syncPreviewVideos() {
+  if (state.exporting) return;
+  const now = performance.now();
+  const { vis } = activeItems(state.t);
+  const activeIds = new Set();
+  for (const it of vis) {
+    const c = it.clip;
+    if (c.kind !== 'video' || !c.assetId) continue;
+    const v = ensureClipVideo(c);
+    if (!v) continue;
+    activeIds.add(c.id);
+    const target = c.trimIn + clamp(state.t - it.start, 0, it.dur);
+    if (state.playing) {
+      if (v.paused) { try { v.currentTime = target; } catch {} v.play().catch(() => {}); }
+      else if (Math.abs(v.currentTime - target) > .14) { try { v.currentTime = target; } catch {} }
+    } else {
+      if (!v.paused) v.pause();
+      if (now - lastVideoSync > 70 && Math.abs(v.currentTime - target) > .034) {
+        lastVideoSync = now;
+        try { v.currentTime = target; } catch {}
+        v.addEventListener('seeked', () => { needsFrame = true; }, { once: true });
+      }
+    }
+  }
+  // pause inactive, pre-seek the next upcoming video clip
+  const { items } = layout();
+  for (const [cid, v] of state.clipVideos) {
+    if (activeIds.has(cid)) continue;
+    if (!v.paused) v.pause();
+    const it = items.find(i => i.clip.id === cid);
+    if (it && it.start > state.t && it.start - state.t < 1.2 && v.readyState >= 1)
+      { if (Math.abs(v.currentTime - it.clip.trimIn) > .05) { try { v.currentTime = it.clip.trimIn; } catch {} } }
+  }
+}
+function tick(now) {
+  const dt = Math.min(.1, (now - lastTick) / 1000);
+  lastTick = now;
+  if (!state.exporting) {
+    const { total } = layout();
+    if (state.playing) {
+      state.t += dt;
+      if (state.t >= total) {
+        if (state.loop && total > 0) state.t = 0;
+        else { state.t = Math.max(0, total); setPlaying(false); }
+      }
+      needsFrame = true;
+    }
+    syncPreviewVideos();
+    if (needsFrame) {
+      needsFrame = state.playing;
+      renderFrame(pctx, previewCanvas.width, previewCanvas.height, state.t);
+      if (state.safe) drawSafeZones(pctx, previewCanvas.width, previewCanvas.height);
+      updatePlayhead();
+    }
+    $('timeCur').textContent = fmt(state.t, 2);
+  }
+  requestAnimationFrame(tick);
+}
+function setPlaying(on) {
+  const { total } = layout();
+  if (on && total <= 0) return;
+  if (on && state.t >= total - .01) state.t = 0;
+  state.playing = on;
+  $('playBtn').textContent = on ? '⏸' : '▶';
+  if (!on) state.clipVideos.forEach(v => v.pause());
+  needsFrame = true;
+}
+function seekTo(t, keepPlaying = false) {
+  const { total } = layout();
+  state.t = clamp(t, 0, Math.max(0, total));
+  if (!keepPlaying) setPlaying(false);
+  needsFrame = true;
+}
+
+/* ── timeline UI ───────────────────────────────────────────────────────── */
+let dragGuard = false;   // true while a native drag / pointer drag is in flight
+
+function renderTimeline() {
+  if (dragGuard) return;
+  const { items, total } = layout();
+  const scroll = $('tlScroll');
+  const availW = Math.max(200, scroll.clientWidth - PAD * 2 - 8);
+  state.pps = total > 0 ? clamp(availW / total, 24, 220) : 60;
+  const pps = state.pps;
+  const trackW = Math.max(availW, total * pps) + 'px';
+
+  // ruler
+  const ruler = $('ruler');
+  ruler.innerHTML = '';
+  ruler.style.width = trackW;
+  if (total > 0) {
+    const base = pps > 70 ? .5 : pps > 25 ? 1 : 5;
+    const lblStep = base === .5 ? 1 : base === 1 ? 2 : 10;
+    for (let s = 0; s <= total + 1e-6; s += base) {
+      const tick = document.createElement('div');
+      const isMajor = Math.abs(s / lblStep - Math.round(s / lblStep)) < 1e-6;
+      tick.className = 'tl-tick' + (isMajor ? ' major' : '');
+      tick.style.left = s * pps + 'px';
+      ruler.appendChild(tick);
+      if (isMajor) {
+        const l = document.createElement('div');
+        l.className = 'tl-tick-lbl';
+        l.style.left = s * pps + 'px';
+        l.textContent = Math.round(s) + 's';
+        ruler.appendChild(l);
+      }
+    }
+  }
+
+  // clips — keyed reconciliation: nodes stay alive across re-renders so
+  // in-flight clicks / native drags never lose their target element
+  const track = $('clipTrack');
+  track.style.width = trackW;
+  const haveClips = new Map([...track.children].map(el => [el.dataset.id, el]));
+  items.forEach(it => {
+    let el = haveClips.get(it.clip.id);
+    if (el) haveClips.delete(it.clip.id);
+    else { el = buildClipEl(it.clip.id); track.appendChild(el); }
+    updateClipEl(el, it, pps);
+  });
+  haveClips.forEach(el => el.remove());
+  const desired = items.map(it => track.querySelector(`[data-id="${it.clip.id}"]`));
+  if (desired.some((el, i) => track.children[i] !== el)) desired.forEach(el => track.appendChild(el));
+
+  // text cues — same keyed approach, greedy lane packing
+  const tt = $('textTrack');
+  tt.style.width = trackW;
+  const lanes = [];
+  const laneOf = new Map();
+  [...state.project.texts].sort((a, b) => a.start - b.start).forEach(cue => {
+    let lane = lanes.findIndex(end => end <= cue.start + .01);
+    if (lane === -1) { lane = lanes.length; lanes.push(0); }
+    lanes[lane] = cue.start + cue.duration;
+    laneOf.set(cue.id, lane);
+  });
+  const haveTexts = new Map([...tt.children].map(el => [el.dataset.id, el]));
+  state.project.texts.forEach(cue => {
+    let el = haveTexts.get(cue.id);
+    if (el) haveTexts.delete(cue.id);
+    else { el = buildTextEl(cue.id); tt.appendChild(el); }
+    el.className = 'tl-text' + (state.sel?.type === 'text' && state.sel.id === cue.id ? ' selected' : '');
+    el.style.left = cue.start * pps + 'px';
+    el.style.width = Math.max(20, cue.duration * pps - 2) + 'px';
+    el.style.top = laneOf.get(cue.id) * 21 + 'px';
+    el.textContent = cue.content.replace(/\n/g, ' ');
+  });
+  haveTexts.forEach(el => el.remove());
+  tt.style.height = Math.max(24, lanes.length * 21 + 2) + 'px';
+
+  const totBadge = $('durBadge');
+  totBadge.textContent = fmt(total) + 's · ' + state.project.format.replace('x', ':');
+  totBadge.classList.toggle('warn', total > 90);
+  $('timeTot').textContent = fmt(total, 2);
+  $('emptyHint').style.display = items.length ? 'none' : 'flex';
+  updatePlayhead();
+}
+function updatePlayhead() {
+  $('playhead').style.left = (PAD + state.t * state.pps) + 'px';
+}
+function buildClipEl(id) {
+  const el = document.createElement('div');
+  el.dataset.id = id;
+  el.draggable = true;
+  el.innerHTML = `<div class="c-shade"></div><div class="c-fade" style="display:none"></div>
+    <div class="c-name"></div><div class="c-anim"></div><div class="c-dur"></div>`;
+  el.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const c = clipById(el.dataset.id);
+    if (!c) return;
+    selectItem('clip', c.id);
+    const it = layout().items.find(i => i.clip.id === c.id);
+    if (it) seekTo(it.start + .001);
+  });
+  el.addEventListener('dragstart', e => {
+    const c = clipById(el.dataset.id);
+    if (!c) { e.preventDefault(); return; }
+    dragGuard = true;
+    el.classList.add('dragging');
+    e.dataTransfer.setData('text/x-clip', String(state.project.clips.indexOf(c)));
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  el.addEventListener('dragend', () => { dragGuard = false; el.classList.remove('dragging'); renderTimeline(); });
+  el.addEventListener('dragover', e => {
+    e.preventDefault();
+    const rect = el.getBoundingClientRect();
+    const right = e.clientX > rect.left + rect.width / 2;
+    el.classList.toggle('drag-over-left', !right);
+    el.classList.toggle('drag-over-right', right);
+  });
+  el.addEventListener('dragleave', () => el.classList.remove('drag-over-left', 'drag-over-right'));
+  el.addEventListener('drop', e => {
+    e.preventDefault(); e.stopPropagation();
+    el.classList.remove('drag-over-left', 'drag-over-right');
+    dragGuard = false;
+    const c = clipById(el.dataset.id);
+    if (!c) return;
+    const myIdx = state.project.clips.indexOf(c);
+    const rect = el.getBoundingClientRect();
+    const after = e.clientX > rect.left + rect.width / 2;
+    const clipIdx = e.dataTransfer.getData('text/x-clip');
+    const assetId = e.dataTransfer.getData('text/x-asset');
+    if (clipIdx !== '') {
+      const from = +clipIdx;
+      let to = myIdx + (after ? 1 : 0);
+      if (from === myIdx) return renderTimeline();
+      const [moved] = state.project.clips.splice(from, 1);
+      if (from < to) to--;
+      state.project.clips.splice(to, 0, moved);
+      commit();
+    } else if (assetId) {
+      const a = assetById(assetId);
+      if (a) { fillSlot(c, a); selectItem('clip', c.id); }
+    }
+  });
+  return el;
+}
+function updateClipEl(el, it, pps) {
+  const c = it.clip;
+  const asset = assetById(c.assetId);
+  el.className = 'tl-clip' + (asset ? '' : ' empty') +
+    (state.sel?.type === 'clip' && state.sel.id === c.id ? ' selected' : '');
+  el.style.left = it.start * pps + 'px';
+  el.style.width = Math.max(26, it.dur * pps - 2) + 'px';
+  el.style.backgroundImage = asset?.thumb ? `url(${asset.thumb})` : '';
+  el.querySelector('.c-fade').style.display = it.fadeIn ? '' : 'none';
+  el.querySelector('.c-name').textContent = asset ? asset.name : 'empty slot';
+  el.querySelector('.c-anim').textContent = animOf(c).name;
+  el.querySelector('.c-dur').textContent = fmt(it.dur) + 's';
+}
+function buildTextEl(id) {
+  const el = document.createElement('div');
+  el.dataset.id = id;
+  el.title = 'drag to re-time';
+  el.addEventListener('pointerdown', e => {
+    const cue = textById(el.dataset.id);
+    if (!cue) return;
+    e.preventDefault(); e.stopPropagation();
+    selectItem('text', cue.id);
+    const startX = e.clientX, startT = cue.start;
+    let moved = false;
+    dragGuard = true;
+    el.setPointerCapture(e.pointerId);
+    const onMove = ev => {
+      const dt = (ev.clientX - startX) / state.pps;
+      if (Math.abs(ev.clientX - startX) > 3) moved = true;
+      cue.start = Math.max(0, Math.round((startT + dt) * 20) / 20);
+      el.style.left = cue.start * state.pps + 'px';
+      seekTo(cue.start + .001);
+      syncCueInspector(cue);
+    };
+    const onUp = () => {
+      el.removeEventListener('pointermove', onMove);
+      dragGuard = false;
+      if (moved) commit(); else renderTimeline();
+    };
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp, { once: true });
+    el.addEventListener('pointercancel', onUp, { once: true });
+  });
+  return el;
+}
+
+/* ruler scrub */
+(() => {
+  const ruler = $('ruler');
+  const scrub = e => {
+    const x = e.clientX - ruler.getBoundingClientRect().left;
+    seekTo(x / state.pps, state.playing);
+  };
+  ruler.addEventListener('pointerdown', e => {
+    ruler.setPointerCapture(e.pointerId);
+    scrub(e);
+    const mv = ev => scrub(ev);
+    ruler.addEventListener('pointermove', mv);
+    ruler.addEventListener('pointerup', () => ruler.removeEventListener('pointermove', mv), { once: true });
+  });
+  $('tlScroll').addEventListener('click', e => { if (e.target === $('tlInner') || e.target === $('clipTrack') || e.target === $('textTrack')) selectItem(null); });
+  // dropping an asset on empty track space appends a clip
+  const track = $('clipTrack');
+  track.addEventListener('dragover', e => { if (e.dataTransfer.types.includes('text/x-asset')) e.preventDefault(); });
+  track.addEventListener('drop', e => {
+    const assetId = e.dataTransfer.getData('text/x-asset');
+    if (!assetId) return;
+    e.preventDefault();
+    const a = assetById(assetId);
+    if (a) useAsset(a);
+  });
+})();
+
+/* ── inspector ─────────────────────────────────────────────────────────── */
+function renderInspector() {
+  const box = $('insp');
+  if (state.sel?.type === 'clip' && clipById(state.sel.id)) return renderClipInspector(box, clipById(state.sel.id));
+  if (state.sel?.type === 'text' && textById(state.sel.id)) return renderTextInspector(box, textById(state.sel.id));
+  renderProjectInspector(box);
+}
+function renderProjectInspector(box) {
+  const { total } = layout();
+  const f = fmtDims();
+  box.innerHTML = `
+    <div class="insp-title">Project</div>
+    <div class="hint" style="margin:0">
+      <b style="color:var(--text)">${esc(state.project.name)}</b><br>
+      ${FORMATS[state.project.format].label}<br>
+      ${state.project.fps} fps · ${fmt(total)}s ·
+      ${state.project.clips.length} clip(s) · ${state.project.texts.length} text cue(s)
+    </div>
+    <div class="field"><label>Workflow</label>
+      <div class="hint" style="margin:0">
+        1 · add assets, click them to build the clip sequence<br>
+        2 · select a clip → set duration / trim, pick an animation<br>
+        3 · add cued text bits, style them, save snippets<br>
+        4 · <b>save current</b> as a template to reuse the layout with new assets<br>
+        5 · export MP4 (${f.w}×${f.h})
+      </div>
+    </div>
+    <div class="field"><label>Notes</label>
+      <div class="hint" style="margin:0">
+        Exports are silent — add music on the platform for better reach anyway.<br>
+        Keys: <kbd>space</kbd> play · <kbd>←</kbd><kbd>→</kbd> scrub · <kbd>del</kbd> remove.
+      </div>
+    </div>`;
+}
+function inspNum(id, label, val, min, max, step, unit = 's') {
+  return `<div class="field"><label>${label}</label><div class="frow">
+    <input type="range" id="${id}R" min="${min}" max="${max}" step="${step}" value="${val}">
+    <input type="number" id="${id}" min="${min}" max="${max}" step="${step}" value="${val}">
+    <span class="rv">${unit}</span></div></div>`;
+}
+function bindNum(id, get, set, onChange) {
+  const num = $(id), rng = $(id + 'R');
+  const apply = (v, final) => {
+    v = +v; if (Number.isNaN(v)) return;
+    set(v);
+    num.value = rng.value = get();
+    onChange?.(final);
+  };
+  rng.addEventListener('input', () => apply(rng.value, false));
+  rng.addEventListener('change', () => apply(rng.value, true));
+  num.addEventListener('change', () => apply(num.value, true));
+}
+function animOptions(selId) {
+  return allAnims().map(a => `<option value="${a.id}" ${a.id === selId ? 'selected' : ''}>${esc(a.name)}</option>`).join('');
+}
+function styleOptions(selId) {
+  return allStyles().map(s => `<option value="${s.id}" ${s.id === selId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+}
+
+function renderClipInspector(box, c) {
+  const asset = assetById(c.assetId);
+  const isVid = c.kind === 'video' && asset;
+  const idx = state.project.clips.indexOf(c);
+  box.innerHTML = `
+    <div class="insp-title">Clip ${idx + 1}<span class="sub">${esc(asset ? asset.name : 'empty slot')}</span></div>
+    ${asset ? '' : `<div class="hint" style="margin:0;color:var(--warn)">Empty slot — click an asset in the bin to fill it.</div>`}
+    ${isVid ? `
+      <div class="field"><label>Trim source · ${fmt(asset.duration)}s total</label>
+        <div class="trimbar" id="trimBar">
+          <div class="trim-dim" id="trimDimL"></div><div class="trim-dim" id="trimDimR"></div>
+          <div class="trim-handle h-in" id="trimInH" title="in point"></div>
+          <div class="trim-handle h-out" id="trimOutH" title="out point"></div>
+        </div>
+        <div class="frow" style="margin-top:4px">
+          <input type="number" id="trimInN" step="0.05" min="0" value="${fmt(c.trimIn, 2)}">
+          <span class="hint" style="margin:0">→</span>
+          <input type="number" id="trimOutN" step="0.05" min="0" value="${fmt(c.trimOut, 2)}">
+          <span class="rv" id="trimLen">${fmt(clipDuration(c))}s</span>
+        </div>
+        <div class="hint">Drag the handles — the preview scrubs the source so you can find your cut.
+        Duplicate the clip to use another part of the same video.</div>
+      </div>`
+      : inspNum('clipDur', 'Duration', fmt(clipDuration(c), 2), .2, 20, .1)}
+    <div class="field"><label>Animation</label><div class="frow">
+      <select id="clipAnim">${animOptions(c.animId)}</select>
+      <button class="btn tiny" id="editAnimBtn" title="edit preset">✎</button>
+    </div></div>
+    <div class="field"><label>Fit</label><div class="seg" id="fitSeg">
+      <button data-v="cover" class="${c.fit === 'cover' ? 'active' : ''}">cover</button>
+      <button data-v="contain" class="${c.fit === 'contain' ? 'active' : ''}">contain</button>
+    </div></div>
+    <div class="field"><label>Transition in</label><div class="frow">
+      <select id="clipTrans">
+        ${Object.entries(TRANS_TYPES).map(([k, v]) => `<option value="${k}" ${c.transIn.type === k ? 'selected' : ''}>${v}</option>`).join('')}
+      </select>
+      <input type="number" id="clipTransDur" step="0.1" min="0.1" max="3" value="${c.transIn.duration}"
+        ${c.transIn.type === 'cut' ? 'disabled' : ''} style="width:58px">
+      <span class="rv">s</span>
+    </div></div>
+    <div class="btnrow">
+      <button class="btn tiny" id="clipLeft" ${idx === 0 ? 'disabled' : ''}>◀ move</button>
+      <button class="btn tiny" id="clipRight" ${idx === state.project.clips.length - 1 ? 'disabled' : ''}>move ▶</button>
+    </div>
+    <div class="btnrow">
+      <button class="btn tiny" id="clipDup">duplicate</button>
+      <button class="btn tiny" id="clipClear" ${asset ? '' : 'disabled'}>empty slot</button>
+      <button class="btn tiny danger" id="clipDel">remove</button>
+    </div>`;
+
+  if (isVid) bindTrimUI(c, asset);
+  else if (!isVid) bindNum('clipDur', () => fmt(clipDuration(c), 2), v => { c.duration = clamp(v, .2, 60); }, () => commit({ insp: false }));
+
+  $('clipAnim').addEventListener('change', () => {
+    c.animId = $('clipAnim').value;
+    c.animSnap = deep(animOf(c));
+    commit({ insp: false });
+  });
+  $('editAnimBtn').addEventListener('click', () => openAnimEditor(c.animId, c.id));
+  $('fitSeg').querySelectorAll('button').forEach(b => b.addEventListener('click', () => { c.fit = b.dataset.v; commit(); }));
+  $('clipTrans').addEventListener('change', () => { c.transIn.type = $('clipTrans').value; commit(); });
+  $('clipTransDur').addEventListener('change', () => { c.transIn.duration = clamp(+$('clipTransDur').value || .5, .1, 3); commit({ insp: false }); });
+  $('clipLeft').addEventListener('click', () => { moveClip(c, -1); });
+  $('clipRight').addEventListener('click', () => { moveClip(c, 1); });
+  $('clipDup').addEventListener('click', () => {
+    const copy = deep(c); copy.id = uid();
+    state.project.clips.splice(idx + 1, 0, copy);
+    selectItem('clip', copy.id); commit();
+  });
+  $('clipClear').addEventListener('click', () => {
+    c.duration = clipDuration(c);
+    c.savedAssetName = asset?.name;
+    c.assetId = null;
+    const v = state.clipVideos.get(c.id);
+    if (v) { v.pause(); v.removeAttribute('src'); state.clipVideos.delete(c.id); }
+    commit();
+  });
+  $('clipDel').addEventListener('click', removeSelection);
+}
+function moveClip(c, dir) {
+  const arr = state.project.clips;
+  const i = arr.indexOf(c), j = i + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  commit();
+}
+function bindTrimUI(c, asset) {
+  const bar = $('trimBar');
+  if (asset.thumb) { bar.style.backgroundImage = `url(${asset.thumb})`; }
+  const it = () => layout().items.find(x => x.clip.id === c.id);
+  const refresh = () => {
+    const D = asset.duration || 1;
+    $('trimInH').style.left = (c.trimIn / D * 100) + '%';
+    $('trimOutH').style.left = (c.trimOut / D * 100) + '%';
+    $('trimDimL').style.left = 0; $('trimDimL').style.width = (c.trimIn / D * 100) + '%';
+    $('trimDimR').style.right = 0; $('trimDimR').style.width = ((D - c.trimOut) / D * 100) + '%';
+    $('trimInN').value = fmt(c.trimIn, 2);
+    $('trimOutN').value = fmt(c.trimOut, 2);
+    $('trimLen').textContent = fmt(clipDuration(c)) + 's';
+  };
+  refresh();
+  const startDrag = (which, e) => {
+    e.preventDefault();
+    const rect = bar.getBoundingClientRect();
+    const D = asset.duration || 1;
+    const h = which === 'in' ? $('trimInH') : $('trimOutH');
+    h.setPointerCapture(e.pointerId);
+    const onMove = ev => {
+      const frac = clamp((ev.clientX - rect.left) / rect.width, 0, 1);
+      const tSrc = frac * D;
+      if (which === 'in') c.trimIn = clamp(tSrc, 0, c.trimOut - .1);
+      else c.trimOut = clamp(tSrc, c.trimIn + .1, D);
+      refresh();
+      renderTimeline();
+      const item = it();
+      if (item) seekTo(which === 'in' ? item.start + .001 : item.end - .01);
+      needsFrame = true;
+    };
+    const onUp = () => { h.removeEventListener('pointermove', onMove); commit({ insp: false }); };
+    h.addEventListener('pointermove', onMove);
+    h.addEventListener('pointerup', onUp, { once: true });
+    h.addEventListener('pointercancel', onUp, { once: true });
+  };
+  $('trimInH').addEventListener('pointerdown', e => startDrag('in', e));
+  $('trimOutH').addEventListener('pointerdown', e => startDrag('out', e));
+  $('trimInN').addEventListener('change', () => { c.trimIn = clamp(+$('trimInN').value || 0, 0, c.trimOut - .1); refresh(); commit({ insp: false }); });
+  $('trimOutN').addEventListener('change', () => { c.trimOut = clamp(+$('trimOutN').value || 0, c.trimIn + .1, asset.duration); refresh(); commit({ insp: false }); });
+}
+
+function renderTextInspector(box, cue) {
+  box.innerHTML = `
+    <div class="insp-title">Text cue<span class="sub">${esc(styleOf(cue).name)}</span></div>
+    <div class="field"><label>Content</label>
+      <textarea class="cue-text" id="cueText" spellcheck="false">${esc(cue.content)}</textarea></div>
+    <div class="fgrid2">
+      <div class="field"><label>Start</label>
+        <input type="number" id="cueStart" step="0.05" min="0" value="${fmt(cue.start, 2)}"></div>
+      <div class="field"><label>Duration</label>
+        <input type="number" id="cueDur" step="0.05" min="0.2" value="${fmt(cue.duration, 2)}"></div>
+    </div>
+    <div class="field"><label>Style preset</label><div class="frow">
+      <select id="cueStyle">${styleOptions(cue.styleId)}</select>
+      <button class="btn tiny" id="editStyleBtn" title="edit style">✎</button>
+    </div></div>
+    ${inspNum('cuePos', 'Vertical position', cue.posY, 2, 98, 1, '%')}
+    ${inspNum('cueScale', 'Size ×', cue.scale, .4, 2.5, .05, '×')}
+    <div class="btnrow">
+      <button class="btn tiny" id="cueAtPlayhead">start = playhead</button>
+      <button class="btn tiny" id="cueDup">duplicate</button>
+    </div>
+    <div class="btnrow">
+      <button class="btn tiny" id="cueSnip">★ save as snippet</button>
+      <button class="btn tiny danger" id="cueDel">remove</button>
+    </div>`;
+  $('cueText').addEventListener('input', () => { cue.content = $('cueText').value; commit({ insp: false }); });
+  $('cueStart').addEventListener('change', () => { cue.start = Math.max(0, +$('cueStart').value || 0); seekTo(cue.start + .001); commit({ insp: false }); });
+  $('cueDur').addEventListener('change', () => { cue.duration = Math.max(.2, +$('cueDur').value || 1); commit({ insp: false }); });
+  $('cueStyle').addEventListener('change', () => {
+    cue.styleId = $('cueStyle').value;
+    cue.styleSnap = deep(styleOf(cue));
+    commit();
+  });
+  $('editStyleBtn').addEventListener('click', () => openStyleEditor(cue.styleId, cue.id));
+  bindNum('cuePos', () => cue.posY, v => { cue.posY = clamp(v, 2, 98); }, () => commit({ insp: false }));
+  bindNum('cueScale', () => cue.scale, v => { cue.scale = clamp(v, .4, 2.5); }, () => commit({ insp: false }));
+  $('cueAtPlayhead').addEventListener('click', () => { cue.start = Math.round(state.t * 20) / 20; commit(); });
+  $('cueDup').addEventListener('click', () => {
+    const copy = deep(cue); copy.id = uid(); copy.start += cue.duration;
+    state.project.texts.push(copy);
+    selectItem('text', copy.id); commit();
+  });
+  $('cueSnip').addEventListener('click', () => {
+    state.snippets.push({ id: uid(), content: cue.content, styleId: cue.styleId,
+      styleSnap: deep(styleOf(cue)), duration: cue.duration, posY: cue.posY, scale: cue.scale });
+    toast('saved as snippet');
+    commit({ side: true });
+  });
+  $('cueDel').addEventListener('click', removeSelection);
+}
+function syncCueInspector(cue) {
+  if (state.sel?.type === 'text' && state.sel.id === cue.id && $('cueStart')) $('cueStart').value = fmt(cue.start, 2);
+}
+
+/* ── sidebar ───────────────────────────────────────────────────────────── */
+function renderAssetBin() {
+  const grid = $('assetGrid');
+  grid.innerHTML = '';
+  const slotArmed = state.sel?.type === 'clip' && clipById(state.sel.id) && !clipById(state.sel.id).assetId;
+  state.assets.forEach(a => {
+    const el = document.createElement('div');
+    el.className = 'asset' + (slotArmed ? ' armed' : '');
+    if (a.thumb) el.style.backgroundImage = `url(${a.thumb})`;
+    el.title = slotArmed ? 'fill selected slot' : 'add to timeline';
+    el.innerHTML = `<div class="a-kind">${a.kind === 'video' ? '▶ ' + fmt(a.duration) + 's' : 'img'}</div>
+      <button class="a-del" title="remove asset">✕</button>
+      <div class="a-name">${esc(a.name)}</div>`;
+    el.addEventListener('click', e => {
+      if (e.target.classList.contains('a-del')) { removeAsset(a.id); return; }
+      useAsset(a);
+    });
+    el.draggable = true;
+    el.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/x-asset', a.id);
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+    grid.appendChild(el);
+  });
+}
+function animSummary(a) {
+  const bits = [];
+  if (a.scaleFrom !== a.scaleTo) bits.push(`z ${a.scaleFrom}→${a.scaleTo}`);
+  else if (a.scaleFrom !== 1) bits.push(`z ${a.scaleFrom}`);
+  if (a.xFrom !== a.xTo) bits.push(`x ${a.xFrom}→${a.xTo}`);
+  if (a.yFrom !== a.yTo) bits.push(`y ${a.yFrom}→${a.yTo}`);
+  return bits.join(' · ') || 'static';
+}
+function renderSidebarLists() {
+  // animations
+  const al = $('animList');
+  al.innerHTML = '';
+  allAnims().forEach(a => {
+    const builtin = a.id.startsWith('a-');
+    const row = document.createElement('div');
+    row.className = 'rowitem' + (builtin ? ' builtin' : '');
+    row.innerHTML = `<span class="r-name">${esc(a.name)}</span><span class="r-sub">${animSummary(a)}</span>
+      <button class="r-btn" data-act="edit" title="${builtin ? 'view / copy' : 'edit'}">✎</button>
+      ${builtin ? '' : '<button class="r-btn del" data-act="del" title="delete">✕</button>'}`;
+    row.addEventListener('click', e => {
+      const act = e.target.dataset?.act;
+      if (act === 'edit') { openAnimEditor(a.id, null); return; }
+      if (act === 'del') {
+        dialogConfirm(`Delete animation preset “${a.name}”? Clips using it keep a frozen copy.`).then(ok => {
+          if (!ok) return;
+          state.project.clips.forEach(c => { if (c.animId === a.id) c.animId = null; });
+          state.animPresets = state.animPresets.filter(x => x.id !== a.id);
+          commit({ side: true });
+        });
+        return;
+      }
+      const c = state.sel?.type === 'clip' && clipById(state.sel.id);
+      if (c) { c.animId = a.id; c.animSnap = deep(a); commit(); toast(`“${a.name}” → clip ${state.project.clips.indexOf(c) + 1}`); }
+      else toast('select a clip first, then click a preset to apply it', 'warn');
+    });
+    al.appendChild(row);
+  });
+  // snippets
+  const sl = $('snipList');
+  sl.innerHTML = '';
+  if (!state.snippets.length) sl.innerHTML = '<div class="hint" style="margin:0">none yet — select a text cue and “save as snippet”.</div>';
+  state.snippets.forEach(sn => {
+    const row = document.createElement('div');
+    row.className = 'rowitem';
+    row.innerHTML = `<span class="r-name">${esc(sn.content.replace(/\n/g, ' '))}</span>
+      <span class="r-sub">${esc(styleById(sn.styleId)?.name ?? 'custom')}</span>
+      <button class="r-btn del" data-act="del" title="delete">✕</button>`;
+    row.addEventListener('click', e => {
+      if (e.target.dataset?.act === 'del') {
+        state.snippets = state.snippets.filter(x => x.id !== sn.id);
+        commit({ side: true });
+        return;
+      }
+      if (sn.styleSnap && !styleById(sn.styleId)) { state.textStyles.push(deep(sn.styleSnap)); }
+      const cue = makeText({ content: sn.content, styleId: sn.styleId, duration: sn.duration,
+        posY: sn.posY, scale: sn.scale, start: state.t });
+      state.project.texts.push(cue);
+      selectItem('text', cue.id);
+      commit({ side: true });
+    });
+    sl.appendChild(row);
+  });
+  // templates
+  const tl = $('tplList');
+  tl.innerHTML = '';
+  if (!state.templates.length) tl.innerHTML = '<div class="hint" style="margin:0">none yet — build a timeline and hit “save current”.</div>';
+  state.templates.forEach(tp => {
+    const row = document.createElement('div');
+    row.className = 'rowitem';
+    row.innerHTML = `<span class="r-name">${esc(tp.name)}</span>
+      <span class="r-sub">${tp.clips.length} slot · ${tp.texts.length} txt · ${tp.format.replace('x', ':')}</span>
+      <button class="r-btn" data-act="dl" title="export as file">⤓</button>
+      <button class="r-btn del" data-act="del" title="delete">✕</button>`;
+    row.addEventListener('click', e => {
+      const act = e.target.dataset?.act;
+      if (act === 'del') {
+        dialogConfirm(`Delete template “${tp.name}”?`).then(ok => {
+          if (!ok) return;
+          state.templates = state.templates.filter(x => x.id !== tp.id);
+          commit({ side: true });
+        });
+        return;
+      }
+      if (act === 'dl') { downloadTemplate(tp); return; }
+      applyTemplate(tp);
+    });
+    tl.appendChild(row);
+  });
+}
+
+/* ── modals ────────────────────────────────────────────────────────────── */
+let modalLocked = false;
+let modalRaf = null;
+function openModal(html, locked = false) {
+  stopModalLoop();
+  modalLocked = locked;
+  $('modalBox').innerHTML = html;
+  $('modal').classList.add('open');
+}
+function closeModal() {
+  stopModalLoop();
+  $('modal').classList.remove('open');
+  $('modalBox').innerHTML = '';
+  modalLocked = false;
+}
+function stopModalLoop() { if (modalRaf) { cancelAnimationFrame(modalRaf); modalRaf = null; } }
+$('modal').addEventListener('click', e => { if (e.target === $('modal') && !modalLocked) closeModal(); });
+function dialogConfirm(msg, okLabel = 'ok') {
+  return new Promise(res => {
+    openModal(`<h3>Confirm</h3><div class="mnote">${esc(msg)}</div>
+      <div class="mfoot"><button class="btn" id="dcNo">cancel</button>
+      <button class="btn primary" id="dcYes">${esc(okLabel)}</button></div>`);
+    $('dcNo').addEventListener('click', () => { closeModal(); res(false); });
+    $('dcYes').addEventListener('click', () => { closeModal(); res(true); });
+  });
+}
+function dialogPrompt(title, value) {
+  return new Promise(res => {
+    openModal(`<h3>${esc(title)}</h3>
+      <div class="mrow"><input type="text" id="dpVal" value="${esc(value)}" spellcheck="false"></div>
+      <div class="mfoot"><button class="btn" id="dpNo">cancel</button>
+      <button class="btn primary" id="dpYes">save</button></div>`);
+    const done = ok => { const v = $('dpVal').value.trim(); closeModal(); res(ok && v ? v : null); };
+    $('dpVal').focus(); $('dpVal').select();
+    $('dpVal').addEventListener('keydown', e => { if (e.key === 'Enter') done(true); });
+    $('dpNo').addEventListener('click', () => done(false));
+    $('dpYes').addEventListener('click', () => done(true));
+  });
+}
+
+/* ── animation preset editor ───────────────────────────────────────────── */
+let sampleImg = null;
+function getSampleDrawable() {
+  const imgAsset = state.assets.find(a => a.kind === 'image');
+  if (imgAsset) return { el: imgAsset.el, w: imgAsset.w, h: imgAsset.h };
+  if (!sampleImg) {
+    const c = document.createElement('canvas'); c.width = 540; c.height = 720;
+    const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 540, 720);
+    g.addColorStop(0, '#26406a'); g.addColorStop(1, '#101418');
+    x.fillStyle = g; x.fillRect(0, 0, 540, 720);
+    x.strokeStyle = '#c8f060'; x.lineWidth = 3;
+    for (let i = 0; i < 9; i++) { x.strokeRect(60 * i - 30, 80 * i - 40, 220, 220); }
+    sampleImg = c;
+  }
+  return { el: sampleImg, w: 540, h: 720 };
+}
+function openAnimEditor(animId, forClipId) {
+  const src = animById(animId) || BUILTIN_ANIMS[0];
+  const isBuiltin = src.id.startsWith('a-');
+  const work = deep(src);
+  if (isBuiltin) { work.id = 'c' + uid(); work.name = src.name + ' copy'; }
+  const mrow = (id, label, min, max, step, val) =>
+    `<div class="mrow"><label>${label}</label>
+     <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${val}">
+     <input type="number" id="${id}N" min="${min}" max="${max}" step="${step}" value="${val}"></div>`;
+  openModal(`<h3>${isBuiltin ? 'Copy of built-in preset' : 'Animation preset'}</h3>
+    <div class="mrow"><label>name</label><input type="text" id="aeName" value="${esc(work.name)}" spellcheck="false"></div>
+    ${mrow('aeSF', 'zoom from', .5, 2.5, .01, work.scaleFrom)}
+    ${mrow('aeST', 'zoom to', .5, 2.5, .01, work.scaleTo)}
+    ${mrow('aeXF', 'x from %', -40, 40, .5, work.xFrom)}
+    ${mrow('aeXT', 'x to %', -40, 40, .5, work.xTo)}
+    ${mrow('aeYF', 'y from %', -40, 40, .5, work.yFrom)}
+    ${mrow('aeYT', 'y to %', -40, 40, .5, work.yTo)}
+    <div class="mrow"><label>easing</label><select id="aeEase">
+      ${Object.entries(EASE_NAMES).map(([k, v]) => `<option value="${k}" ${work.easing === k ? 'selected' : ''}>${v}</option>`).join('')}
+    </select></div>
+    <div class="mpreview"><canvas id="aePrev" width="152" height="270"></canvas></div>
+    <div class="mnote">Zoom &gt; 1 crops in. x/y offsets are % of the frame — pair pans with a little zoom
+    so edges never show.</div>
+    <div class="mfoot">
+      <button class="btn" id="aeCancel">cancel</button>
+      <button class="btn primary" id="aeSave">${isBuiltin ? 'save as new' : 'save'}</button>
+    </div>`);
+  const fields = { aeSF: 'scaleFrom', aeST: 'scaleTo', aeXF: 'xFrom', aeXT: 'xTo', aeYF: 'yFrom', aeYT: 'yTo' };
+  Object.entries(fields).forEach(([id, key]) => {
+    const sync = v => { work[key] = +v; $(id).value = v; $(id + 'N').value = v; };
+    $(id).addEventListener('input', () => sync($(id).value));
+    $(id + 'N').addEventListener('change', () => sync($(id + 'N').value));
+  });
+  $('aeEase').addEventListener('change', () => { work.easing = $('aeEase').value; });
+  $('aeName').addEventListener('input', () => { work.name = $('aeName').value; });
+  // live loop
+  const pc = $('aePrev'), px = pc.getContext('2d');
+  const d = getSampleDrawable();
+  const t0 = performance.now();
+  (function loop() {
+    const p = ((performance.now() - t0) / 2400) % 1.2;   // brief hold at end
+    const pp = clamp(p, 0, 1);
+    const e = (EASE[work.easing] || EASE.inout)(pp);
+    const W = pc.width, H = pc.height;
+    px.fillStyle = '#000'; px.fillRect(0, 0, W, H);
+    const scale = lerp(work.scaleFrom, work.scaleTo, e);
+    const tx = lerp(work.xFrom, work.xTo, e) / 100 * W;
+    const ty = lerp(work.yFrom, work.yTo, e) / 100 * H;
+    const base = Math.max(W / d.w, H / d.h) * scale;
+    px.save();
+    px.translate(W / 2 + tx, H / 2 + ty); px.scale(base, base);
+    px.drawImage(d.el, -d.w / 2, -d.h / 2, d.w, d.h);
+    px.restore();
+    modalRaf = requestAnimationFrame(loop);
+  })();
+  $('aeCancel').addEventListener('click', closeModal);
+  $('aeSave').addEventListener('click', () => {
+    work.name = work.name.trim() || 'untitled';
+    const existing = state.animPresets.find(a => a.id === work.id);
+    if (existing) Object.assign(existing, work);
+    else state.animPresets.push(work);
+    state.project.clips.forEach(c => { if (c.animId === work.id) c.animSnap = deep(work); });
+    if (forClipId) { const c = clipById(forClipId); if (c) { c.animId = work.id; c.animSnap = deep(work); } }
+    closeModal();
+    commit({ side: true });
+    toast(`animation “${work.name}” saved`);
+  });
+}
+
+/* ── text style editor ─────────────────────────────────────────────────── */
+function openStyleEditor(styleId, forCueId) {
+  const src = styleById(styleId) || BUILTIN_STYLES[0];
+  const isBuiltin = src.id.startsWith('s-');
+  const work = deep(src);
+  if (isBuiltin) { work.id = 'c' + uid(); work.name = src.name + ' copy'; }
+  openModal(`<h3>${isBuiltin ? 'Copy of built-in style' : 'Text style'}</h3>
+    <div class="mrow"><label>name</label><input type="text" id="seName" value="${esc(work.name)}" spellcheck="false"></div>
+    <div class="mrow"><label>font</label><select id="seFont">
+      ${Object.entries(FONTS).map(([k, f]) => `<option value="${k}" ${work.font === k ? 'selected' : ''}>${f.label}</option>`).join('')}
+      </select>
+      <select id="seWeight" style="width:70px">
+      ${[300, 400, 600, 700, 800, 900].map(w => `<option ${work.weight === w ? 'selected' : ''}>${w}</option>`).join('')}
+      </select></div>
+    <div class="mrow"><label>size % width</label>
+      <input type="range" id="seSize" min="1.5" max="14" step="0.1" value="${work.size}">
+      <input type="number" id="seSizeN" min="1.5" max="14" step="0.1" value="${work.size}"></div>
+    <div class="mrow"><label>colour</label><input type="color" id="seColor" value="${work.color}">
+      <label style="width:auto">pill</label><input type="checkbox" id="seBgOn" ${work.bgOn ? 'checked' : ''}>
+      <input type="color" id="seBg" value="${work.bg}">
+      <input type="range" id="seBgA" min="0" max="1" step="0.05" value="${work.bgAlpha}" title="pill opacity"></div>
+    <div class="mrow"><label>uppercase</label><input type="checkbox" id="seUpper" ${work.uppercase ? 'checked' : ''}>
+      <label style="width:auto">tracking</label>
+      <input type="range" id="seLsp" min="0" max="0.3" step="0.01" value="${work.lspace}"></div>
+    <div class="mrow"><label>line height</label>
+      <input type="range" id="seLh" min="1" max="1.8" step="0.05" value="${work.lineHeight}"></div>
+    <div class="mrow"><label>shadow</label><select id="seShadow">
+      ${['none', 'soft', 'hard'].map(s => `<option ${work.shadow === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+    <div class="mrow"><label>anim in</label><select id="seIn">
+      ${['cut', 'fade', 'rise', 'pop', 'type'].map(s => `<option ${work.animIn === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+      <label style="width:auto">out</label><select id="seOut">
+      ${['cut', 'fade', 'sink'].map(s => `<option ${work.animOut === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+    <div class="mrow"><label>anim secs</label>
+      <input type="range" id="seAd" min="0.1" max="1" step="0.05" value="${work.animDur}"></div>
+    <div class="mpreview"><canvas id="sePrev" width="220" height="220"></canvas></div>
+    <div class="mfoot">
+      <button class="btn" id="seCancel">cancel</button>
+      <button class="btn primary" id="seSave">${isBuiltin ? 'save as new' : 'save'}</button>
+    </div>`);
+  const wire = (id, key, type = 'value') => {
+    const el = $(id);
+    const read = () => type === 'check' ? el.checked : type === 'num' ? +el.value : el.value;
+    el.addEventListener(type === 'check' ? 'change' : 'input', () => { work[key] = read(); });
+    el.addEventListener('change', () => { work[key] = read(); });
+  };
+  wire('seName', 'name'); wire('seFont', 'font');
+  $('seWeight').addEventListener('change', () => work.weight = +$('seWeight').value);
+  $('seSize').addEventListener('input', () => { work.size = +$('seSize').value; $('seSizeN').value = work.size; });
+  $('seSizeN').addEventListener('change', () => { work.size = +$('seSizeN').value; $('seSize').value = work.size; });
+  wire('seColor', 'color'); wire('seBgOn', 'bgOn', 'check'); wire('seBg', 'bg');
+  wire('seBgA', 'bgAlpha', 'num'); wire('seUpper', 'uppercase', 'check');
+  wire('seLsp', 'lspace', 'num'); wire('seLh', 'lineHeight', 'num');
+  wire('seShadow', 'shadow'); wire('seIn', 'animIn'); wire('seOut', 'animOut'); wire('seAd', 'animDur', 'num');
+  const pc = $('sePrev'), px = pc.getContext('2d');
+  const t0 = performance.now();
+  (function loop() {
+    const W = pc.width, H = pc.height;
+    const cycle = ((performance.now() - t0) / 1000) % 3;
+    const g = px.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, '#243'); g.addColorStop(1, '#101010');
+    px.fillStyle = g; px.fillRect(0, 0, W, H);
+    const fake = { content: 'Your cued text', start: 0, duration: 2.6, styleId: work.id,
+      styleSnap: work, posY: 50, scale: 1 };
+    const hold = Math.min(cycle, 2.59);
+    drawTexts(px, hold, W, H, [fake]);
+    modalRaf = requestAnimationFrame(loop);
+  })();
+  $('seCancel').addEventListener('click', closeModal);
+  $('seSave').addEventListener('click', () => {
+    work.name = work.name.trim() || 'untitled';
+    const existing = state.textStyles.find(s => s.id === work.id);
+    if (existing) Object.assign(existing, work);
+    else state.textStyles.push(work);
+    state.project.texts.forEach(t => { if (t.styleId === work.id) t.styleSnap = deep(work); });
+    if (forCueId) { const cue = textById(forCueId); if (cue) { cue.styleId = work.id; cue.styleSnap = deep(work); } }
+    closeModal();
+    commit({ side: true });
+    toast(`style “${work.name}” saved`);
+  });
+}
+
+/* ── templates ─────────────────────────────────────────────────────────── */
+function snapshotTemplate(name) {
+  const clips = state.project.clips.map(c => {
+    const copy = deep(c);
+    copy.duration = clipDuration(c);           // slot keeps its length once the asset is gone
+    copy.assetId = null;
+    copy.savedAssetName = assetById(c.assetId)?.name ?? c.savedAssetName;
+    copy.animSnap = deep(animOf(c));
+    return copy;
+  });
+  const texts = state.project.texts.map(t => {
+    const copy = deep(t);
+    copy.styleSnap = deep(styleOf(t));
+    return copy;
+  });
+  return { id: uid(), name, createdAt: Date.now(), format: state.project.format,
+    fps: state.project.fps, background: state.project.background, clips, texts };
+}
+async function saveTemplate() {
+  if (!state.project.clips.length && !state.project.texts.length)
+    return toast('nothing to save — build a timeline first', 'warn');
+  const name = await dialogPrompt('Template name', state.project.name);
+  if (!name) return;
+  state.templates.push(snapshotTemplate(name));
+  toast(`template “${name}” saved`);
+  commit({ side: true });
+}
+async function applyTemplate(tp) {
+  if (state.project.clips.length || state.project.texts.length) {
+    const ok = await dialogConfirm(`Apply template “${tp.name}”? It replaces the current timeline (assets stay in the bin).`, 'apply');
+    if (!ok) return;
+  }
+  // re-register embedded custom presets so they stay editable + reusable
+  tp.clips.forEach(c => {
+    if (c.animId && !animById(c.animId) && c.animSnap) state.animPresets.push(deep(c.animSnap));
+  });
+  tp.texts.forEach(t => {
+    if (t.styleId && !styleById(t.styleId) && t.styleSnap) state.textStyles.push(deep(t.styleSnap));
+  });
+  state.clipVideos.forEach(v => { v.pause(); v.removeAttribute('src'); });
+  state.clipVideos.clear();
+  state.project.format = tp.format;
+  state.project.fps = tp.fps;
+  state.project.background = tp.background;
+  state.project.clips = tp.clips.map(c => { const x = deep(c); x.id = uid(); x.assetId = null; return x; });
+  state.project.texts = tp.texts.map(t => { const x = deep(t); x.id = uid(); return x; });
+  state.sel = null; state.t = 0;
+  reflectHeader();
+  sizePreview();
+  commit({ side: true });
+  toast(`template applied — fill the ${tp.clips.length} slot(s) with assets`);
+}
+function downloadTemplate(tp) {
+  const blob = new Blob([JSON.stringify({ type: 'reel-studio-template', v: 1, template: tp }, null, 2)],
+    { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = tp.name.replace(/[^\w-]+/g, '_') + '.reel-template.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function importTemplateFile(file) {
+  file.text().then(txt => {
+    const data = JSON.parse(txt);
+    const tp = data?.template;
+    if (data?.type !== 'reel-studio-template' || !tp?.clips) throw new Error('not a reel-studio template');
+    tp.id = uid();
+    state.templates.push(tp);
+    commit({ side: true });
+    toast(`imported template “${tp.name}”`);
+  }).catch(e => toast('import failed — ' + e.message, 'err'));
+}
+
+/* ── export ────────────────────────────────────────────────────────────── */
+let exportAbort = false;
+async function pickEncoderConfig(W, H, fps, bitrate) {
+  const candidates = ['avc1.64002a', 'avc1.4d002a', 'avc1.42002a', 'avc1.640028',
+                      'vp09.00.41.08', 'vp09.00.40.08'];
+  for (const codec of candidates) {
+    const config = { codec, width: W, height: H, bitrate, framerate: fps };
+    if (codec.startsWith('avc')) config.avc = { format: 'avc' };
+    try {
+      const s = await VideoEncoder.isConfigSupported(config);
+      if (s.supported) return { codec, config };
+    } catch {}
+  }
+  return null;
+}
+function openExportModal() {
+  const { items, total } = layout();
+  if (!items.length) return toast('nothing to export — timeline is empty', 'warn');
+  const empty = items.filter(i => !i.clip.assetId).length;
+  if (empty) return toast(`${empty} empty slot(s) — fill them with assets before exporting`, 'warn');
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined')
+    return openModal(`<h3>Export MP4</h3><div class="mnote">This browser doesn't support WebCodecs
+      (<code>VideoEncoder</code>). Use a recent Chrome, Edge or Safari.</div>
+      <div class="mfoot"><button class="btn" onclick="document.getElementById('modal').classList.remove('open')">close</button></div>`);
+  const f = fmtDims();
+  openModal(`<h3>Export MP4</h3>
+    <div class="mrow"><label>resolution</label><select id="exRes">
+      <option value="1080">${f.w} × ${f.h}</option>
+      <option value="720">${Math.round(f.w * 720 / 1080)} × ${Math.round(f.h * 720 / 1080)} (fast)</option>
+    </select></div>
+    <div class="mrow"><label>quality</label><select id="exQ">
+      <option value="8000000">draft · 8 Mbps</option>
+      <option value="12000000" selected>social · 12 Mbps</option>
+      <option value="20000000">max · 20 Mbps</option>
+    </select></div>
+    <div class="mnote">${fmt(total)}s · ${state.project.fps} fps · ${Math.round(total * state.project.fps)} frames ·
+      video only (silent) — most platforms want you to add trending audio there anyway.</div>
+    <div id="exBody"></div>
+    <div class="mfoot">
+      <button class="btn" id="exClose">cancel</button>
+      <button class="btn primary" id="exStart">start export</button>
+    </div>`);
+  $('exClose').addEventListener('click', closeModal);
+  $('exStart').addEventListener('click', () => {
+    const scale = +$('exRes').value / 1080;
+    const W = Math.round(f.w * scale / 2) * 2, H = Math.round(f.h * scale / 2) * 2;
+    runExport(W, H, state.project.fps, +$('exQ').value);
+  });
+}
+async function runExport(W, H, fps, bitrate) {
+  exportAbort = false;
+  const wasPlaying = state.playing;
+  setPlaying(false);
+  state.exporting = true;
+  modalLocked = true;
+  $('exStart').disabled = true;
+  $('exRes').disabled = true; $('exQ').disabled = true;
+  const body = $('exBody');
+  body.innerHTML = `<div class="progress"><div class="p-fill" id="exFill"></div>
+    <div class="p-lbl" id="exLbl">preparing…</div></div>`;
+  const setExClose = (label, fn) => {           // swap the button's single action
+    $('exClose').textContent = label;
+    $('exClose').replaceWith($('exClose').cloneNode(true));
+    $('exClose').addEventListener('click', fn);
+  };
+  setExClose('abort', () => { exportAbort = true; });
+  let encoder = null;
+  try {
+    const { items, total } = layout();
+    // make sure every video element is ready
+    for (const it of items) {
+      if (it.clip.kind !== 'video' || !it.clip.assetId) continue;
+      const v = ensureClipVideo(it.clip);
+      v.pause();
+      if (v.readyState < 2) { v.load(); await once(v, 'canplay', 8000); }
+    }
+    const picked = await pickEncoderConfig(W, H, fps, bitrate);
+    if (!picked) throw new Error('no supported codec (tried H.264 + VP9)');
+    const isAvc = picked.codec.startsWith('avc');
+    if (!isAvc) toast('H.264 unavailable — exporting VP9 mp4 (fine for YouTube, may be refused elsewhere)', 'warn');
+    const canvas = $('exportCanvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    const muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: isAvc ? 'avc' : 'vp9', width: W, height: H },
+      fastStart: 'in-memory',
+      firstTimestampBehavior: 'offset',
+    });
+    let encErr = null;
+    encoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: e => { encErr = e; },
+    });
+    encoder.configure(picked.config);
+    const frames = Math.max(1, Math.round(total * fps));
+    const t0 = performance.now();
+    for (let i = 0; i < frames; i++) {
+      if (exportAbort) throw new Error('aborted');
+      if (encErr) throw encErr;
+      const t = Math.min(i / fps, total - .0001);
+      // frame-exact seek for all visible video clips
+      const { vis } = activeItems(t);
+      for (const it of vis) {
+        const c = it.clip;
+        if (c.kind !== 'video' || !c.assetId) continue;
+        const v = ensureClipVideo(c);
+        await seekExact(v, c.trimIn + clamp(t - it.start, 0, it.dur));
+      }
+      renderFrame(ctx, W, H, t);
+      const frame = new VideoFrame(canvas, {
+        timestamp: Math.round(i * 1e6 / fps),
+        duration: Math.round(1e6 / fps),
+      });
+      encoder.encode(frame, { keyFrame: i % (fps * 2) === 0 });
+      frame.close();
+      while (encoder.encodeQueueSize > 6) await sleep(4);
+      if (i % 5 === 0 || i === frames - 1) {
+        const pct = ((i + 1) / frames * 100);
+        $('exFill').style.width = pct + '%';
+        const elapsed = (performance.now() - t0) / 1000;
+        const eta = elapsed / (i + 1) * (frames - i - 1);
+        $('exLbl').textContent = `${i + 1} / ${frames} frames · eta ${fmt(Math.max(0, eta), 0)}s`;
+      }
+    }
+    $('exLbl').textContent = 'finalizing…';
+    await encoder.flush();
+    encoder.close();
+    muxer.finalize();
+    const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+    const name = (state.project.name.replace(/[^\w-]+/g, '-') || 'reel') + `-${W}x${H}.mp4`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    body.innerHTML = `<div class="mnote" style="color:var(--accent)">✔ ${esc(name)} —
+      ${(blob.size / 1e6).toFixed(1)} MB · ${isAvc ? 'H.264' : 'VP9'} ·
+      ${fmt((performance.now() - t0) / 1000, 0)}s render.<br>Download should have started;
+      <a href="${url}" download="${esc(name)}" style="color:var(--accent)">download again</a>.</div>`;
+    setExClose('close', closeModal);
+    modalLocked = false;
+    window._lastExport = { size: blob.size, name, codec: picked.codec };  // handy for automation
+  } catch (e) {
+    if (e.message === 'aborted') { closeModal(); toast('export aborted', 'warn'); }
+    else {
+      body.innerHTML = `<div class="mnote" style="color:var(--danger)">export failed — ${esc(e.message)}</div>`;
+      setExClose('close', closeModal);
+      console.error(e);
+    }
+    modalLocked = false;
+  } finally {
+    try { if (encoder && encoder.state !== 'closed') encoder.close(); } catch {}
+    state.exporting = false;
+    if (wasPlaying) setPlaying(true);
+    needsFrame = true;
+  }
+}
+
+/* ── help ──────────────────────────────────────────────────────────────── */
+function openHelp() {
+  openModal(`<h3>Reel Studio — help</h3>
+    <div class="mnote">
+      <b>Build</b> — drop images/videos in the bin, click to append them as clips. Select a clip to set its
+      duration, trim video in/out points, pick a <b>fit</b> and a <b>transition</b>.<br><br>
+      <b>Animate</b> — every clip gets an animation preset (zoom / pan). Presets are live references:
+      edit one and every clip using it updates. Built-ins are copied on save; your presets are stored in the
+      browser.<br><br>
+      <b>Text</b> — “+ text cue” drops a timed overlay at the playhead. Cues reference a style preset
+      (font, pill, shadow, in/out animation). Save any cue as a <b>snippet</b> to reuse the whole bit later.<br><br>
+      <b>Templates</b> — “save current” freezes the layout: slot order, durations, animations, transitions and
+      text cues, minus the assets. Apply it later and fill the empty slots with new footage — same edit, new
+      content. Templates can be exported/imported as JSON files.<br><br>
+      <b>Export</b> — renders frame-exact via WebCodecs into an H.264 MP4 (fastStart, ready for IG / TikTok /
+      Shorts). Exports are <b>silent</b> by design — add music on the platform. Needs a recent Chrome, Edge or
+      Safari.<br><br>
+      Everything (presets, snippets, templates, layout) persists in this browser via localStorage.
+      Assets are session-only — re-add files after a reload.
+    </div>
+    <div class="mfoot"><button class="btn primary" id="helpClose">got it</button></div>`);
+  $('helpClose').addEventListener('click', closeModal);
+}
+
+/* ── header / transport / keyboard wiring ──────────────────────────────── */
+function reflectHeader() {
+  $('projName').value = state.project.name;
+  $('fpsSel').value = String(state.project.fps);
+  $('bgColor').value = state.project.background;
+  document.querySelectorAll('#formatSeg button').forEach(b =>
+    b.classList.toggle('active', b.dataset.f === state.project.format));
+}
+$('projName').addEventListener('change', () => { state.project.name = $('projName').value.trim() || 'my-reel'; persistSoon(); });
+document.querySelectorAll('#formatSeg button').forEach(b => b.addEventListener('click', () => {
+  state.project.format = b.dataset.f;
+  reflectHeader(); sizePreview(); commit();
+}));
+$('fpsSel').addEventListener('change', () => { state.project.fps = +$('fpsSel').value; commit(); });
+$('bgColor').addEventListener('input', () => { state.project.background = $('bgColor').value; needsFrame = true; persistSoon(); });
+$('safeBtn').addEventListener('click', () => {
+  state.safe = !state.safe;
+  $('safeBtn').style.color = state.safe ? 'var(--accent)' : '';
+  needsFrame = true;
+});
+$('helpBtn').addEventListener('click', openHelp);
+$('exportBtn').addEventListener('click', openExportModal);
+$('playBtn').addEventListener('click', () => setPlaying(!state.playing));
+$('toStartBtn').addEventListener('click', () => seekTo(0, state.playing));
+$('loopBtn').addEventListener('click', () => {
+  state.loop = !state.loop;
+  $('loopBtn').style.color = state.loop ? 'var(--accent)' : '';
+});
+$('addTextBtn').addEventListener('click', () => {
+  const cue = makeText();
+  state.project.texts.push(cue);
+  selectItem('text', cue.id);
+  commit();
+});
+$('newAnimBtn').addEventListener('click', () => openAnimEditor(null, state.sel?.type === 'clip' ? state.sel.id : null));
+$('saveTplBtn').addEventListener('click', saveTemplate);
+$('importTplBtn').addEventListener('click', () => $('tplFileInput').click());
+$('tplFileInput').addEventListener('change', () => {
+  [...$('tplFileInput').files].forEach(importTemplateFile);
+  $('tplFileInput').value = '';
+});
+$('newProjBtn').addEventListener('click', async () => {
+  if (state.project.clips.length || state.project.texts.length) {
+    const ok = await dialogConfirm('Clear the current timeline? Assets stay in the bin.', 'clear');
+    if (!ok) return;
+  }
+  const name = state.project.name;
+  state.clipVideos.forEach(v => { v.pause(); v.removeAttribute('src'); });
+  state.clipVideos.clear();
+  state.project = freshProject();
+  state.project.name = name;
+  state.sel = null; state.t = 0;
+  reflectHeader(); sizePreview(); commit();
+});
+
+/* asset input + drag/drop */
+$('dropzone').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', () => { addFiles([...$('fileInput').files]); $('fileInput').value = ''; });
+$('demoBtn').addEventListener('click', addDemoImages);
+['dragover', 'dragenter'].forEach(ev => document.addEventListener(ev, e => {
+  if ([...e.dataTransfer?.types || []].includes('Files')) {
+    e.preventDefault();
+    $('dropzone').classList.add('over');
+  }
+}));
+['dragleave', 'drop'].forEach(ev => document.addEventListener(ev, e => {
+  if (ev === 'drop' && [...e.dataTransfer?.types || []].includes('Files')) {
+    e.preventDefault();
+    addFiles([...e.dataTransfer.files]);
+  }
+  if (!e.relatedTarget || ev === 'drop') $('dropzone').classList.remove('over');
+}));
+
+/* keyboard */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if ($('modal').classList.contains('open') && !modalLocked) closeModal(); return; }
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if ($('modal').classList.contains('open')) return;
+  if (e.code === 'Space') { e.preventDefault(); setPlaying(!state.playing); }
+  else if (e.key === 'ArrowLeft') seekTo(state.t - (e.shiftKey ? 1 : .1));
+  else if (e.key === 'ArrowRight') seekTo(state.t + (e.shiftKey ? 1 : .1));
+  else if (e.key === 'Home') seekTo(0);
+  else if (e.key === 'End') seekTo(layout().total);
+  else if (e.key === 'Delete' || e.key === 'Backspace') { if (state.sel) { e.preventDefault(); removeSelection(); } }
+});
+
+/* ── init ──────────────────────────────────────────────────────────────── */
+window.addEventListener('resize', () => { sizePreview(); renderTimeline(); needsFrame = true; });
+loadPersisted();
+reflectHeader();
+renderAssetBin();
+renderSidebarLists();
+renderTimeline();
+renderInspector();
+sizePreview();
+requestAnimationFrame(t => { lastTick = t; tick(t); });
+if (document.fonts?.ready) document.fonts.ready.then(() => { needsFrame = true; });
+// exposed for scripting / debugging in the console
+window._rs = { state, layout, seekTo, setPlaying, commit };
+</script>
+</body>
+</html>
