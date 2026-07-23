@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- tool-meta: {"name":"Reel Studio","slug":"reel-studio","description":"Timeline reel editor for socials — sequence images and trimmed video clips, assign reusable zoom/pan animation presets, add cued text overlays with saveable styles and snippets, save the whole layout as a template to refill with new assets, and export square or portrait MP4 (H.264 via WebCodecs) ready for Reels / TikTok / Shorts.","tags":["video","reel","social","mp4","timeline","template","text","animation"]} -->
+<!-- tool-meta: {"name":"Reel Studio","slug":"reel-studio","description":"Timeline reel editor for socials — sequence images and trimmed video clips, assign reusable zoom/pan animation presets, add cued text overlays with saveable styles and snippets, lay a music track under the reel with trim/volume/fades/loop, save the whole layout as a template to refill with new assets, and export square or portrait MP4 (H.264 + AAC via WebCodecs) ready for Reels / TikTok / Shorts.","tags":["video","reel","social","mp4","timeline","template","text","animation","audio","music"]} -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reel Studio</title>
@@ -177,6 +177,17 @@
            font-size:9px;padding:0 6px;cursor:grab;user-select:none;white-space:nowrap;overflow:hidden;
            text-overflow:ellipsis;}
   .tl-text.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);z-index:2;}
+  .tl-audio{position:relative;height:30px;margin-top:5px;display:none;}
+  .tl-audio.on{display:block;}
+  .tl-abar{position:absolute;top:0;height:30px;border:1px solid #3d4a22;background:#11160a;cursor:pointer;
+           overflow:hidden;user-select:none;}
+  .tl-abar .a-wave{position:absolute;inset:0;background-repeat:repeat-x;}
+  .tl-abar .a-lbl{position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:9px;color:#cbe390;
+                  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(100% - 12px);
+                  text-shadow:0 1px 2px rgba(0,0,0,.9);}
+  .tl-abar.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);z-index:2;}
+  .tl-abar.missing{border-style:dashed;background:#141414;}
+  .tl-abar.missing .a-lbl{color:var(--text-dim);}
   .playhead{position:absolute;top:0;bottom:0;width:1px;background:var(--accent);pointer-events:none;z-index:5;}
   .playhead::before{content:'';position:absolute;top:0;left:-4px;border:4px solid transparent;border-top:6px solid var(--accent);}
 
@@ -242,10 +253,10 @@
 
       <div class="section" id="assetSection">
         <div class="section-label">Assets</div>
-        <div class="dropzone" id="dropzone">drop images / videos here<br>or click to browse</div>
+        <div class="dropzone" id="dropzone">drop images / videos / audio here<br>or click to browse</div>
         <div class="asset-grid" id="assetGrid"></div>
         <div class="hint" id="assetHint">Click an asset to append it to the timeline — or to fill the selected
-          empty slot. Drag onto a clip to swap it.</div>
+          empty slot. Drag onto a clip to swap it. Clicking an audio file makes it the music track.</div>
         <div class="btnrow" style="margin-top:8px;">
           <button class="btn tiny ghost" id="demoBtn" title="generate a few placeholder images to play with">+ demo images</button>
         </div>
@@ -308,6 +319,7 @@
       <div class="tl-ruler" id="ruler"></div>
       <div class="tl-clips" id="clipTrack"></div>
       <div class="tl-texts" id="textTrack"></div>
+      <div class="tl-audio" id="audioTrack"></div>
       <div class="playhead" id="playhead" style="left:16px;"></div>
     </div>
   </div>
@@ -316,7 +328,7 @@
 <div class="modal-backdrop" id="modal"><div class="modal" id="modalBox"></div></div>
 <div class="toasts" id="toasts"></div>
 
-<input type="file" id="fileInput" accept="image/*,video/*" multiple hidden>
+<input type="file" id="fileInput" accept="image/*,video/*,audio/*,.mp3,.wav,.m4a,.aac,.ogg,.oga,.flac" multiple hidden>
 <input type="file" id="tplFileInput" accept="application/json,.json" hidden>
 <canvas id="exportCanvas" hidden></canvas>
 
@@ -428,7 +440,7 @@ const DEFAULT_SNIPPETS = [
 
 /* ── state ─────────────────────────────────────────────────────────────── */
 const state = {
-  assets: [],                 // {id, kind:'image'|'video', name, url, el, w, h, duration?, thumb}
+  assets: [],                 // {id, kind:'image'|'video'|'audio', name, url, el, w, h, duration?, peaks?, thumb}
   animPresets: [],            // custom animation presets
   textStyles: [],             // custom text styles
   snippets: [],               // reusable text bits
@@ -443,7 +455,10 @@ const state = {
 const PAD = 16;               // timeline inner horizontal padding
 
 function freshProject() {
-  return { name: 'my-reel', format: '9x16', fps: 30, background: '#000000', clips: [], texts: [] };
+  return { name: 'my-reel', format: '9x16', fps: 30, background: '#000000', clips: [], texts: [], audio: defaultAudio() };
+}
+function defaultAudio() {
+  return { assetId: null, savedAssetName: null, offset: 0, gain: 1, fadeIn: 0, fadeOut: 0, loop: false };
 }
 function allAnims()  { return [...BUILTIN_ANIMS, ...state.animPresets]; }
 function allStyles() { return [...BUILTIN_STYLES, ...state.textStyles]; }
@@ -474,6 +489,8 @@ function persistSoon() {
     lsSet('templates', state.templates);
     const p = deep(state.project);
     p.clips.forEach(c => { c.savedAssetName = assetById(c.assetId)?.name ?? c.savedAssetName; c.assetId = null; });
+    p.audio.savedAssetName = assetById(p.audio.assetId)?.name ?? p.audio.savedAssetName;
+    p.audio.assetId = null;
     lsSet('project', p);
   }, 400);
 }
@@ -483,9 +500,10 @@ function loadPersisted() {
   state.snippets    = lsGet('snippets', deep(DEFAULT_SNIPPETS));
   state.templates   = lsGet('templates', []);
   const p = lsGet('project', null);
-  if (p && (p.clips?.length || p.texts?.length)) {
+  if (p && (p.clips?.length || p.texts?.length || p.audio?.savedAssetName)) {
     state.project = Object.assign(freshProject(), p);
-    if (p.clips.length) toast('restored last layout — assets need to be re-added', 'warn');
+    state.project.audio = Object.assign(defaultAudio(), p.audio || {}, { assetId: null });
+    if (p.clips?.length || p.audio?.savedAssetName) toast('restored last layout — assets need to be re-added', 'warn');
   } else state.project = freshProject();
 }
 
@@ -523,6 +541,59 @@ async function makeThumb(el, w, h) {
   try { c.getContext('2d').drawImage(el, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', .7); }
   catch { return ''; }
 }
+
+/* ── audio decoding & waveforms ────────────────────────────────────────── */
+let decodeCtx = null;
+function decodeAudio(arrayBuffer) {
+  decodeCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+  return decodeCtx.decodeAudioData(arrayBuffer);
+}
+function computePeaks(buffer) {
+  const N = clamp(Math.round(buffer.duration * 40), 200, 6000);
+  const mins = new Float32Array(N), maxs = new Float32Array(N);
+  const ch0 = buffer.getChannelData(0);
+  const ch1 = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : ch0;
+  const spp = buffer.length / N;
+  for (let b = 0; b < N; b++) {
+    let mn = 1, mx = -1;
+    const s0 = Math.floor(b * spp), s1 = Math.min(buffer.length, Math.max(s0 + 1, Math.floor((b + 1) * spp)));
+    const st = Math.max(1, Math.floor((s1 - s0) / 32));
+    for (let i = s0; i < s1; i += st) {
+      const v = (ch0[i] + ch1[i]) * .5;
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    mins[b] = mn; maxs[b] = mx;
+  }
+  return { mins, maxs };
+}
+function drawPeaks(x, peaks, fromFrac, w, h, color) {
+  const N = peaks.maxs.length;
+  const from = clamp(Math.floor(fromFrac * N), 0, N - 1);
+  const span = Math.max(1, N - from);
+  x.fillStyle = color;
+  for (let px = 0; px < w; px++) {
+    const b = Math.min(N - 1, from + Math.floor(px / w * span));
+    const y0 = (1 - peaks.maxs[b]) / 2 * h, y1 = (1 - peaks.mins[b]) / 2 * h;
+    x.fillRect(px, y0, 1, Math.max(1, y1 - y0));
+  }
+}
+function audioThumb(peaks) {
+  const c = document.createElement('canvas'); c.width = 160; c.height = 120;
+  const x = c.getContext('2d');
+  x.fillStyle = '#0d0d0d'; x.fillRect(0, 0, 160, 120);
+  drawPeaks(x, peaks, 0, 160, 120, 'rgba(200,240,96,.75)');
+  return c.toDataURL('image/png');
+}
+let barImgCache = { key: '', url: '' };
+function audioBarImage(asset, offset) {
+  const key = asset.id + ':' + Math.round(offset * 4);
+  if (barImgCache.key === key) return barImgCache.url;
+  const c = document.createElement('canvas'); c.width = 1200; c.height = 28;
+  drawPeaks(c.getContext('2d'), asset.peaks, offset / Math.max(.05, asset.duration), 1200, 28, 'rgba(200,240,96,.5)');
+  barImgCache = { key, url: c.toDataURL('image/png') };
+  return barImgCache.url;
+}
 async function addFiles(files) {
   let added = 0;
   for (const f of files) {
@@ -551,6 +622,12 @@ async function addFiles(files) {
           thumb: await makeThumb(v, v.videoWidth, v.videoHeight) };
         state.assets.push(a);
         added++;
+      } else if (f.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|oga|flac)$/i.test(f.name)) {
+        const buffer = await decodeAudio(await f.arrayBuffer());
+        const peaks = computePeaks(buffer);
+        state.assets.push({ id: uid(), kind: 'audio', name: f.name, url, el: null,
+          w: 0, h: 0, duration: buffer.duration, peaks, thumb: audioThumb(peaks) });
+        added++;
       } else toast(`unsupported file: ${f.name}`, 'err');
     } catch (e) { toast(`could not load ${f.name} — ${e.message}`, 'err'); }
   }
@@ -558,9 +635,15 @@ async function addFiles(files) {
 }
 function removeAsset(id) {
   const users = state.project.clips.filter(c => c.assetId === id);
+  const isTrack = state.project.audio.assetId === id;
   const done = () => {
     const a = assetById(id);
     users.forEach(c => { c.duration = clipDuration(c); c.savedAssetName = a?.name; c.assetId = null; });
+    if (isTrack) {
+      state.project.audio.savedAssetName = a?.name ?? state.project.audio.savedAssetName;
+      state.project.audio.assetId = null;
+      if (audioEl) audioEl.pause();
+    }
     if (a?.url.startsWith('blob:') ) URL.revokeObjectURL(a.url);
     state.assets = state.assets.filter(a2 => a2.id !== id);
     for (const [cid, v] of [...state.clipVideos]) {
@@ -569,8 +652,10 @@ function removeAsset(id) {
     }
     commit({ bin: true });
   };
-  if (users.length) dialogConfirm(`${users.length} clip(s) use this asset — they will become empty slots. Remove?`).then(ok => ok && done());
-  else done();
+  if (users.length || isTrack) {
+    const what = [users.length ? `${users.length} clip(s)` : '', isTrack ? 'the audio track' : ''].filter(Boolean).join(' and ');
+    dialogConfirm(`${what} use(s) this asset — clips become empty slots, the track loses its file. Remove?`).then(ok => ok && done());
+  } else done();
 }
 async function addDemoImages() {
   const palettes = [['#1c2a4a','#4a8fe0','#c8f060'], ['#3a1a3a','#e05656','#f0d060'],
@@ -613,6 +698,16 @@ function clipDuration(c) {
   return c.kind === 'video' && c.assetId ? Math.max(.1, c.trimOut - c.trimIn) : Math.max(.1, c.duration);
 }
 function useAsset(asset) {
+  if (asset.kind === 'audio') {
+    const au = state.project.audio;
+    au.assetId = asset.id;
+    au.savedAssetName = asset.name;
+    if (au.offset >= asset.duration - .05) au.offset = 0;
+    selectItem('audio', 'audio');
+    toast(`♪ ${asset.name} set as audio track`);
+    commit();
+    return;
+  }
   const selClip = state.sel?.type === 'clip' ? clipById(state.sel.id) : null;
   if (selClip && !selClip.assetId) { fillSlot(selClip, asset); return; }
   const c = makeClip(asset);
@@ -649,9 +744,17 @@ function selectItem(type, id) {
 }
 function removeSelection() {
   if (!state.sel) return;
+  if (state.sel.type === 'audio') return removeAudioTrack();
   if (state.sel.type === 'clip') state.project.clips = state.project.clips.filter(c => c.id !== state.sel.id);
   if (state.sel.type === 'text') state.project.texts = state.project.texts.filter(t => t.id !== state.sel.id);
   state.sel = null;
+  commit();
+}
+function removeAudioTrack() {
+  if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); audioEl = null; }
+  state.project.audio = defaultAudio();
+  state.sel = null;
+  toast('audio track removed');
   commit();
 }
 
@@ -708,6 +811,54 @@ function seekExact(v, time) {
     v.addEventListener('seeked', finish);
     try { v.currentTime = time; } catch { finish(); }
   });
+}
+
+/* ── audio track preview ───────────────────────────────────────────────── */
+let audioEl = null;
+let lastAudioSync = 0;
+function ensureAudioEl() {
+  const au = state.project.audio;
+  const asset = au.assetId ? assetById(au.assetId) : null;
+  if (!asset) {
+    if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); audioEl = null; }
+    return null;
+  }
+  if (!audioEl || audioEl.dataset.assetId !== asset.id) {
+    if (audioEl) audioEl.pause();
+    audioEl = new Audio(asset.url);
+    audioEl.preload = 'auto';
+    audioEl.dataset.assetId = asset.id;
+  }
+  return audioEl;
+}
+function audioFadeGain(t, total) {
+  const au = state.project.audio;
+  let g = clamp(au.gain, 0, 2);
+  if (au.fadeIn > 0) g *= clamp(t / au.fadeIn, 0, 1);
+  if (au.fadeOut > 0 && total > 0) g *= clamp((total - t) / au.fadeOut, 0, 1);
+  return g;
+}
+function syncPreviewAudio(total) {
+  if (state.exporting) return;
+  const el = ensureAudioEl();
+  if (!el) return;
+  const au = state.project.audio;
+  const asset = assetById(au.assetId);
+  const L = Math.max(.05, asset.duration - au.offset);
+  const inRange = au.loop || state.t < L;
+  const target = au.offset + (au.loop ? state.t % L : Math.min(state.t, L));
+  el.volume = clamp(audioFadeGain(state.t, total), 0, 1);
+  if (state.playing && inRange) {
+    if (el.paused) { try { el.currentTime = target; } catch {} el.play().catch(() => {}); }
+    else if (Math.abs(el.currentTime - target) > .25) { try { el.currentTime = target; } catch {} }
+  } else {
+    if (!el.paused) el.pause();
+    const now = performance.now();
+    if (inRange && now - lastAudioSync > 120 && Math.abs(el.currentTime - target) > .08) {
+      lastAudioSync = now;
+      try { el.currentTime = target; } catch {}
+    }
+  }
 }
 
 /* ── rendering core (shared by preview + export) ───────────────────────── */
@@ -933,6 +1084,7 @@ function tick(now) {
       needsFrame = true;
     }
     syncPreviewVideos();
+    syncPreviewAudio(total);
     if (needsFrame) {
       needsFrame = state.playing;
       renderFrame(pctx, previewCanvas.width, previewCanvas.height, state.t);
@@ -949,7 +1101,7 @@ function setPlaying(on) {
   if (on && state.t >= total - .01) state.t = 0;
   state.playing = on;
   $('playBtn').textContent = on ? '⏸' : '▶';
-  if (!on) state.clipVideos.forEach(v => v.pause());
+  if (!on) { state.clipVideos.forEach(v => v.pause()); audioEl?.pause(); }
   needsFrame = true;
 }
 function seekTo(t, keepPlaying = false) {
@@ -1034,6 +1186,36 @@ function renderTimeline() {
   haveTexts.forEach(el => el.remove());
   tt.style.height = Math.max(24, lanes.length * 21 + 2) + 'px';
 
+  // audio track row
+  const at = $('audioTrack');
+  const au = state.project.audio;
+  const aAsset = au.assetId ? assetById(au.assetId) : null;
+  at.classList.toggle('on', !!(aAsset || au.savedAssetName));
+  at.innerHTML = '';
+  if (aAsset || au.savedAssetName) {
+    const bar = document.createElement('div');
+    const selA = state.sel?.type === 'audio';
+    if (aAsset) {
+      const L = Math.max(.05, aAsset.duration - au.offset);
+      const shown = total > 0 ? (au.loop ? total : Math.min(L, total)) : L;
+      const bits = ['♪ ' + aAsset.name, Math.round(au.gain * 100) + '%'];
+      if (au.loop) bits.push('loop');
+      if (au.fadeIn > 0) bits.push('in ' + fmt(au.fadeIn) + 's');
+      if (au.fadeOut > 0) bits.push('out ' + fmt(au.fadeOut) + 's');
+      bar.className = 'tl-abar' + (selA ? ' selected' : '');
+      bar.style.width = Math.max(30, shown * pps) + 'px';
+      bar.innerHTML = `<div class="a-wave" style="background-image:url(${audioBarImage(aAsset, au.offset)});background-size:${Math.max(8, L * pps)}px 100%"></div>
+        <div class="a-lbl">${esc(bits.join(' · '))}</div>`;
+    } else {
+      bar.className = 'tl-abar missing' + (selA ? ' selected' : '');
+      bar.style.width = Math.max(180, (total || 4) * pps) + 'px';
+      bar.innerHTML = `<div class="a-lbl">♪ missing: ${esc(au.savedAssetName)} — re-add the file and click it in the bin</div>`;
+    }
+    bar.title = 'audio track — click to edit';
+    bar.addEventListener('pointerdown', () => selectItem('audio', 'audio'));
+    at.appendChild(bar);
+  }
+
   const totBadge = $('durBadge');
   totBadge.textContent = fmt(total) + 's · ' + state.project.format.replace('x', ':');
   totBadge.classList.toggle('warn', total > 90);
@@ -1096,6 +1278,7 @@ function buildClipEl(id) {
       commit();
     } else if (assetId) {
       const a = assetById(assetId);
+      if (a?.kind === 'audio') { useAsset(a); return; }
       if (a) { fillSlot(c, a); selectItem('clip', c.id); }
     }
   });
@@ -1179,6 +1362,8 @@ function renderInspector() {
   const box = $('insp');
   if (state.sel?.type === 'clip' && clipById(state.sel.id)) return renderClipInspector(box, clipById(state.sel.id));
   if (state.sel?.type === 'text' && textById(state.sel.id)) return renderTextInspector(box, textById(state.sel.id));
+  if (state.sel?.type === 'audio' && (state.project.audio.assetId || state.project.audio.savedAssetName))
+    return renderAudioInspector(box);
   renderProjectInspector(box);
 }
 function renderProjectInspector(box) {
@@ -1190,20 +1375,21 @@ function renderProjectInspector(box) {
       <b style="color:var(--text)">${esc(state.project.name)}</b><br>
       ${FORMATS[state.project.format].label}<br>
       ${state.project.fps} fps · ${fmt(total)}s ·
-      ${state.project.clips.length} clip(s) · ${state.project.texts.length} text cue(s)
+      ${state.project.clips.length} clip(s) · ${state.project.texts.length} text cue(s)${state.project.audio.assetId ? ' · ♪ audio' : ''}
     </div>
     <div class="field"><label>Workflow</label>
       <div class="hint" style="margin:0">
-        1 · add assets, click them to build the clip sequence<br>
+        1 · add assets (images / video / audio), click them to build the timeline<br>
         2 · select a clip → set duration / trim, pick an animation<br>
-        3 · add cued text bits, style them, save snippets<br>
+        3 · add cued text bits · click an audio file to set the music track<br>
         4 · <b>save current</b> as a template to reuse the layout with new assets<br>
         5 · export MP4 (${f.w}×${f.h})
       </div>
     </div>
     <div class="field"><label>Notes</label>
       <div class="hint" style="margin:0">
-        Exports are silent — add music on the platform for better reach anyway.<br>
+        Exports include the audio track if you set one — without it they're silent
+        (platform-added trending audio still reaches further).<br>
         Keys: <kbd>space</kbd> play · <kbd>←</kbd><kbd>→</kbd> scrub · <kbd>del</kbd> remove.
       </div>
     </div>`;
@@ -1416,6 +1602,56 @@ function syncCueInspector(cue) {
   if (state.sel?.type === 'text' && state.sel.id === cue.id && $('cueStart')) $('cueStart').value = fmt(cue.start, 2);
 }
 
+function renderAudioInspector(box) {
+  const au = state.project.audio;
+  const asset = au.assetId ? assetById(au.assetId) : null;
+  const { total } = layout();
+  if (!asset) {
+    box.innerHTML = `
+      <div class="insp-title">Audio track<span class="sub">missing file</span></div>
+      <div class="hint" style="margin:0;color:var(--warn)">was: ${esc(au.savedAssetName)}<br>
+        re-add the audio file to the bin and click it — trim / volume / fade settings are kept.</div>
+      <div class="btnrow"><button class="btn tiny danger" id="auRemove">forget track</button></div>`;
+    $('auRemove').addEventListener('click', removeAudioTrack);
+    return;
+  }
+  const L = Math.max(.05, asset.duration - au.offset);
+  const coverage = au.loop ? 'loops to fill the reel' : L >= total - .01 ? 'covers the whole reel' : `ends at ${fmt(L)}s`;
+  box.innerHTML = `
+    <div class="insp-title">Audio track<span class="sub">${esc(asset.name)}</span></div>
+    <div class="hint" style="margin:0">source ${fmt(asset.duration)}s · using ${fmt(au.offset)}s → end · ${coverage}</div>
+    ${!au.loop && total > 0 && L < total - .01 ? `<div class="hint" style="margin:0;color:var(--warn)">
+      reel runs ${fmt(total)}s — audio goes silent after ${fmt(L)}s. Enable loop or pick an earlier start.</div>` : ''}
+    ${inspNum('auOff', 'Start in source', fmt(au.offset, 2), 0, fmt(Math.max(0, asset.duration - .5), 2), .05)}
+    ${inspNum('auGain', 'Volume', Math.round(au.gain * 100), 0, 200, 5, '%')}
+    <div class="fgrid2">
+      <div class="field"><label>Fade in</label>
+        <input type="number" id="auFi" step="0.1" min="0" max="10" value="${fmt(au.fadeIn, 1)}"></div>
+      <div class="field"><label>Fade out</label>
+        <input type="number" id="auFo" step="0.1" min="0" max="10" value="${fmt(au.fadeOut, 1)}"></div>
+    </div>
+    <div class="field"><label>Loop</label><div class="frow">
+      <input type="checkbox" id="auLoop" ${au.loop ? 'checked' : ''}>
+      <span class="hint" style="margin:0">repeat the track until the reel ends</span>
+    </div></div>
+    <div class="btnrow">
+      <button class="btn tiny" id="auFromStart">▶ preview from 0s</button>
+      <button class="btn tiny danger" id="auRemove">remove track</button>
+    </div>
+    <div class="hint">Fades run against the reel — in from 0s, out into the end. Preview volume caps at 100%;
+      the export applies the full value. Export muxes AAC (Opus fallback).</div>`;
+  bindNum('auOff', () => fmt(au.offset, 2),
+    v => { au.offset = clamp(v, 0, Math.max(0, asset.duration - .5)); },
+    final => { if (final) commit(); else commit({ insp: false }); });
+  bindNum('auGain', () => Math.round(au.gain * 100),
+    v => { au.gain = clamp(v, 0, 200) / 100; }, () => commit({ insp: false }));
+  $('auFi').addEventListener('change', () => { au.fadeIn = clamp(+$('auFi').value || 0, 0, 10); commit({ insp: false }); });
+  $('auFo').addEventListener('change', () => { au.fadeOut = clamp(+$('auFo').value || 0, 0, 10); commit({ insp: false }); });
+  $('auLoop').addEventListener('change', () => { au.loop = $('auLoop').checked; commit(); });
+  $('auFromStart').addEventListener('click', () => { seekTo(0); setPlaying(true); });
+  $('auRemove').addEventListener('click', removeAudioTrack);
+}
+
 /* ── sidebar ───────────────────────────────────────────────────────────── */
 function renderAssetBin() {
   const grid = $('assetGrid');
@@ -1423,10 +1659,11 @@ function renderAssetBin() {
   const slotArmed = state.sel?.type === 'clip' && clipById(state.sel.id) && !clipById(state.sel.id).assetId;
   state.assets.forEach(a => {
     const el = document.createElement('div');
-    el.className = 'asset' + (slotArmed ? ' armed' : '');
+    el.className = 'asset' + (slotArmed && a.kind !== 'audio' ? ' armed' : '');
     if (a.thumb) el.style.backgroundImage = `url(${a.thumb})`;
-    el.title = slotArmed ? 'fill selected slot' : 'add to timeline';
-    el.innerHTML = `<div class="a-kind">${a.kind === 'video' ? '▶ ' + fmt(a.duration) + 's' : 'img'}</div>
+    el.title = a.kind === 'audio' ? 'set as audio track' : slotArmed ? 'fill selected slot' : 'add to timeline';
+    el.innerHTML = `<div class="a-kind">${a.kind === 'video' ? '▶ ' + fmt(a.duration) + 's'
+      : a.kind === 'audio' ? '♪ ' + fmt(a.duration) + 's' : 'img'}</div>
       <button class="a-del" title="remove asset">✕</button>
       <div class="a-name">${esc(a.name)}</div>`;
     el.addEventListener('click', e => {
@@ -1511,7 +1748,7 @@ function renderSidebarLists() {
     const row = document.createElement('div');
     row.className = 'rowitem';
     row.innerHTML = `<span class="r-name">${esc(tp.name)}</span>
-      <span class="r-sub">${tp.clips.length} slot · ${tp.texts.length} txt · ${tp.format.replace('x', ':')}</span>
+      <span class="r-sub">${tp.clips.length} slot · ${tp.texts.length} txt${tp.audio?.savedAssetName ? ' · ♪' : ''} · ${tp.format.replace('x', ':')}</span>
       <button class="r-btn" data-act="dl" title="export as file">⤓</button>
       <button class="r-btn del" data-act="del" title="delete">✕</button>`;
     row.addEventListener('click', e => {
@@ -1753,8 +1990,11 @@ function snapshotTemplate(name) {
     copy.styleSnap = deep(styleOf(t));
     return copy;
   });
+  const audio = deep(state.project.audio);
+  audio.savedAssetName = assetById(audio.assetId)?.name ?? audio.savedAssetName;
+  audio.assetId = null;
   return { id: uid(), name, createdAt: Date.now(), format: state.project.format,
-    fps: state.project.fps, background: state.project.background, clips, texts };
+    fps: state.project.fps, background: state.project.background, clips, texts, audio };
 }
 async function saveTemplate() {
   if (!state.project.clips.length && !state.project.texts.length)
@@ -1779,11 +2019,13 @@ async function applyTemplate(tp) {
   });
   state.clipVideos.forEach(v => { v.pause(); v.removeAttribute('src'); });
   state.clipVideos.clear();
+  if (audioEl) audioEl.pause();
   state.project.format = tp.format;
   state.project.fps = tp.fps;
   state.project.background = tp.background;
   state.project.clips = tp.clips.map(c => { const x = deep(c); x.id = uid(); x.assetId = null; return x; });
   state.project.texts = tp.texts.map(t => { const x = deep(t); x.id = uid(); return x; });
+  state.project.audio = Object.assign(defaultAudio(), deep(tp.audio || {}), { assetId: null });
   state.sel = null; state.t = 0;
   reflectHeader();
   sizePreview();
@@ -1826,6 +2068,83 @@ async function pickEncoderConfig(W, H, fps, bitrate) {
   }
   return null;
 }
+async function pickAudioEncoderConfig(sampleRate, numberOfChannels) {
+  const candidates = [
+    { codec: 'mp4a.40.2', muxCodec: 'aac', bitrate: 192000 },
+    { codec: 'opus', muxCodec: 'opus', bitrate: 128000 },
+  ];
+  for (const c of candidates) {
+    const config = { codec: c.codec, sampleRate, numberOfChannels, bitrate: c.bitrate };
+    try {
+      const s = await AudioEncoder.isConfigSupported(config);
+      if (s.supported) return { config, muxCodec: c.muxCodec };
+    } catch {}
+  }
+  return null;
+}
+// decode the track fresh, lay it over the reel with offset/loop and gain/fade
+// automation via an OfflineAudioContext, return the PCM + a supported encoder config
+async function prepareAudioPlan(total) {
+  const au = state.project.audio;
+  const asset = au.assetId ? assetById(au.assetId) : null;
+  if (!asset || total <= 0) return null;
+  if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') {
+    toast('this browser cannot encode audio (WebCodecs) — exporting silent', 'warn');
+    return null;
+  }
+  try {
+    const SR = 48000;
+    const picked = await pickAudioEncoderConfig(SR, 2);
+    if (!picked) { toast('no supported audio codec — exporting silent', 'warn'); return null; }
+    if (picked.muxCodec === 'opus')
+      toast('AAC unavailable — audio encoded as Opus (fine for YouTube/VLC, some platforms re-encode or drop it)', 'warn');
+    const buffer = await decodeAudio(await (await fetch(asset.url)).arrayBuffer());
+    const octx = new OfflineAudioContext(2, Math.max(1, Math.ceil(total * SR)), SR);
+    const src = octx.createBufferSource();
+    src.buffer = buffer;
+    const off = clamp(au.offset, 0, Math.max(0, buffer.duration - .05));
+    if (au.loop) { src.loop = true; src.loopStart = off; src.loopEnd = buffer.duration; }
+    const g = octx.createGain();
+    const peak = clamp(au.gain, 0, 2);
+    const fi = clamp(au.fadeIn, 0, total / 2), fo = clamp(au.fadeOut, 0, total / 2);
+    if (fi > 0) { g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(peak, fi); }
+    else g.gain.setValueAtTime(peak, 0);
+    if (fo > 0) { g.gain.setValueAtTime(peak, total - fo); g.gain.linearRampToValueAtTime(0, total); }
+    src.connect(g); g.connect(octx.destination);
+    src.start(0, off);
+    const pcm = await octx.startRendering();
+    return { pcm, ...picked };
+  } catch (e) {
+    console.error(e);
+    toast(`audio track failed (${e.message}) — exporting silent`, 'warn');
+    return null;
+  }
+}
+async function encodeAudioTrack(plan, muxer) {
+  let aErr = null;
+  const enc = new AudioEncoder({
+    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+    error: e => { aErr = e; },
+  });
+  enc.configure(plan.config);
+  const { pcm } = plan;
+  const SR = pcm.sampleRate, CH = pcm.numberOfChannels, step = SR / 2;
+  for (let off = 0; off < pcm.length; off += step) {
+    if (exportAbort) throw new Error('aborted');
+    if (aErr) throw aErr;
+    const n = Math.min(step, pcm.length - off);
+    const data = new Float32Array(n * CH);
+    for (let ch = 0; ch < CH; ch++) data.set(pcm.getChannelData(ch).subarray(off, off + n), ch * n);
+    const ad = new AudioData({ format: 'f32-planar', sampleRate: SR, numberOfFrames: n,
+      numberOfChannels: CH, timestamp: Math.round(off / SR * 1e6), data });
+    enc.encode(ad);
+    ad.close();
+    while (enc.encodeQueueSize > 4) await sleep(4);
+  }
+  if (aErr) throw aErr;
+  await enc.flush();
+  enc.close();
+}
 function openExportModal() {
   const { items, total } = layout();
   if (!items.length) return toast('nothing to export — timeline is empty', 'warn');
@@ -1847,7 +2166,14 @@ function openExportModal() {
       <option value="20000000">max · 20 Mbps</option>
     </select></div>
     <div class="mnote">${fmt(total)}s · ${state.project.fps} fps · ${Math.round(total * state.project.fps)} frames ·
-      video only (silent) — most platforms want you to add trending audio there anyway.</div>
+      ${(() => {
+        const au = state.project.audio;
+        const a = au.assetId ? assetById(au.assetId) : null;
+        if (a) return `♪ ${esc(a.name)}`;
+        if (au.savedAssetName) return `<span style="color:var(--warn)">audio “${esc(au.savedAssetName)}” is missing its
+          file — exporting silent unless you re-add it</span>`;
+        return 'silent — click an audio file in the bin to lay a music track, or add trending audio on the platform';
+      })()}.</div>
     <div id="exBody"></div>
     <div class="mfoot">
       <button class="btn" id="exClose">cancel</button>
@@ -1887,6 +2213,11 @@ async function runExport(W, H, fps, bitrate) {
       v.pause();
       if (v.readyState < 2) { v.load(); await once(v, 'canplay', 8000); }
     }
+    let audioPlan = null;
+    if (state.project.audio.assetId) {
+      $('exLbl').textContent = 'rendering audio…';
+      audioPlan = await prepareAudioPlan(total);
+    }
     const picked = await pickEncoderConfig(W, H, fps, bitrate);
     if (!picked) throw new Error('no supported codec (tried H.264 + VP9)');
     const isAvc = picked.codec.startsWith('avc');
@@ -1897,6 +2228,8 @@ async function runExport(W, H, fps, bitrate) {
     const muxer = new Mp4Muxer.Muxer({
       target: new Mp4Muxer.ArrayBufferTarget(),
       video: { codec: isAvc ? 'avc' : 'vp9', width: W, height: H },
+      audio: audioPlan ? { codec: audioPlan.muxCodec, sampleRate: audioPlan.pcm.sampleRate,
+                           numberOfChannels: audioPlan.pcm.numberOfChannels } : undefined,
       fastStart: 'in-memory',
       firstTimestampBehavior: 'offset',
     });
@@ -1939,6 +2272,10 @@ async function runExport(W, H, fps, bitrate) {
     $('exLbl').textContent = 'finalizing…';
     await encoder.flush();
     encoder.close();
+    if (audioPlan) {
+      $('exLbl').textContent = 'encoding audio…';
+      await encodeAudioTrack(audioPlan, muxer);
+    }
     muxer.finalize();
     const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
     const name = (state.project.name.replace(/[^\w-]+/g, '-') || 'reel') + `-${W}x${H}.mp4`;
@@ -1946,12 +2283,13 @@ async function runExport(W, H, fps, bitrate) {
     const a = document.createElement('a');
     a.href = url; a.download = name; a.click();
     body.innerHTML = `<div class="mnote" style="color:var(--accent)">✔ ${esc(name)} —
-      ${(blob.size / 1e6).toFixed(1)} MB · ${isAvc ? 'H.264' : 'VP9'} ·
+      ${(blob.size / 1e6).toFixed(1)} MB · ${isAvc ? 'H.264' : 'VP9'}${audioPlan ? ' + ' + (audioPlan.muxCodec === 'aac' ? 'AAC' : 'Opus') : ' · silent'} ·
       ${fmt((performance.now() - t0) / 1000, 0)}s render.<br>Download should have started;
       <a href="${url}" download="${esc(name)}" style="color:var(--accent)">download again</a>.</div>`;
     setExClose('close', closeModal);
     modalLocked = false;
-    window._lastExport = { size: blob.size, name, codec: picked.codec };  // handy for automation
+    window._lastExport = { size: blob.size, name, codec: picked.codec,
+      audio: audioPlan ? audioPlan.muxCodec : null, blob };  // handy for automation
   } catch (e) {
     if (e.message === 'aborted') { closeModal(); toast('export aborted', 'warn'); }
     else {
@@ -1979,12 +2317,17 @@ function openHelp() {
       browser.<br><br>
       <b>Text</b> — “+ text cue” drops a timed overlay at the playhead. Cues reference a style preset
       (font, pill, shadow, in/out animation). Save any cue as a <b>snippet</b> to reuse the whole bit later.<br><br>
-      <b>Templates</b> — “save current” freezes the layout: slot order, durations, animations, transitions and
-      text cues, minus the assets. Apply it later and fill the empty slots with new footage — same edit, new
-      content. Templates can be exported/imported as JSON files.<br><br>
+      <b>Audio</b> — drop an mp3 / wav / m4a / ogg in the bin and click it: it becomes the reel's music track.
+      The inspector sets where in the source it starts, volume, fade in/out and looping; the preview plays it
+      in sync. Note: web pages can't pull audio straight off YouTube (blocked by the browser, and against
+      most content's terms) — use files you have the rights to, e.g. your own exports or a royalty-free /
+      licensed download.<br><br>
+      <b>Templates</b> — “save current” freezes the layout: slot order, durations, animations, transitions,
+      text cues and audio settings, minus the assets. Apply it later and fill the empty slots with new
+      footage — same edit, new content. Templates can be exported/imported as JSON files.<br><br>
       <b>Export</b> — renders frame-exact via WebCodecs into an H.264 MP4 (fastStart, ready for IG / TikTok /
-      Shorts). Exports are <b>silent</b> by design — add music on the platform. Needs a recent Chrome, Edge or
-      Safari.<br><br>
+      Shorts) and muxes the audio track in as AAC (Opus fallback). No track set = silent export — platform
+      trending audio still reaches further. Needs a recent Chrome, Edge or Safari.<br><br>
       Everything (presets, snippets, templates, layout) persists in this browser via localStorage.
       Assets are session-only — re-add files after a reload.
     </div>
@@ -2041,6 +2384,7 @@ $('newProjBtn').addEventListener('click', async () => {
   const name = state.project.name;
   state.clipVideos.forEach(v => { v.pause(); v.removeAttribute('src'); });
   state.clipVideos.clear();
+  if (audioEl) audioEl.pause();
   state.project = freshProject();
   state.project.name = name;
   state.sel = null; state.t = 0;
@@ -2091,7 +2435,7 @@ sizePreview();
 requestAnimationFrame(t => { lastTick = t; tick(t); });
 if (document.fonts?.ready) document.fonts.ready.then(() => { needsFrame = true; });
 // exposed for scripting / debugging in the console
-window._rs = { state, layout, seekTo, setPlaying, commit };
+window._rs = { state, layout, seekTo, setPlaying, commit, audioEl: () => audioEl };
 </script>
 </body>
 </html>
