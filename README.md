@@ -20,7 +20,7 @@ This approach is directly inspired by [Simon Willison's HTML tools](https://simo
 |------|-------------|
 | [Plot Prep](static/tools/plot-prep.html) | SVG decorator for pen plotting — adds paper outline, calibration markers, and page boundary layers (Saxi / AxiDraw) |
 | [PTPX Postcard Plotter](static/tools/ptpx-postcard-plotter.html) | Postcard back generator — lays out 4× A6 on A4 with Hershey single-stroke text, address lines, stamp boxes, and Inkscape layers ready for plotting |
-| [Reel Studio](static/tools/reel-studio.html) | Timeline reel editor for socials — image/video clips with zoom/pan animation presets, video trimming, cued text overlays, music track with trim/fades/loop, reusable templates, MP4 export with AAC audio (square & portrait) |
+| [Reel Studio](static/tools/reel-studio.html) | Timeline reel editor for socials — image/video clips with zoom/pan animation presets, video trimming, cued text overlays, auto-added clip audio track with per-clip volume, music track with trim/fades/loop, both tracks mixed into the export, reusable templates, MP4 export with AAC audio (square & portrait) |
 
 ---
 

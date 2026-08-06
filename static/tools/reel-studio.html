@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- tool-meta: {"name":"Reel Studio","slug":"reel-studio","description":"Timeline reel editor for socials — sequence images and trimmed video clips, assign reusable zoom/pan animation presets, add cued text overlays with saveable styles and snippets, lay a music track under the reel with trim/volume/fades/loop, save the whole layout as a template to refill with new assets, and export square or portrait MP4 (H.264 + AAC via WebCodecs) ready for Reels / TikTok / Shorts.","tags":["video","reel","social","mp4","timeline","template","text","animation","audio","music"]} -->
+<!-- tool-meta: {"name":"Reel Studio","slug":"reel-studio","description":"Timeline reel editor for socials — sequence images and trimmed video clips, assign reusable zoom/pan animation presets, add cued text overlays with saveable styles and snippets, keep each video clip's own audio on an auto-added track with per-clip volume, lay a music track under the reel with trim/volume/fades/loop, mix both audio tracks into the export, save the whole layout as a template to refill with new assets, and export square or portrait MP4 (H.264 + AAC via WebCodecs) ready for Reels / TikTok / Shorts.","tags":["video","reel","social","mp4","timeline","template","text","animation","audio","music","mix"]} -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reel Studio</title>
@@ -188,6 +188,12 @@
   .tl-abar.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);z-index:2;}
   .tl-abar.missing{border-style:dashed;background:#141414;}
   .tl-abar.missing .a-lbl{color:var(--text-dim);}
+  .tl-abar.ca{border-color:#2c4a50;background:#0a1315;}
+  .tl-abar.ca .a-lbl{color:#8fd8de;}
+  .tl-trackx{position:absolute;left:-8px;top:50%;transform:translateY(-50%);z-index:4;width:15px;height:15px;
+             line-height:13px;font-size:9px;background:rgba(10,10,10,.92);border:1px solid var(--border-hi);
+             color:var(--text-dim);cursor:pointer;padding:0;font-family:var(--mono);}
+  .tl-trackx:hover{color:var(--danger);border-color:var(--danger);}
   .playhead{position:absolute;top:0;bottom:0;width:1px;background:var(--accent);pointer-events:none;z-index:5;}
   .playhead::before{content:'';position:absolute;top:0;left:-4px;border:4px solid transparent;border-top:6px solid var(--accent);}
 
@@ -319,6 +325,7 @@
       <div class="tl-ruler" id="ruler"></div>
       <div class="tl-clips" id="clipTrack"></div>
       <div class="tl-texts" id="textTrack"></div>
+      <div class="tl-audio" id="clipAudioTrack"></div>
       <div class="tl-audio" id="audioTrack"></div>
       <div class="playhead" id="playhead" style="left:16px;"></div>
     </div>
@@ -455,10 +462,14 @@ const state = {
 const PAD = 16;               // timeline inner horizontal padding
 
 function freshProject() {
-  return { name: 'my-reel', format: '9x16', fps: 30, background: '#000000', clips: [], texts: [], audio: defaultAudio() };
+  return { name: 'my-reel', format: '9x16', fps: 30, background: '#000000', clips: [], texts: [],
+           audio: defaultAudio(), clipAudio: defaultClipAudio() };
 }
 function defaultAudio() {
   return { assetId: null, savedAssetName: null, offset: 0, gain: 1, fadeIn: 0, fadeOut: 0, loop: false };
+}
+function defaultClipAudio() {
+  return { on: true };            // track 1: the video clips' own audio (track 2 is the music track)
 }
 function allAnims()  { return [...BUILTIN_ANIMS, ...state.animPresets]; }
 function allStyles() { return [...BUILTIN_STYLES, ...state.textStyles]; }
@@ -503,6 +514,8 @@ function loadPersisted() {
   if (p && (p.clips?.length || p.texts?.length || p.audio?.savedAssetName)) {
     state.project = Object.assign(freshProject(), p);
     state.project.audio = Object.assign(defaultAudio(), p.audio || {}, { assetId: null });
+    state.project.clipAudio = Object.assign(defaultClipAudio(), p.clipAudio || {});
+    state.project.clips.forEach(c => { if (c.volume == null) c.volume = 1; });
     if (p.clips?.length || p.audio?.savedAssetName) toast('restored last layout — assets need to be re-added', 'warn');
   } else state.project = freshProject();
 }
@@ -594,6 +607,17 @@ function audioBarImage(asset, offset) {
   barImgCache = { key, url: c.toDataURL('image/png') };
   return barImgCache.url;
 }
+const caImgCache = new Map();       // assetId -> full-duration waveform image for clip-audio bars
+function clipAudioBarImage(asset) {
+  let url = caImgCache.get(asset.id);
+  if (!url) {
+    const c = document.createElement('canvas'); c.width = 1200; c.height = 26;
+    drawPeaks(c.getContext('2d'), asset.audioPeaks, 0, 1200, 26, 'rgba(120,215,225,.5)');
+    url = c.toDataURL('image/png');
+    caImgCache.set(asset.id, url);
+  }
+  return url;
+}
 async function addFiles(files) {
   let added = 0;
   for (const f of files) {
@@ -617,8 +641,14 @@ async function addFiles(files) {
         }
         v.currentTime = Math.min(0.5, (v.duration || 1) * .2);
         await once(v, 'seeked', 2500);
+        // probe the file's audio track once — peaks for the timeline, hasAudio gates preview + export
+        let hasAudio = false, audioPeaks = null;
+        try {
+          const decoded = await decodeAudio(await f.arrayBuffer());
+          if (decoded.duration > .01) { audioPeaks = computePeaks(decoded); hasAudio = true; }
+        } catch { /* silent video, or audio codec the browser can't decode */ }
         const a = { id: uid(), kind: 'video', name: f.name, url, el: v,
-          w: v.videoWidth, h: v.videoHeight, duration: v.duration || 0,
+          w: v.videoWidth, h: v.videoHeight, duration: v.duration || 0, hasAudio, audioPeaks,
           thumb: await makeThumb(v, v.videoWidth, v.videoHeight) };
         state.assets.push(a);
         added++;
@@ -645,6 +675,7 @@ function removeAsset(id) {
       if (audioEl) audioEl.pause();
     }
     if (a?.url.startsWith('blob:') ) URL.revokeObjectURL(a.url);
+    caImgCache.delete(id);
     state.assets = state.assets.filter(a2 => a2.id !== id);
     for (const [cid, v] of [...state.clipVideos]) {
       const c = clipById(cid);
@@ -687,7 +718,7 @@ async function addDemoImages() {
 function makeClip(asset) {
   const c = {
     id: uid(), assetId: asset?.id ?? null, kind: asset?.kind ?? 'image',
-    duration: 3, trimIn: 0, trimOut: 0, fit: 'cover',
+    duration: 3, trimIn: 0, trimOut: 0, fit: 'cover', volume: 1,
     animId: 'a-zoomin', animSnap: deep(BUILTIN_ANIMS[1]),
     transIn: { type: 'cut', duration: .5 },
   };
@@ -704,20 +735,23 @@ function useAsset(asset) {
     au.savedAssetName = asset.name;
     if (au.offset >= asset.duration - .05) au.offset = 0;
     selectItem('audio', 'audio');
-    toast(`♪ ${asset.name} set as audio track`);
+    toast(`♪ ${asset.name} set as music track`);
     commit();
     return;
   }
   const selClip = state.sel?.type === 'clip' ? clipById(state.sel.id) : null;
   if (selClip && !selClip.assetId) { fillSlot(selClip, asset); return; }
+  const wasVisible = clipAudioVisible();
   const c = makeClip(asset);
   state.project.clips.push(c);
+  if (asset.kind === 'video') autoAddClipAudio(wasVisible);
   selectItem('clip', c.id);
   state.t = layout().items.find(i => i.clip.id === c.id)?.start ?? 0;
   commit();
 }
 function fillSlot(clip, asset) {
   const slotDur = clipDuration(clip);
+  const wasVisible = clipAudioVisible();
   clip.assetId = asset.id; clip.savedAssetName = asset.name;
   const oldVid = state.clipVideos.get(clip.id);
   if (oldVid) { oldVid.pause(); oldVid.removeAttribute('src'); state.clipVideos.delete(clip.id); }
@@ -725,6 +759,8 @@ function fillSlot(clip, asset) {
     clip.kind = 'video';
     clip.trimIn = 0;
     clip.trimOut = Math.min(asset.duration, slotDur);
+    if (clip.volume == null) clip.volume = 1;
+    autoAddClipAudio(wasVisible);
     if (asset.duration < slotDur - .05)
       toast(`video is shorter than the ${fmt(slotDur)}s slot — slot shrank to ${fmt(asset.duration)}s`, 'warn');
   } else {
@@ -745,6 +781,7 @@ function selectItem(type, id) {
 function removeSelection() {
   if (!state.sel) return;
   if (state.sel.type === 'audio') return removeAudioTrack();
+  if (state.sel.type === 'clipaudio') return removeClipAudioTrack();
   if (state.sel.type === 'clip') state.project.clips = state.project.clips.filter(c => c.id !== state.sel.id);
   if (state.sel.type === 'text') state.project.texts = state.project.texts.filter(t => t.id !== state.sel.id);
   state.sel = null;
@@ -754,7 +791,31 @@ function removeAudioTrack() {
   if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); audioEl = null; }
   state.project.audio = defaultAudio();
   state.sel = null;
-  toast('audio track removed');
+  toast('music track removed');
+  commit();
+}
+
+/* ── clip audio track (track 1: the video clips' own sound) ────────────── */
+function clipHasAudio(c) {
+  return c.kind === 'video' && !!c.assetId && !!assetById(c.assetId)?.hasAudio;
+}
+function clipAudioVisible() {
+  return state.project.clipAudio.on && state.project.clips.some(clipHasAudio);
+}
+function clipAudioVol(c) {
+  if (!state.project.clipAudio.on || !clipHasAudio(c)) return 0;
+  return clamp(c.volume ?? 1, 0, 2);
+}
+function autoAddClipAudio(wasVisible) {
+  state.project.clipAudio.on = true;
+  if (!wasVisible && clipAudioVisible())
+    toast('♪ clip audio laid on its own track — click the bar to set volume, ✕ or del removes it');
+}
+function removeClipAudioTrack() {
+  state.project.clipAudio.on = false;
+  if (state.sel?.type === 'clipaudio') state.sel = null;
+  state.clipVideos.forEach(v => { v.muted = true; });
+  toast('clip audio track removed — adding a new video brings it back');
   commit();
 }
 
@@ -1047,6 +1108,9 @@ function syncPreviewVideos() {
     const v = ensureClipVideo(c);
     if (!v) continue;
     activeIds.add(c.id);
+    const vol = clipAudioVol(c);          // preview caps at 100%; export applies the full value
+    v.muted = vol <= 0;
+    v.volume = clamp(vol, 0, 1);
     const target = c.trimIn + clamp(state.t - it.start, 0, it.dur);
     if (state.playing) {
       if (v.paused) { try { v.currentTime = target; } catch {} v.play().catch(() => {}); }
@@ -1186,7 +1250,37 @@ function renderTimeline() {
   haveTexts.forEach(el => el.remove());
   tt.style.height = Math.max(24, lanes.length * 21 + 2) + 'px';
 
-  // audio track row
+  // clip audio track row (track 1) — bars mirror the video clips' position + trim
+  const cat = $('clipAudioTrack');
+  cat.style.width = trackW;
+  const caSegs = state.project.clipAudio.on ? items.filter(it => clipHasAudio(it.clip)) : [];
+  cat.classList.toggle('on', caSegs.length > 0);
+  cat.innerHTML = '';
+  if (caSegs.length) {
+    caSegs.forEach(it => {
+      const c = it.clip, a = assetById(c.assetId);
+      const vol = clamp(c.volume ?? 1, 0, 2);
+      const bar = document.createElement('div');
+      bar.className = 'tl-abar ca' + (state.sel?.type === 'clipaudio' && state.sel.id === c.id ? ' selected' : '');
+      bar.style.left = it.start * pps + 'px';
+      bar.style.width = Math.max(26, it.dur * pps - 2) + 'px';
+      bar.innerHTML = `<div class="a-wave" style="background-image:url(${clipAudioBarImage(a)});
+          background-size:${Math.max(8, (a.duration || 1) * pps)}px 100%;
+          background-position:${-c.trimIn * pps}px 0;opacity:${vol <= 0 ? .25 : 1}"></div>
+        <div class="a-lbl">♪ ${esc(a.name)} · ${vol <= 0 ? 'muted' : Math.round(vol * 100) + '%'}</div>`;
+      bar.title = 'clip audio — click to set volume';
+      bar.addEventListener('pointerdown', () => selectItem('clipaudio', c.id));
+      cat.appendChild(bar);
+    });
+    const x = document.createElement('button');
+    x.className = 'tl-trackx';
+    x.textContent = '✕';
+    x.title = 'remove clip audio track';
+    x.addEventListener('click', removeClipAudioTrack);
+    cat.appendChild(x);
+  }
+
+  // music track row (track 2)
   const at = $('audioTrack');
   const au = state.project.audio;
   const aAsset = au.assetId ? assetById(au.assetId) : null;
@@ -1211,7 +1305,7 @@ function renderTimeline() {
       bar.style.width = Math.max(180, (total || 4) * pps) + 'px';
       bar.innerHTML = `<div class="a-lbl">♪ missing: ${esc(au.savedAssetName)} — re-add the file and click it in the bin</div>`;
     }
-    bar.title = 'audio track — click to edit';
+    bar.title = 'music track — click to edit';
     bar.addEventListener('pointerdown', () => selectItem('audio', 'audio'));
     at.appendChild(bar);
   }
@@ -1362,6 +1456,10 @@ function renderInspector() {
   const box = $('insp');
   if (state.sel?.type === 'clip' && clipById(state.sel.id)) return renderClipInspector(box, clipById(state.sel.id));
   if (state.sel?.type === 'text' && textById(state.sel.id)) return renderTextInspector(box, textById(state.sel.id));
+  if (state.sel?.type === 'clipaudio') {
+    const c = clipById(state.sel.id);
+    if (c && clipHasAudio(c) && state.project.clipAudio.on) return renderClipAudioInspector(box, c);
+  }
   if (state.sel?.type === 'audio' && (state.project.audio.assetId || state.project.audio.savedAssetName))
     return renderAudioInspector(box);
   renderProjectInspector(box);
@@ -1375,7 +1473,7 @@ function renderProjectInspector(box) {
       <b style="color:var(--text)">${esc(state.project.name)}</b><br>
       ${FORMATS[state.project.format].label}<br>
       ${state.project.fps} fps · ${fmt(total)}s ·
-      ${state.project.clips.length} clip(s) · ${state.project.texts.length} text cue(s)${state.project.audio.assetId ? ' · ♪ audio' : ''}
+      ${state.project.clips.length} clip(s) · ${state.project.texts.length} text cue(s)${clipAudioVisible() ? ' · ♪ clip audio' : ''}${state.project.audio.assetId ? ' · ♪ music' : ''}
     </div>
     <div class="field"><label>Workflow</label>
       <div class="hint" style="margin:0">
@@ -1388,8 +1486,9 @@ function renderProjectInspector(box) {
     </div>
     <div class="field"><label>Notes</label>
       <div class="hint" style="margin:0">
-        Exports include the audio track if you set one — without it they're silent
-        (platform-added trending audio still reaches further).<br>
+        Two audio tracks: adding a video lays its own sound on a track automatically (per-clip volume,
+        easy to remove) and an audio file becomes the music track — the export mixes both. Without either
+        it's silent (platform-added trending audio still reaches further).<br>
         Keys: <kbd>space</kbd> play · <kbd>←</kbd><kbd>→</kbd> scrub · <kbd>del</kbd> remove.
       </div>
     </div>`;
@@ -1441,7 +1540,14 @@ function renderClipInspector(box, c) {
         </div>
         <div class="hint">Drag the handles — the preview scrubs the source so you can find your cut.
         Duplicate the clip to use another part of the same video.</div>
-      </div>`
+      </div>
+      ${asset.hasAudio
+        ? (state.project.clipAudio.on
+            ? inspNum('clipVol', 'Clip audio volume', Math.round(clamp(c.volume ?? 1, 0, 2) * 100), 0, 200, 5, '%')
+            : `<div class="field"><label>Clip audio</label><div class="btnrow">
+                 <button class="btn tiny" id="clipAudioOn">enable clip audio track</button></div></div>`)
+        : `<div class="field"><label>Clip audio</label>
+             <div class="hint" style="margin:0">no readable audio in this video</div></div>`}`
       : inspNum('clipDur', 'Duration', fmt(clipDuration(c), 2), .2, 20, .1)}
     <div class="field"><label>Animation</label><div class="frow">
       <select id="clipAnim">${animOptions(c.animId)}</select>
@@ -1469,8 +1575,16 @@ function renderClipInspector(box, c) {
       <button class="btn tiny danger" id="clipDel">remove</button>
     </div>`;
 
-  if (isVid) bindTrimUI(c, asset);
-  else if (!isVid) bindNum('clipDur', () => fmt(clipDuration(c), 2), v => { c.duration = clamp(v, .2, 60); }, () => commit({ insp: false }));
+  if (isVid) {
+    bindTrimUI(c, asset);
+    if (asset.hasAudio) {
+      if (state.project.clipAudio.on)
+        bindNum('clipVol', () => Math.round(clamp(c.volume ?? 1, 0, 2) * 100),
+          v => { c.volume = clamp(v, 0, 200) / 100; }, () => commit({ insp: false }));
+      else $('clipAudioOn').addEventListener('click', () => { state.project.clipAudio.on = true; commit(); });
+    }
+  }
+  else bindNum('clipDur', () => fmt(clipDuration(c), 2), v => { c.duration = clamp(v, .2, 60); }, () => commit({ insp: false }));
 
   $('clipAnim').addEventListener('change', () => {
     c.animId = $('clipAnim').value;
@@ -1602,13 +1716,39 @@ function syncCueInspector(cue) {
   if (state.sel?.type === 'text' && state.sel.id === cue.id && $('cueStart')) $('cueStart').value = fmt(cue.start, 2);
 }
 
+function renderClipAudioInspector(box, c) {
+  const asset = assetById(c.assetId);
+  const idx = state.project.clips.indexOf(c);
+  const vol = () => clamp(c.volume ?? 1, 0, 2);
+  box.innerHTML = `
+    <div class="insp-title">Clip audio<span class="sub">${esc(asset.name)}</span></div>
+    <div class="hint" style="margin:0">original sound of clip ${idx + 1} — the bar follows the clip's position and trim.</div>
+    ${inspNum('caVol', 'Volume', Math.round(vol() * 100), 0, 200, 5, '%')}
+    <div class="btnrow">
+      <button class="btn tiny" id="caMute">${vol() > 0 ? 'mute this clip' : 'unmute'}</button>
+      <button class="btn tiny danger" id="caRemove">remove track</button>
+    </div>
+    <div class="hint">Volume is per clip — select each bar to balance them. Preview caps at 100%;
+      the export applies the full value. Two audio tracks (clip audio + music) get mixed into the MP4.
+      <kbd>del</kbd> removes the whole track; adding a new video brings it back.</div>`;
+  bindNum('caVol', () => Math.round(vol() * 100),
+    v => { c.volume = clamp(v, 0, 200) / 100; },
+    final => commit(final ? {} : { insp: false }));
+  $('caMute').addEventListener('click', () => {
+    if (vol() > 0) { c._prevVol = c.volume; c.volume = 0; }
+    else c.volume = clamp(c._prevVol || 1, .05, 2);
+    commit();
+  });
+  $('caRemove').addEventListener('click', removeClipAudioTrack);
+}
+
 function renderAudioInspector(box) {
   const au = state.project.audio;
   const asset = au.assetId ? assetById(au.assetId) : null;
   const { total } = layout();
   if (!asset) {
     box.innerHTML = `
-      <div class="insp-title">Audio track<span class="sub">missing file</span></div>
+      <div class="insp-title">Music track<span class="sub">missing file</span></div>
       <div class="hint" style="margin:0;color:var(--warn)">was: ${esc(au.savedAssetName)}<br>
         re-add the audio file to the bin and click it — trim / volume / fade settings are kept.</div>
       <div class="btnrow"><button class="btn tiny danger" id="auRemove">forget track</button></div>`;
@@ -1618,7 +1758,7 @@ function renderAudioInspector(box) {
   const L = Math.max(.05, asset.duration - au.offset);
   const coverage = au.loop ? 'loops to fill the reel' : L >= total - .01 ? 'covers the whole reel' : `ends at ${fmt(L)}s`;
   box.innerHTML = `
-    <div class="insp-title">Audio track<span class="sub">${esc(asset.name)}</span></div>
+    <div class="insp-title">Music track<span class="sub">${esc(asset.name)}</span></div>
     <div class="hint" style="margin:0">source ${fmt(asset.duration)}s · using ${fmt(au.offset)}s → end · ${coverage}</div>
     ${!au.loop && total > 0 && L < total - .01 ? `<div class="hint" style="margin:0;color:var(--warn)">
       reel runs ${fmt(total)}s — audio goes silent after ${fmt(L)}s. Enable loop or pick an earlier start.</div>` : ''}
@@ -1639,7 +1779,7 @@ function renderAudioInspector(box) {
       <button class="btn tiny danger" id="auRemove">remove track</button>
     </div>
     <div class="hint">Fades run against the reel — in from 0s, out into the end. Preview volume caps at 100%;
-      the export applies the full value. Export muxes AAC (Opus fallback).</div>`;
+      the export applies the full value. The export mixes this with the clip audio track into AAC (Opus fallback).</div>`;
   bindNum('auOff', () => fmt(au.offset, 2),
     v => { au.offset = clamp(v, 0, Math.max(0, asset.duration - .5)); },
     final => { if (final) commit(); else commit({ insp: false }); });
@@ -1662,7 +1802,7 @@ function renderAssetBin() {
     el.className = 'asset' + (slotArmed && a.kind !== 'audio' ? ' armed' : '');
     if (a.thumb) el.style.backgroundImage = `url(${a.thumb})`;
     el.title = a.kind === 'audio' ? 'set as audio track' : slotArmed ? 'fill selected slot' : 'add to timeline';
-    el.innerHTML = `<div class="a-kind">${a.kind === 'video' ? '▶ ' + fmt(a.duration) + 's'
+    el.innerHTML = `<div class="a-kind">${a.kind === 'video' ? '▶ ' + fmt(a.duration) + 's' + (a.hasAudio ? ' ♪' : '')
       : a.kind === 'audio' ? '♪ ' + fmt(a.duration) + 's' : 'img'}</div>
       <button class="a-del" title="remove asset">✕</button>
       <div class="a-name">${esc(a.name)}</div>`;
@@ -1994,7 +2134,8 @@ function snapshotTemplate(name) {
   audio.savedAssetName = assetById(audio.assetId)?.name ?? audio.savedAssetName;
   audio.assetId = null;
   return { id: uid(), name, createdAt: Date.now(), format: state.project.format,
-    fps: state.project.fps, background: state.project.background, clips, texts, audio };
+    fps: state.project.fps, background: state.project.background, clips, texts, audio,
+    clipAudio: deep(state.project.clipAudio) };
 }
 async function saveTemplate() {
   if (!state.project.clips.length && !state.project.texts.length)
@@ -2023,9 +2164,10 @@ async function applyTemplate(tp) {
   state.project.format = tp.format;
   state.project.fps = tp.fps;
   state.project.background = tp.background;
-  state.project.clips = tp.clips.map(c => { const x = deep(c); x.id = uid(); x.assetId = null; return x; });
+  state.project.clips = tp.clips.map(c => { const x = deep(c); x.id = uid(); x.assetId = null; if (x.volume == null) x.volume = 1; return x; });
   state.project.texts = tp.texts.map(t => { const x = deep(t); x.id = uid(); return x; });
   state.project.audio = Object.assign(defaultAudio(), deep(tp.audio || {}), { assetId: null });
+  state.project.clipAudio = Object.assign(defaultClipAudio(), deep(tp.clipAudio || {}));
   state.sel = null; state.t = 0;
   reflectHeader();
   sizePreview();
@@ -2082,12 +2224,28 @@ async function pickAudioEncoderConfig(sampleRate, numberOfChannels) {
   }
   return null;
 }
-// decode the track fresh, lay it over the reel with offset/loop and gain/fade
-// automation via an OfflineAudioContext, return the PCM + a supported encoder config
+// decode everything fresh and mix both tracks over the reel via an
+// OfflineAudioContext — track 1: each video clip's own audio at its timeline
+// position/trim with per-clip gain, track 2: the music track with offset/loop
+// and gain/fade automation. Returns the mixed PCM + a supported encoder config.
 async function prepareAudioPlan(total) {
+  if (total <= 0) return null;
   const au = state.project.audio;
-  const asset = au.assetId ? assetById(au.assetId) : null;
-  if (!asset || total <= 0) return null;
+  const musicAsset = au.assetId ? assetById(au.assetId) : null;
+  const segs = [];
+  if (state.project.clipAudio.on) {
+    const { items } = layout();
+    items.forEach((it, i) => {
+      const c = it.clip;
+      const vol = clipAudioVol(c);
+      if (vol <= 0) return;
+      const next = items[i + 1];
+      const overlap = next ? Math.max(0, it.end - next.start) : 0;   // outgoing side of a crossfade
+      segs.push({ asset: assetById(c.assetId), when: it.start, dur: it.dur, srcOff: c.trimIn,
+                  vol, fadeIn: Math.max(it.fadeIn || 0, .012), fadeOut: Math.max(overlap, .012) });
+    });
+  }
+  if (!musicAsset && !segs.length) return null;
   if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') {
     toast('this browser cannot encode audio (WebCodecs) — exporting silent', 'warn');
     return null;
@@ -2098,25 +2256,56 @@ async function prepareAudioPlan(total) {
     if (!picked) { toast('no supported audio codec — exporting silent', 'warn'); return null; }
     if (picked.muxCodec === 'opus')
       toast('AAC unavailable — audio encoded as Opus (fine for YouTube/VLC, some platforms re-encode or drop it)', 'warn');
-    const buffer = await decodeAudio(await (await fetch(asset.url)).arrayBuffer());
     const octx = new OfflineAudioContext(2, Math.max(1, Math.ceil(total * SR)), SR);
-    const src = octx.createBufferSource();
-    src.buffer = buffer;
-    const off = clamp(au.offset, 0, Math.max(0, buffer.duration - .05));
-    if (au.loop) { src.loop = true; src.loopStart = off; src.loopEnd = buffer.duration; }
-    const g = octx.createGain();
-    const peak = clamp(au.gain, 0, 2);
-    const fi = clamp(au.fadeIn, 0, total / 2), fo = clamp(au.fadeOut, 0, total / 2);
-    if (fi > 0) { g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(peak, fi); }
-    else g.gain.setValueAtTime(peak, 0);
-    if (fo > 0) { g.gain.setValueAtTime(peak, total - fo); g.gain.linearRampToValueAtTime(0, total); }
-    src.connect(g); g.connect(octx.destination);
-    src.start(0, off);
+    const decoded = new Map();
+    const grab = async asset => {
+      if (decoded.has(asset.id)) return decoded.get(asset.id);
+      let buf = null;
+      try { buf = await decodeAudio(await (await fetch(asset.url)).arrayBuffer()); }
+      catch { toast(`couldn't decode audio of ${asset.name} — that part stays silent`, 'warn'); }
+      decoded.set(asset.id, buf);
+      return buf;
+    };
+    if (musicAsset) {
+      const buffer = await grab(musicAsset);
+      if (buffer) {
+        const src = octx.createBufferSource();
+        src.buffer = buffer;
+        const off = clamp(au.offset, 0, Math.max(0, buffer.duration - .05));
+        if (au.loop) { src.loop = true; src.loopStart = off; src.loopEnd = buffer.duration; }
+        const g = octx.createGain();
+        const peak = clamp(au.gain, 0, 2);
+        const fi = clamp(au.fadeIn, 0, total / 2), fo = clamp(au.fadeOut, 0, total / 2);
+        if (fi > 0) { g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(peak, fi); }
+        else g.gain.setValueAtTime(peak, 0);
+        if (fo > 0) { g.gain.setValueAtTime(peak, total - fo); g.gain.linearRampToValueAtTime(0, total); }
+        src.connect(g); g.connect(octx.destination);
+        src.start(0, off);
+      }
+    }
+    for (const s of segs) {
+      const buf = await grab(s.asset);
+      if (!buf) continue;
+      const d = Math.min(s.dur, Math.max(0, buf.duration - s.srcOff));
+      if (d <= .02) continue;
+      const src = octx.createBufferSource();
+      src.buffer = buf;
+      const g = octx.createGain();
+      // short edge ramps kill clicks at cuts; transition overlaps become audio crossfades
+      const fi = Math.min(s.fadeIn, d / 2), fo = Math.min(s.fadeOut, d / 2);
+      const end = s.when + d;
+      g.gain.setValueAtTime(0, s.when);
+      g.gain.linearRampToValueAtTime(s.vol, s.when + fi);
+      g.gain.setValueAtTime(s.vol, Math.max(s.when + fi, end - fo));
+      g.gain.linearRampToValueAtTime(0, end);
+      src.connect(g); g.connect(octx.destination);
+      src.start(s.when, s.srcOff, d);
+    }
     const pcm = await octx.startRendering();
     return { pcm, ...picked };
   } catch (e) {
     console.error(e);
-    toast(`audio track failed (${e.message}) — exporting silent`, 'warn');
+    toast(`audio mix failed (${e.message}) — exporting silent`, 'warn');
     return null;
   }
 }
@@ -2169,10 +2358,14 @@ function openExportModal() {
       ${(() => {
         const au = state.project.audio;
         const a = au.assetId ? assetById(au.assetId) : null;
-        if (a) return `♪ ${esc(a.name)}`;
-        if (au.savedAssetName) return `<span style="color:var(--warn)">audio “${esc(au.savedAssetName)}” is missing its
-          file — exporting silent unless you re-add it</span>`;
-        return 'silent — click an audio file in the bin to lay a music track, or add trending audio on the platform';
+        const caN = state.project.clipAudio.on ? items.filter(it => clipAudioVol(it.clip) > 0).length : 0;
+        const bits = [];
+        if (caN) bits.push(`♪ clip audio × ${caN}`);
+        if (a) bits.push(`♪ ${esc(a.name)}`);
+        else if (au.savedAssetName) bits.push(`<span style="color:var(--warn)">music “${esc(au.savedAssetName)}” is missing its
+          file — that track stays silent unless you re-add it</span>`);
+        if (!bits.length) return 'silent — click an audio file in the bin to lay a music track, or add trending audio on the platform';
+        return bits.join(' mixed with ');
       })()}.</div>
     <div id="exBody"></div>
     <div class="mfoot">
@@ -2213,11 +2406,8 @@ async function runExport(W, H, fps, bitrate) {
       v.pause();
       if (v.readyState < 2) { v.load(); await once(v, 'canplay', 8000); }
     }
-    let audioPlan = null;
-    if (state.project.audio.assetId) {
-      $('exLbl').textContent = 'rendering audio…';
-      audioPlan = await prepareAudioPlan(total);
-    }
+    $('exLbl').textContent = 'rendering audio…';
+    const audioPlan = await prepareAudioPlan(total);
     const picked = await pickEncoderConfig(W, H, fps, bitrate);
     if (!picked) throw new Error('no supported codec (tried H.264 + VP9)');
     const isAvc = picked.codec.startsWith('avc');
@@ -2317,17 +2507,20 @@ function openHelp() {
       browser.<br><br>
       <b>Text</b> — “+ text cue” drops a timed overlay at the playhead. Cues reference a style preset
       (font, pill, shadow, in/out animation). Save any cue as a <b>snippet</b> to reuse the whole bit later.<br><br>
-      <b>Audio</b> — drop an mp3 / wav / m4a / ogg in the bin and click it: it becomes the reel's music track.
-      The inspector sets where in the source it starts, volume, fade in/out and looping; the preview plays it
-      in sync. Note: web pages can't pull audio straight off YouTube (blocked by the browser, and against
-      most content's terms) — use files you have the rights to, e.g. your own exports or a royalty-free /
-      licensed download.<br><br>
+      <b>Audio</b> — two tracks, mixed into the export. <b>Clip audio</b>: adding a video lays its own
+      sound on a track under the reel automatically — click a bar to set that clip's volume, ✕ or
+      <kbd>del</kbd> drops the whole track (it comes back when you add another video). <b>Music</b>:
+      drop an mp3 / wav / m4a / ogg in the bin and click it; the inspector sets where in the source it
+      starts, volume, fade in/out and looping. The preview plays both in sync. Note: web pages can't pull
+      audio straight off YouTube (blocked by the browser, and against most content's terms) — use files
+      you have the rights to, e.g. your own exports or a royalty-free / licensed download.<br><br>
       <b>Templates</b> — “save current” freezes the layout: slot order, durations, animations, transitions,
       text cues and audio settings, minus the assets. Apply it later and fill the empty slots with new
       footage — same edit, new content. Templates can be exported/imported as JSON files.<br><br>
       <b>Export</b> — renders frame-exact via WebCodecs into an H.264 MP4 (fastStart, ready for IG / TikTok /
-      Shorts) and muxes the audio track in as AAC (Opus fallback). No track set = silent export — platform
-      trending audio still reaches further. Needs a recent Chrome, Edge or Safari.<br><br>
+      Shorts) and mixes both audio tracks into one AAC stream (Opus fallback). No clip audio and no music =
+      silent export — platform trending audio still reaches further. Needs a recent Chrome, Edge or
+      Safari.<br><br>
       Everything (presets, snippets, templates, layout) persists in this browser via localStorage.
       Assets are session-only — re-add files after a reload.
     </div>
