@@ -19,6 +19,7 @@ This approach is directly inspired by [Simon Willison's HTML tools](https://simo
 | Tool | Description |
 |------|-------------|
 | [Plot Prep](static/tools/plot-prep.html) | SVG decorator for pen plotting — adds paper outline, calibration markers, and page boundary layers (Saxi / AxiDraw) |
+| [CCA Banner](static/tools/cca-banner.html) | Meetup banner generator for [Creative Coding Amsterdam](https://cca.codes) — place & style title text, info boxes, CCA + A-Lab logo plates, background and overlay images, pick colours from the background, save/load presets; 16:9 meetup & square formats |
 | [PTPX Postcard Plotter](static/tools/ptpx-postcard-plotter.html) | Postcard back generator — lays out 4× A6 on A4 with Hershey single-stroke text, address lines, stamp boxes, and Inkscape layers ready for plotting |
 | [Reel Studio](static/tools/reel-studio.html) | Timeline reel editor for socials — image/video clips with zoom/pan animation presets, video trimming, cued text overlays, auto-added clip audio track with per-clip volume, music track with trim/fades/loop, both tracks mixed into the export, reusable templates, MP4 export with AAC audio (square & portrait) |
 

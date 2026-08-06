@@ -1,0 +1,2159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- tool-meta: {"name":"CCA Banner","slug":"cca-banner","description":"Meetup banner generator for Creative Coding Amsterdam — place & style title text, info boxes, CCA + A-Lab logo plates, background and overlay images, pick colors from the background, save/load presets; 16:9 meetup & square formats.","tags":["cca","banner","meetup","design","canvas"]} -->
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CCA BANNER · Meetup banner generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Roboto+Mono:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;1,400&family=VT323&family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600&family=Jost:wght@400;500;600;700&family=Inter:wght@400;600;800&family=Montserrat:ital,wght@0,400;0,600;0,800;1,400&family=Archivo+Black&family=Bebas+Neue&family=Comfortaa:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&family=Baloo+2:wght@400;600;800&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=Instrument+Serif:ital@0;1&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&display=swap"
+    />
+    <style>
+      /* Nope8 pixel font from the CCA website (cca.codes), embedded */
+      @font-face {
+        font-family: "Nope8";
+        src: url(data:font/woff2;base64,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) format("woff2");
+        font-weight: normal;
+        font-style: normal;
+      }
+
+      :root {
+        --bg: #0e0e0e;
+        --panel: #161616;
+        --border: #2a2a2a;
+        --border-hi: #404040;
+        --accent: #c8f060;
+        --accent-dim: #8aaa3a;
+        --text: #d4d4d4;
+        --text-dim: #666;
+        --text-muted: #444;
+        --input-bg: #1c1c1c;
+        --mono: "IBM Plex Mono", monospace;
+        --red: #ff6b6b;
+        --cca-red: #b52d2c;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 13px;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* ── Header ── */
+      header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 10px 20px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+        background: var(--panel);
+      }
+      .logo {
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.2em;
+        color: var(--accent);
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .logo-sep {
+        color: var(--text-muted);
+        margin: 0 2px;
+      }
+      .subtitle {
+        font-size: 11px;
+        color: var(--text-dim);
+        letter-spacing: 0.06em;
+      }
+      .header-right {
+        margin-left: auto;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      /* ── Layout ── */
+      .main {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        flex: 1;
+        overflow: hidden;
+        min-height: 0;
+      }
+
+      /* ── Sidebar ── */
+      .sidebar {
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: var(--panel);
+      }
+      .sidebar-scroll {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border-hi) transparent;
+      }
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--border-hi);
+      }
+
+      .section {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .section-label {
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        margin-bottom: 9px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .section-label .spacer {
+        flex: 1;
+      }
+
+      /* ── Controls ── */
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 7px;
+        min-height: 22px;
+      }
+      .row:last-child {
+        margin-bottom: 0;
+      }
+      .row label {
+        font-size: 10px;
+        color: var(--text-dim);
+        width: 84px;
+        flex-shrink: 0;
+        letter-spacing: 0.04em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row .val {
+        font-size: 10px;
+        color: var(--text-dim);
+        width: 42px;
+        text-align: right;
+        flex-shrink: 0;
+        font-variant-numeric: tabular-nums;
+      }
+
+      input[type="text"],
+      input[type="number"],
+      select,
+      textarea {
+        background: var(--input-bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 11px;
+        padding: 4px 7px;
+        outline: none;
+        width: 100%;
+        min-width: 0;
+        border-radius: 0;
+      }
+      input[type="text"]:focus,
+      input[type="number"]:focus,
+      select:focus,
+      textarea:focus {
+        border-color: var(--accent-dim);
+      }
+      textarea {
+        resize: vertical;
+        min-height: 52px;
+        line-height: 1.5;
+      }
+      select {
+        appearance: none;
+        background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+          linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+        background-position:
+          calc(100% - 14px) 50%,
+          calc(100% - 9px) 50%;
+        background-size: 5px 5px;
+        background-repeat: no-repeat;
+        padding-right: 24px;
+      }
+      input[type="range"] {
+        flex: 1;
+        appearance: none;
+        height: 2px;
+        background: var(--border-hi);
+        outline: none;
+        min-width: 0;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        appearance: none;
+        width: 10px;
+        height: 10px;
+        background: var(--accent);
+        cursor: pointer;
+        border-radius: 50%;
+      }
+      input[type="range"]::-moz-range-thumb {
+        width: 10px;
+        height: 10px;
+        background: var(--accent);
+        cursor: pointer;
+        border-radius: 50%;
+        border: none;
+      }
+      input[type="color"] {
+        width: 26px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid var(--border-hi);
+        background: none;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      input[type="color"]::-webkit-color-swatch-wrapper {
+        padding: 2px;
+      }
+      input[type="color"]::-webkit-color-swatch {
+        border: none;
+      }
+      input[type="checkbox"] {
+        accent-color: var(--accent);
+      }
+      .hexfield {
+        width: 74px !important;
+        flex-shrink: 0;
+      }
+
+      button {
+        background: var(--input-bg);
+        border: 1px solid var(--border-hi);
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        padding: 4px 9px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      button:hover {
+        border-color: var(--accent-dim);
+        color: var(--accent);
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #101010;
+        font-weight: 500;
+      }
+      button.primary:hover {
+        background: #d6fa78;
+        color: #101010;
+      }
+      button.ghost {
+        border-color: transparent;
+        background: none;
+        color: var(--text-dim);
+        padding: 2px 5px;
+      }
+      button.ghost:hover {
+        color: var(--accent);
+      }
+      button.icon {
+        padding: 2px 6px;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      button.pipette {
+        padding: 2px 6px;
+        font-size: 12px;
+        line-height: 1.3;
+        flex-shrink: 0;
+      }
+      button.pipette.armed {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .btnrow {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .btnrow button {
+        flex: 1;
+      }
+
+      .seg {
+        display: flex;
+        gap: 0;
+        width: 100%;
+      }
+      .seg button {
+        flex: 1;
+        border-right-width: 0;
+      }
+      .seg button:last-child {
+        border-right-width: 1px;
+      }
+      .seg button.on {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #101010;
+        font-weight: 500;
+      }
+
+      /* ── Drop zone ── */
+      .drop-zone {
+        border: 1px dashed var(--border-hi);
+        padding: 10px;
+        text-align: center;
+        color: var(--text-dim);
+        font-size: 10px;
+        cursor: pointer;
+        letter-spacing: 0.04em;
+        line-height: 1.5;
+      }
+      .drop-zone:hover,
+      .drop-zone.over {
+        border-color: var(--accent-dim);
+        color: var(--text);
+      }
+      .drop-zone em {
+        color: var(--accent);
+        font-style: normal;
+      }
+
+      /* ── Palette ── */
+      .palette {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .palette .sw {
+        width: 24px;
+        height: 24px;
+        border: 1px solid var(--border-hi);
+        cursor: pointer;
+        position: relative;
+      }
+      .palette .sw:hover {
+        border-color: var(--accent);
+        transform: scale(1.12);
+      }
+      .palette:empty::after {
+        content: "load a background image to extract its palette";
+        font-size: 10px;
+        color: var(--text-muted);
+        line-height: 1.5;
+      }
+
+      /* ── Layer list ── */
+      .layer-list {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin-bottom: 9px;
+      }
+      .layer-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 6px;
+        border: 1px solid var(--border);
+        background: var(--input-bg);
+        cursor: pointer;
+        user-select: none;
+      }
+      .layer-item:hover {
+        border-color: var(--border-hi);
+      }
+      .layer-item.sel {
+        border-color: var(--accent-dim);
+        background: #202513;
+      }
+      .layer-item .kind {
+        font-size: 9px;
+        color: var(--accent-dim);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        width: 38px;
+        flex-shrink: 0;
+      }
+      .layer-item.sel .kind {
+        color: var(--accent);
+      }
+      .layer-item .lname {
+        flex: 1;
+        font-size: 10px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--text);
+      }
+      .layer-item .lbtn {
+        background: none;
+        border: none;
+        color: var(--text-dim);
+        padding: 0 2px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .layer-item .lbtn:hover {
+        color: var(--accent);
+      }
+      .layer-item.hidden-layer .lname {
+        color: var(--text-muted);
+        text-decoration: line-through;
+      }
+
+      /* logo items */
+      .logo-item {
+        border: 1px solid var(--border);
+        padding: 7px 8px 5px;
+        margin-bottom: 7px;
+        background: var(--input-bg);
+      }
+      .logo-item .row {
+        margin-bottom: 5px;
+      }
+      .logo-item .row:last-child {
+        margin-bottom: 0;
+      }
+
+      .hint {
+        font-size: 10px;
+        color: var(--text-muted);
+        line-height: 1.55;
+        margin-top: 6px;
+      }
+
+      /* ── Canvas area ── */
+      .canvas-area {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-width: 0;
+      }
+      .canvas-wrap {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        position: relative;
+        background:
+          repeating-conic-gradient(#131313 0% 25%, #0e0e0e 0% 50%) 0 0 / 24px 24px;
+        min-height: 0;
+        padding: 24px;
+      }
+      #view {
+        box-shadow: 0 0 0 1px var(--border), 0 12px 48px rgba(0, 0, 0, 0.55);
+        max-width: 100%;
+        max-height: 100%;
+        cursor: default;
+      }
+      #view.pick {
+        cursor: crosshair;
+      }
+      .canvas-footer {
+        font-size: 10px;
+        color: var(--text-muted);
+        padding: 5px 12px;
+        border-top: 1px solid var(--border);
+        letter-spacing: 0.06em;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        background: var(--panel);
+      }
+      .canvas-footer .dim {
+        color: var(--text-dim);
+      }
+      .canvas-footer .grow {
+        flex: 1;
+      }
+
+      /* ── Toast ── */
+      #toast {
+        position: fixed;
+        bottom: 34px;
+        left: 50%;
+        transform: translateX(-50%) translateY(8px);
+        background: #202020;
+        border: 1px solid var(--accent-dim);
+        color: var(--text);
+        font-size: 11px;
+        padding: 7px 14px;
+        opacity: 0;
+        pointer-events: none;
+        transition: all 0.18s ease;
+        z-index: 50;
+        letter-spacing: 0.04em;
+      }
+      #toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="logo">CCA<span class="logo-sep">·</span>Banner</span>
+      <span class="subtitle">meetup banner generator — creative coding amsterdam</span>
+      <div class="header-right">
+        <select id="exportScale" style="width: 64px" title="export scale">
+          <option value="1">1×</option>
+          <option value="2" selected>2×</option>
+          <option value="3">3×</option>
+        </select>
+        <button onclick="exportImage('jpeg')">JPG</button>
+        <button class="primary" onclick="exportImage('png')">⬇ PNG</button>
+      </div>
+    </header>
+
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-scroll">
+          <!-- Presets -->
+          <div class="section">
+            <div class="section-label">
+              Presets
+              <span class="spacer"></span>
+              <button class="ghost" onclick="exportPreset()" title="download current setup as .json">export</button>
+              <button class="ghost" onclick="importPresetFile()" title="load a preset .json">import</button>
+            </div>
+            <div class="row">
+              <select id="presetSel" onchange="onPresetPick(this.value)"></select>
+              <button class="icon" id="presetDel" onclick="deletePreset()" title="delete saved preset">✕</button>
+            </div>
+            <div class="row">
+              <input type="text" id="presetName" placeholder="preset name…" />
+              <button onclick="savePreset()">save</button>
+            </div>
+          </div>
+
+          <!-- Format -->
+          <div class="section">
+            <div class="section-label">Format</div>
+            <div class="row seg" id="fmtSeg">
+              <button data-fmt="meetup" onclick="setFormat('meetup')">meetup 16:9</button>
+              <button data-fmt="square" onclick="setFormat('square')">square</button>
+              <button data-fmt="custom" onclick="setFormat('custom')">custom</button>
+            </div>
+            <div class="row" id="customSize" style="display: none">
+              <label>size px</label>
+              <input type="number" id="cw" min="200" max="4000" step="10" />
+              <span style="color: var(--text-dim)">×</span>
+              <input type="number" id="ch" min="200" max="4000" step="10" />
+            </div>
+            <div class="hint" id="fmtHint"></div>
+          </div>
+
+          <!-- Background -->
+          <div class="section">
+            <div class="section-label">Background</div>
+            <div id="bgColorRow"></div>
+            <div class="drop-zone" id="bgDrop">
+              drop image · <em>browse</em> · or paste
+            </div>
+            <div id="bgImgCtl" style="display: none; margin-top: 7px">
+              <div class="row">
+                <label>fit</label>
+                <select id="bgFit">
+                  <option value="cover">cover</option>
+                  <option value="contain">contain</option>
+                  <option value="stretch">stretch</option>
+                </select>
+                <button class="icon" onclick="clearBgImage()" title="remove background image">✕</button>
+              </div>
+              <div class="row">
+                <label>zoom</label>
+                <input type="range" id="bgZoom" min="0.5" max="3" step="0.01" />
+                <span class="val" id="bgZoomV"></span>
+              </div>
+              <div class="row">
+                <label>pos x</label>
+                <input type="range" id="bgOx" min="0" max="1" step="0.005" />
+                <span class="val" id="bgOxV"></span>
+              </div>
+              <div class="row">
+                <label>pos y</label>
+                <input type="range" id="bgOy" min="0" max="1" step="0.005" />
+                <span class="val" id="bgOyV"></span>
+              </div>
+            </div>
+            <div style="margin-top: 7px" id="bgTintRow"></div>
+            <div class="row">
+              <label>tint alpha</label>
+              <input type="range" id="bgTintA" min="0" max="1" step="0.01" />
+              <span class="val" id="bgTintAV"></span>
+            </div>
+          </div>
+
+          <!-- Palette -->
+          <div class="section">
+            <div class="section-label">
+              Image palette
+              <span class="spacer"></span>
+              <button class="ghost" onclick="extractPalette(true)">re-extract</button>
+            </div>
+            <div class="palette" id="palette"></div>
+            <div class="hint">
+              click a swatch to copy its hex · with a pipette ⌖ armed, click a
+              swatch or anywhere on the banner to apply that colour
+            </div>
+          </div>
+
+          <!-- Layers -->
+          <div class="section">
+            <div class="section-label">Layers</div>
+            <div class="layer-list" id="layerList"></div>
+            <div class="btnrow">
+              <button onclick="addLayer('text')">+ text</button>
+              <button onclick="addLayer('box')">+ box</button>
+              <button onclick="addLayer('logos')">+ logos</button>
+              <button onclick="addLayer('image')">+ image</button>
+            </div>
+          </div>
+
+          <!-- Selected layer -->
+          <div class="section" id="propsSection" style="display: none">
+            <div class="section-label">
+              <span id="propsTitle">Layer</span>
+              <span class="spacer"></span>
+              <button class="ghost" onclick="duplicateSel()">duplicate</button>
+              <button class="ghost" onclick="deleteSel()">delete</button>
+            </div>
+            <div id="props"></div>
+          </div>
+
+          <div class="section">
+            <div class="hint">
+              drag layers on the banner to place them · drag the ◼ corner handle
+              to scale · arrow keys nudge (⇧ = ×10) · ⌫ deletes · logos, fonts
+              &amp; colours from
+              <a href="https://github.com/stanko/cca" target="_blank" style="color: var(--accent-dim)">stanko/cca</a>
+              · everything autosaves to this browser
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <div class="canvas-area">
+        <div class="canvas-wrap" id="canvasWrap">
+          <canvas id="view"></canvas>
+        </div>
+        <div class="canvas-footer">
+          <span class="dim" id="dimInfo">—</span>
+          <span id="zoomInfo"></span>
+          <span class="grow"></span>
+          <span id="cursorInfo"></span>
+          <span id="pickHint" style="color: var(--accent); display: none">click banner to pick colour · esc cancels</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+    <input type="file" id="fileIn" accept="image/*" style="display: none" />
+    <input type="file" id="jsonIn" accept="application/json,.json" style="display: none" />
+    <script>
+      "use strict";
+
+      /* ════════════════════════ constants ════════════════════════ */
+
+      // Official CCA logo — three stroked paths, viewBox 162×60 (stroke 12, round caps).
+      // From https://github.com/stanko/cca /logo/svg/. Accent variant colours the 'a'.
+      const CCA_PATHS = [
+        "M 46.97 13.029 A 24 24 1 1 0 46.97 46.97",
+        "M 97.97 13.029 A 24 24 1 1 0 97.97 46.97",
+        "M 156 29.96 A 24 24 1 1 0 156 30 v 24",
+      ];
+      const CCA_W = 162, CCA_H = 60;
+      const CCA_RED = "#b52d2c";
+      let ccaPath2d = null;
+      function getCcaPaths() {
+        if (!ccaPath2d) ccaPath2d = CCA_PATHS.map((d) => new Path2D(d));
+        return ccaPath2d;
+      }
+
+      // A-Lab pixel mark, extracted from the official a-lab.png (7×9 grid, 5×7 active cells)
+      const ALAB_CELLS = [
+        [2, 0],
+        [1, 1], [2, 1], [3, 1],
+        [1, 2], [3, 2],
+        [1, 3], [2, 3], [3, 3],
+        [1, 4], [3, 4],
+        [1, 5], [3, 5],
+        [0, 6], [1, 6], [3, 6], [4, 6],
+      ];
+
+      const FONTS = [
+        { f: "Space Mono", w: [400, 700], i: true },
+        { f: "Roboto Mono", w: [400, 500, 700], i: true },
+        { f: "IBM Plex Mono", w: [300, 400, 500], i: true },
+        { f: "VT323", w: [400], i: false },
+        { f: "Nope8", w: [400], i: false, embedded: true },
+        { f: "Poppins", w: [300, 400, 500, 600, 700], i: true },
+        { f: "Jost", w: [400, 500, 600, 700], i: false },
+        { f: "Inter", w: [400, 600, 800], i: false },
+        { f: "Montserrat", w: [400, 600, 800], i: true },
+        { f: "Archivo Black", w: [400], i: false },
+        { f: "Bebas Neue", w: [400], i: false },
+        { f: "Comfortaa", w: [400, 500, 600, 700], i: false },
+        { f: "Quicksand", w: [400, 500, 600, 700], i: false },
+        { f: "Baloo 2", w: [400, 600, 800], i: false },
+        { f: "Playfair Display", w: [400, 500, 600, 700], i: true },
+        { f: "Instrument Serif", w: [400], i: true },
+        { f: "Cormorant Garamond", w: [500, 600, 700], i: true },
+      ];
+      const fontDef = (f) => FONTS.find((d) => d.f === f) || FONTS[0];
+
+      const FORMATS = {
+        meetup: { w: 1200, h: 675, hint: "1200 × 675 — meetup.com event banner (use export 2× for 2400 × 1350)" },
+        square: { w: 1080, h: 1080, hint: "1080 × 1080 — instagram / mastodon square" },
+      };
+
+      /* ── built-in presets (positions are fractions of banner size, so they
+             adapt across formats; sizes are fractions of banner height) ── */
+
+      const P = {
+        text: (o) => Object.assign({ type: "text", visible: true, fx: 0.05, fy: 0.05, fs: 0.1, text: "Title", font: "Poppins", weight: 500, italic: false, color: "#f3f2f1", ls: 0, lh: 1.25, align: "left", opacity: 1, rot: 0 }, o),
+        box: (o) => Object.assign({ type: "box", visible: true, fx: 0.72, fy: 0.6, fs: 0.042, text: "@ A-LAB\n18:30 - 21:30\n01/01/2026", font: "Space Mono", weight: 400, italic: false, color: "#f3f2f1", ls: 0.1, lh: 1.6, align: "left", opacity: 1, boxBg: "#000000", boxA: 1, pad: 0.03, rad: 0 }, o),
+        logos: (o) => Object.assign({ type: "logos", visible: true, fx: 0.72, fy: 0.87, plateBg: "#cdc5b4", plateA: 1, pad: 0.02, rad: 0, gap: 0.035, itemH: 0.055, opacity: 1, items: [{ kind: "cca", color: "#141414", accent: "" }, { kind: "alab", color: "#141414" }] }, o),
+        image: (o) => Object.assign({ type: "image", visible: true, fx: 0.5, fy: 0.5, fs: 0.4, img: null, opacity: 1, rot: 0 }, o),
+      };
+      const bgDef = (o) => Object.assign({ color: "#141414", img: null, fit: "cover", zoom: 1, ox: 0.5, oy: 0.5, tint: "#000000", tintA: 0 }, o);
+
+      const BUILTINS = [
+        {
+          id: "genuary",
+          name: "Genuary Special (dark · green)",
+          state: {
+            w: 1200, h: 675,
+            bg: bgDef({ color: "#0b0d08" }),
+            layers: [
+              P.text({ text: "GENUARY", fx: 0.028, fy: 0.055, fs: 0.152, font: "Poppins", weight: 500, color: "#c5e063", ls: 0.1, lh: 1.2 }),
+              P.text({ text: "Special", fx: 0.11, fy: 0.2, fs: 0.19, font: "Playfair Display", weight: 600, italic: true, color: "#c5e063" }),
+              P.box({ text: "@ A-LAB\n18:30 - 21:30\n29/01/2026", fx: 0.765, fy: 0.622, fs: 0.0405, color: "#cdc5b4", ls: 0.04, boxBg: "#000000", boxA: 1, pad: 0.028 }),
+              P.logos({ fx: 0.772, fy: 0.862, plateBg: "#a29b8b", pad: 0.02, itemH: 0.052, items: [{ kind: "cca", color: "#0a0a0a", accent: "" }] }),
+              P.logos({ fx: 0.925, fy: 0.862, plateBg: "#000000", pad: 0.02, itemH: 0.052, items: [{ kind: "alab", color: "#cdc5b4" }] }),
+            ],
+          },
+        },
+        {
+          id: "workshop",
+          name: "Workshop (navy · cream)",
+          state: {
+            w: 1200, h: 675,
+            bg: bgDef({ color: "#1c2641" }),
+            layers: [
+              P.text({ text: "reverse engineering\n a procedural art piece", fx: 0.038, fy: 0.045, fs: 0.075, font: "Comfortaa", weight: 500, color: "#e5e0c3", ls: 0.01, lh: 1.35 }),
+              P.box({ text: "@ A-LAB\n13:00 - 17:00\n22/02/2026", fx: 0.755, fy: 0.585, fs: 0.045, color: "#f4e4cb", ls: 0.03, boxBg: "#ffffff", boxA: 0.14, pad: 0.028 }),
+              P.logos({ fx: 0.648, fy: 0.862, plateBg: "#bcb7a3", pad: 0.022, gap: 0.04, itemH: 0.064, items: [{ kind: "cca", color: "#273457", accent: "" }, { kind: "alab", color: "#273457" }] }),
+            ],
+          },
+        },
+        {
+          id: "square-social",
+          name: "Square social (dark · accent)",
+          state: {
+            w: 1080, h: 1080,
+            bg: bgDef({ color: "#10120c" }),
+            layers: [
+              P.text({ text: "show & tell", fx: 0.07, fy: 0.07, fs: 0.085, font: "Comfortaa", weight: 600, color: "#c8f060" }),
+              P.text({ text: "bring your sketches", fx: 0.09, fy: 0.185, fs: 0.062, font: "Instrument Serif", weight: 400, italic: true, color: "#f3f2f1" }),
+              P.box({ text: "@ A-LAB\n18:30 - 21:30\n26/03/2026", fx: 0.07, fy: 0.6, fs: 0.036, color: "#f3f2f1", boxBg: "#000000", boxA: 0.55, pad: 0.028 }),
+              P.logos({ fx: 0.52, fy: 0.885, plateBg: "#d5cfbf", pad: 0.016, gap: 0.03, itemH: 0.042, items: [{ kind: "cca", color: "#14140f", accent: "" }, { kind: "alab", color: "#14140f" }] }),
+            ],
+          },
+        },
+        {
+          id: "blank-meetup",
+          name: "Blank meetup 16:9",
+          state: {
+            w: 1200, h: 675,
+            bg: bgDef({ color: "#141414" }),
+            layers: [
+              P.text({ text: "Your title", fx: 0.04, fy: 0.06, fs: 0.13, font: "Poppins", weight: 600, color: "#f3f2f1" }),
+              P.box({}),
+              P.logos({}),
+            ],
+          },
+        },
+        {
+          id: "blank-square",
+          name: "Blank square",
+          state: {
+            w: 1080, h: 1080,
+            bg: bgDef({ color: "#141414" }),
+            layers: [
+              P.text({ text: "Your title", fx: 0.06, fy: 0.06, fs: 0.09, font: "Poppins", weight: 600, color: "#f3f2f1" }),
+              P.box({ fx: 0.06, fy: 0.62, fs: 0.036 }),
+              P.logos({ fx: 0.55, fy: 0.885, itemH: 0.042 }),
+            ],
+          },
+        },
+      ];
+
+      /* ════════════════════════ state ════════════════════════ */
+
+      const LS_SESSION = "ccaBanner.session";
+      const LS_PRESETS = "ccaBanner.presets";
+
+      let state = null;      // { w, h, bg, layers }
+      let sel = -1;          // selected layer index
+      let eyedrop = null;    // { apply(hex) } when a pipette is armed
+      let palette = [];      // extracted hexes
+      let quotaWarned = false;
+
+      const $ = (id) => document.getElementById(id);
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      const deep = (o) => JSON.parse(JSON.stringify(o));
+      const stripPrivate = (k, v) => (k.startsWith("_") ? undefined : v);
+
+      function migrate(s) {
+        const out = { w: s.w || 1200, h: s.h || 675, bg: bgDef(s.bg || {}), layers: [] };
+        for (const l of s.layers || []) {
+          if (P[l.type]) out.layers.push(P[l.type](l));
+        }
+        return out;
+      }
+
+      function toast(msg) {
+        const t = $("toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        clearTimeout(toast._t);
+        toast._t = setTimeout(() => t.classList.remove("show"), 2200);
+      }
+
+      let saveT = null;
+      function save() {
+        clearTimeout(saveT);
+        saveT = setTimeout(() => {
+          try {
+            localStorage.setItem(LS_SESSION, JSON.stringify(state, stripPrivate));
+          } catch (e) {
+            if (!quotaWarned) {
+              quotaWarned = true;
+              toast("session too big for browser storage — use preset export to keep it");
+            }
+          }
+        }, 350);
+      }
+
+      /* ════════════════════════ images ════════════════════════ */
+
+      const imgCache = new Map(); // dataURL -> Image
+      function getImg(src) {
+        if (!src) return null;
+        let im = imgCache.get(src);
+        if (!im) {
+          im = new Image();
+          im.onload = () => {
+            render();
+            if (state.bg.img === src) extractPalette();
+          };
+          im.src = src;
+          imgCache.set(src, im);
+        }
+        return im.complete && im.naturalWidth ? im : null;
+      }
+
+      function pickFile(cb) {
+        const inp = $("fileIn");
+        inp.onchange = () => {
+          const f = inp.files[0];
+          inp.value = "";
+          if (!f) return;
+          const r = new FileReader();
+          r.onload = () => cb(r.result);
+          r.readAsDataURL(f);
+        };
+        inp.click();
+      }
+
+      /* ════════════════════════ fonts ════════════════════════ */
+
+      const fontsLoaded = new Set();
+      function ensureFont(family, weight, italic) {
+        const key = `${family}|${weight}|${italic ? 1 : 0}`;
+        if (fontsLoaded.has(key)) return;
+        fontsLoaded.add(key);
+        const spec = `${italic ? "italic " : ""}${weight} 32px "${family}"`;
+        document.fonts
+          .load(spec, "AaBb1830@")
+          .then(() => render())
+          .catch(() => {});
+      }
+
+      function addGoogleFont() {
+        const name = prompt("Google Font family name (e.g.  Bricolage Grotesque ):");
+        if (!name) return;
+        const fam = name.trim();
+        if (!fam) return;
+        if (!FONTS.some((d) => d.f.toLowerCase() === fam.toLowerCase())) {
+          const link = document.createElement("link");
+          link.rel = "stylesheet";
+          link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fam).replace(/%20/g, "+")}:ital,wght@0,400;0,700;1,400&display=swap`;
+          link.onerror = () => toast(`could not load “${fam}” — check the family name`);
+          document.head.appendChild(link);
+          FONTS.push({ f: fam, w: [400, 700], i: true, custom: true });
+        }
+        return fam;
+      }
+
+      /* ════════════════════════ text metrics ════════════════════════ */
+
+      function setFont(ctx, l, px) {
+        ctx.font = `${l.italic ? "italic " : ""}${l.weight} ${px}px "${l.font}", sans-serif`;
+      }
+
+      function lineWidth(ctx, text, lsPx) {
+        if (!lsPx) return ctx.measureText(text).width;
+        let w = 0;
+        for (const ch of text) w += ctx.measureText(ch).width + lsPx;
+        return Math.max(0, w - lsPx);
+      }
+
+      function drawLine(ctx, text, x, y, lsPx) {
+        if (!lsPx) {
+          ctx.fillText(text, x, y);
+          return;
+        }
+        let cx = x;
+        for (const ch of text) {
+          ctx.fillText(ch, cx, y);
+          cx += ctx.measureText(ch).width + lsPx;
+        }
+      }
+
+      // returns { lines, widths, blockW, blockH, ascent, lineH, px, lsPx }
+      function measureTextBlock(ctx, l, H) {
+        const px = Math.max(4, l.fs * H);
+        setFont(ctx, l, px);
+        const lsPx = (l.ls || 0) * px;
+        const lines = String(l.text ?? "").split("\n");
+        const widths = lines.map((t) => lineWidth(ctx, t, lsPx));
+        const m = ctx.measureText("Mgy@");
+        const ascent = m.fontBoundingBoxAscent ?? px * 0.8;
+        const descent = m.fontBoundingBoxDescent ?? px * 0.24;
+        const lineH = px * (l.lh || 1.25);
+        const blockW = Math.max(1, ...widths);
+        const blockH = (lines.length - 1) * lineH + ascent + descent;
+        return { lines, widths, blockW, blockH, ascent, lineH, px, lsPx };
+      }
+
+      function drawTextBlock(ctx, l, x0, y0, tm) {
+        ctx.fillStyle = l.color;
+        ctx.textBaseline = "alphabetic";
+        ctx.textAlign = "left";
+        tm.lines.forEach((t, i) => {
+          let lx = x0;
+          if (l.align === "center") lx = x0 + (tm.blockW - tm.widths[i]) / 2;
+          else if (l.align === "right") lx = x0 + tm.blockW - tm.widths[i];
+          drawLine(ctx, t, lx, y0 + tm.ascent + i * tm.lineH, tm.lsPx);
+        });
+      }
+
+      /* ════════════════════════ logo drawing ════════════════════════ */
+
+      function drawCca(ctx, x, y, h, color, accent) {
+        const s = h / CCA_H;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(s, s);
+        ctx.lineWidth = 12;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        const paths = getCcaPaths();
+        ctx.strokeStyle = color;
+        ctx.stroke(paths[0]);
+        ctx.stroke(paths[1]);
+        ctx.strokeStyle = accent || color;
+        ctx.stroke(paths[2]);
+        ctx.restore();
+      }
+
+      function drawAlab(ctx, x, y, size, color) {
+        const lw = size * 0.072;
+        const cell = size * 0.115;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = lw;
+        ctx.strokeRect(x + lw / 2, y + lw / 2, size - lw, size - lw);
+        const ox = x + (size - 5 * cell) / 2;
+        const oy = y + (size - 7 * cell) / 2;
+        for (const [c, r] of ALAB_CELLS) {
+          ctx.fillRect(ox + c * cell, oy + r * cell, cell + 0.35, cell + 0.35);
+        }
+        ctx.restore();
+      }
+
+      // returns [{x offset,w,h}, ...] plus plate size — pure measurement
+      function measureLogos(l, H) {
+        const itemH = Math.max(4, l.itemH * H);
+        const pad = (l.pad || 0) * H;
+        const gap = (l.gap || 0) * H;
+        const parts = [];
+        let x = pad;
+        let maxH = 0;
+        for (const it of l.items) {
+          const scale = it.scale || 1;
+          const h = itemH * scale;
+          let w;
+          if (it.kind === "cca") w = h * (CCA_W / CCA_H);
+          else if (it.kind === "alab") w = h;
+          else {
+            const im = getImg(it.img);
+            w = im ? h * (im.naturalWidth / im.naturalHeight) : h;
+          }
+          parts.push({ x, w, h, it });
+          x += w + gap;
+          maxH = Math.max(maxH, h);
+        }
+        const plateW = (l.items.length ? x - gap : x) + pad;
+        const plateH = maxH + pad * 2;
+        return { parts, plateW, plateH, pad };
+      }
+
+      /* ════════════════════════ rounded rect ════════════════════════ */
+
+      function rr(ctx, x, y, w, h, r) {
+        r = Math.min(r || 0, w / 2, h / 2);
+        ctx.beginPath();
+        if (r <= 0.01) {
+          ctx.rect(x, y, w, h);
+          return;
+        }
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r);
+        ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r);
+        ctx.closePath();
+      }
+
+      function hexA(hex, a) {
+        const n = parseInt(hex.slice(1), 16);
+        return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+      }
+
+      /* ════════════════════════ render ════════════════════════ */
+
+      const work = document.createElement("canvas"); // full-res compose buffer
+      const view = $("view");
+
+      function renderTo(ctx, W, H, recordBB) {
+        ctx.clearRect(0, 0, W, H);
+
+        // background colour
+        ctx.fillStyle = state.bg.color;
+        ctx.fillRect(0, 0, W, H);
+
+        // background image
+        const bim = getImg(state.bg.img);
+        if (bim) {
+          const iw = bim.naturalWidth, ih = bim.naturalHeight;
+          if (state.bg.fit === "stretch") {
+            ctx.drawImage(bim, 0, 0, W, H);
+          } else {
+            const base = state.bg.fit === "contain" ? Math.min(W / iw, H / ih) : Math.max(W / iw, H / ih);
+            const s = base * (state.bg.zoom || 1);
+            const dw = iw * s, dh = ih * s;
+            const dx = (W - dw) * (state.bg.ox ?? 0.5);
+            const dy = (H - dh) * (state.bg.oy ?? 0.5);
+            ctx.drawImage(bim, dx, dy, dw, dh);
+          }
+        }
+
+        // tint overlay
+        if (state.bg.tintA > 0) {
+          ctx.fillStyle = hexA(state.bg.tint, state.bg.tintA);
+          ctx.fillRect(0, 0, W, H);
+        }
+
+        // layers
+        for (const l of state.layers) {
+          if (recordBB) l._bb = null;
+          if (!l.visible) continue;
+          ctx.save();
+          ctx.globalAlpha = l.opacity ?? 1;
+
+          if (l.type === "text") {
+            ensureFont(l.font, l.weight, l.italic);
+            const tm = measureTextBlock(ctx, l, H);
+            const x0 = l.fx * W, y0 = l.fy * H;
+            if (l.rot) {
+              ctx.translate(x0 + tm.blockW / 2, y0 + tm.blockH / 2);
+              ctx.rotate((l.rot * Math.PI) / 180);
+              ctx.translate(-(x0 + tm.blockW / 2), -(y0 + tm.blockH / 2));
+            }
+            drawTextBlock(ctx, l, x0, y0, tm);
+            if (recordBB) l._bb = [x0, y0, tm.blockW, tm.blockH];
+          } else if (l.type === "box") {
+            ensureFont(l.font, l.weight, l.italic);
+            const tm = measureTextBlock(ctx, l, H);
+            const pad = (l.pad || 0) * H;
+            const x0 = l.fx * W, y0 = l.fy * H;
+            const bw = tm.blockW + pad * 2, bh = tm.blockH + pad * 2;
+            if (l.boxA > 0) {
+              ctx.fillStyle = hexA(l.boxBg, l.boxA);
+              rr(ctx, x0, y0, bw, bh, (l.rad || 0) * H);
+              ctx.fill();
+            }
+            drawTextBlock(ctx, l, x0 + pad, y0 + pad, tm);
+            if (recordBB) l._bb = [x0, y0, bw, bh];
+          } else if (l.type === "logos") {
+            const M = measureLogos(l, H);
+            const x0 = l.fx * W, y0 = l.fy * H;
+            if (l.plateA > 0) {
+              ctx.fillStyle = hexA(l.plateBg, l.plateA);
+              rr(ctx, x0, y0, M.plateW, M.plateH, (l.rad || 0) * H);
+              ctx.fill();
+            }
+            for (const p of M.parts) {
+              const iy = y0 + (M.plateH - p.h) / 2;
+              if (p.it.kind === "cca") drawCca(ctx, x0 + p.x, iy, p.h, p.it.color, p.it.accent);
+              else if (p.it.kind === "alab") drawAlab(ctx, x0 + p.x, iy, p.h, p.it.color);
+              else {
+                const im = getImg(p.it.img);
+                if (im) ctx.drawImage(im, x0 + p.x, iy, p.w, p.h);
+                else {
+                  ctx.strokeStyle = "#888";
+                  ctx.strokeRect(x0 + p.x, iy, p.w, p.h);
+                }
+              }
+            }
+            if (recordBB) l._bb = [x0, y0, M.plateW, M.plateH];
+          } else if (l.type === "image") {
+            const im = getImg(l.img);
+            const h = l.fs * H;
+            const w = im ? h * (im.naturalWidth / im.naturalHeight) : h * 1.5;
+            const cx = l.fx * W, cy = l.fy * H;
+            ctx.translate(cx, cy);
+            if (l.rot) ctx.rotate((l.rot * Math.PI) / 180);
+            if (im) ctx.drawImage(im, -w / 2, -h / 2, w, h);
+            else {
+              ctx.strokeStyle = "#666";
+              ctx.setLineDash([6, 5]);
+              ctx.strokeRect(-w / 2, -h / 2, w, h);
+              ctx.setLineDash([]);
+              ctx.fillStyle = "#666";
+              ctx.font = `${h * 0.12}px "IBM Plex Mono", monospace`;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText("no image", 0, 0);
+            }
+            if (recordBB) {
+              const rad = (Math.abs(l.rot || 0) * Math.PI) / 180;
+              const bw = Math.abs(w * Math.cos(rad)) + Math.abs(h * Math.sin(rad));
+              const bh = Math.abs(w * Math.sin(rad)) + Math.abs(h * Math.cos(rad));
+              l._bb = [cx - bw / 2, cy - bh / 2, bw, bh];
+            }
+          }
+          ctx.restore();
+        }
+      }
+
+      let viewScale = 1;
+      function render() {
+        const W = state.w, H = state.h;
+        if (work.width !== W || work.height !== H) {
+          work.width = W;
+          work.height = H;
+        }
+        renderTo(work.getContext("2d"), W, H, true);
+
+        // fit into wrap
+        const wrap = $("canvasWrap");
+        const availW = wrap.clientWidth - 48, availH = wrap.clientHeight - 48;
+        viewScale = Math.min(availW / W, availH / H, 1.5);
+        const dpr = window.devicePixelRatio || 1;
+        const cw = Math.max(1, Math.round(W * viewScale)), chh = Math.max(1, Math.round(H * viewScale));
+        if (view.width !== cw * dpr || view.height !== chh * dpr) {
+          view.width = cw * dpr;
+          view.height = chh * dpr;
+          view.style.width = cw + "px";
+          view.style.height = chh + "px";
+        }
+        const vctx = view.getContext("2d");
+        vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        vctx.imageSmoothingQuality = "high";
+        vctx.clearRect(0, 0, cw, chh);
+        vctx.drawImage(work, 0, 0, cw, chh);
+
+        // selection overlay
+        const l = state.layers[sel];
+        if (l && l._bb) {
+          const [x, y, w, h] = l._bb.map((v) => v * viewScale);
+          vctx.save();
+          vctx.strokeStyle = "#c8f060";
+          vctx.lineWidth = 1;
+          vctx.setLineDash([5, 4]);
+          vctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+          vctx.setLineDash([]);
+          vctx.fillStyle = "#c8f060";
+          vctx.fillRect(x + w - 3, y + h - 3, 8, 8);
+          vctx.restore();
+        }
+
+        $("dimInfo").textContent = `${W} × ${H}px`;
+        $("zoomInfo").textContent = `preview ${(viewScale * 100).toFixed(0)}%`;
+      }
+
+      /* ════════════════════════ pointer interaction ════════════════════════ */
+
+      let drag = null;
+
+      function evPos(e) {
+        const r = view.getBoundingClientRect();
+        return {
+          x: ((e.clientX - r.left) / r.width) * state.w,
+          y: ((e.clientY - r.top) / r.height) * state.h,
+        };
+      }
+
+      view.addEventListener("pointerdown", (e) => {
+        const p = evPos(e);
+        if (eyedrop) {
+          applyEyedrop(samplePixel(p.x, p.y));
+          return;
+        }
+        // resize handle of current selection?
+        const cur = state.layers[sel];
+        if (cur && cur._bb) {
+          const [x, y, w, h] = cur._bb;
+          const tol = 10 / viewScale;
+          if (Math.abs(p.x - (x + w)) < tol && Math.abs(p.y - (y + h)) < tol) {
+            drag = { mode: "resize", start: p, bb: [...cur._bb], orig: deep(cur) };
+            view.setPointerCapture(e.pointerId);
+            return;
+          }
+        }
+        // topmost hit
+        for (let i = state.layers.length - 1; i >= 0; i--) {
+          const l = state.layers[i];
+          if (!l.visible || !l._bb) continue;
+          const [x, y, w, h] = l._bb;
+          if (p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h) {
+            selectLayer(i);
+            drag = { mode: "move", start: p, ofx: l.fx, ofy: l.fy };
+            view.setPointerCapture(e.pointerId);
+            return;
+          }
+        }
+        selectLayer(-1);
+      });
+
+      view.addEventListener("pointermove", (e) => {
+        const p = evPos(e);
+        $("cursorInfo").textContent = `${Math.round(p.x)}, ${Math.round(p.y)}`;
+        if (!drag) return;
+        const l = state.layers[sel];
+        if (!l) return;
+        if (drag.mode === "move") {
+          let dx = (p.x - drag.start.x) / state.w;
+          let dy = (p.y - drag.start.y) / state.h;
+          if (e.shiftKey) {
+            if (Math.abs(dx * state.w) > Math.abs(dy * state.h)) dy = 0;
+            else dx = 0;
+          }
+          l.fx = drag.ofx + dx;
+          l.fy = drag.ofy + dy;
+          render();
+        } else if (drag.mode === "resize") {
+          const [bx, by] = drag.bb;
+          const denom = Math.max(20, drag.start.x - bx);
+          const r = clamp((p.x - bx) / denom, 0.15, 12);
+          const o = drag.orig;
+          if (l.type === "text") l.fs = o.fs * r;
+          else if (l.type === "box") {
+            l.fs = o.fs * r;
+            l.pad = o.pad * r;
+            l.rad = (o.rad || 0) * r;
+          } else if (l.type === "logos") {
+            l.itemH = o.itemH * r;
+            l.pad = o.pad * r;
+            l.gap = o.gap * r;
+            l.rad = (o.rad || 0) * r;
+          } else if (l.type === "image") l.fs = o.fs * r;
+          render();
+          syncProps();
+        }
+      });
+
+      view.addEventListener("pointerup", () => {
+        if (drag) {
+          drag = null;
+          save();
+          syncProps();
+        }
+      });
+
+      document.addEventListener("keydown", (e) => {
+        const t = e.target;
+        if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+        if (e.key === "Escape" && eyedrop) {
+          armEyedrop(null);
+          return;
+        }
+        const l = state.layers[sel];
+        if (!l) return;
+        const stepX = (e.shiftKey ? 10 : 1) / state.w;
+        const stepY = (e.shiftKey ? 10 : 1) / state.h;
+        let done = true;
+        if (e.key === "ArrowLeft") l.fx -= stepX;
+        else if (e.key === "ArrowRight") l.fx += stepX;
+        else if (e.key === "ArrowUp") l.fy -= stepY;
+        else if (e.key === "ArrowDown") l.fy += stepY;
+        else if (e.key === "Delete" || e.key === "Backspace") deleteSel();
+        else if ((e.key === "d" || e.key === "D") && (e.metaKey || e.ctrlKey)) duplicateSel();
+        else done = false;
+        if (done) {
+          e.preventDefault();
+          render();
+          save();
+        }
+      });
+
+      /* ════════════════════════ eyedropper & palette ════════════════════════ */
+
+      function samplePixel(x, y) {
+        const ctx = work.getContext("2d");
+        const d = ctx.getImageData(clamp(Math.round(x), 0, state.w - 1), clamp(Math.round(y), 0, state.h - 1), 1, 1).data;
+        return "#" + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, "0")).join("");
+      }
+
+      function armEyedrop(target) {
+        eyedrop = target;
+        document.querySelectorAll("button.pipette").forEach((b) => b.classList.toggle("armed", !!target && b === target?.btn));
+        view.classList.toggle("pick", !!target);
+        $("pickHint").style.display = target ? "" : "none";
+      }
+
+      function applyEyedrop(hex) {
+        if (eyedrop) {
+          eyedrop.apply(hex);
+          armEyedrop(null);
+          render();
+          save();
+        }
+      }
+
+      function extractPalette(manual) {
+        palette = [];
+        const im = getImg(state.bg.img);
+        if (im) {
+          const c = document.createElement("canvas");
+          const s = 56;
+          c.width = s;
+          c.height = s;
+          const cx = c.getContext("2d");
+          cx.drawImage(im, 0, 0, s, s);
+          const data = cx.getImageData(0, 0, s, s).data;
+          const bins = new Map();
+          for (let i = 0; i < data.length; i += 4) {
+            if (data[i + 3] < 128) continue;
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+            let bin = bins.get(key);
+            if (!bin) bins.set(key, (bin = { n: 0, r: 0, g: 0, b: 0 }));
+            bin.n++;
+            bin.r += r;
+            bin.g += g;
+            bin.b += b;
+          }
+          const sorted = [...bins.values()].sort((a, b) => b.n - a.n);
+          const out = [];
+          for (const bin of sorted) {
+            const r = Math.round(bin.r / bin.n), g = Math.round(bin.g / bin.n), b = Math.round(bin.b / bin.n);
+            if (out.some((o) => Math.abs(o.r - r) + Math.abs(o.g - g) + Math.abs(o.b - b) < 72)) continue;
+            out.push({ r, g, b });
+            if (out.length >= 10) break;
+          }
+          palette = out.map((o) => "#" + [o.r, o.g, o.b].map((v) => v.toString(16).padStart(2, "0")).join(""));
+        } else if (manual) {
+          toast("no background image to extract from");
+        }
+        const el = $("palette");
+        el.innerHTML = "";
+        for (const hex of palette) {
+          const d = document.createElement("div");
+          d.className = "sw";
+          d.style.background = hex;
+          d.title = hex;
+          d.onclick = () => {
+            if (eyedrop) applyEyedrop(hex);
+            else {
+              navigator.clipboard?.writeText(hex);
+              toast(`${hex} copied`);
+            }
+          };
+          el.appendChild(d);
+        }
+      }
+
+      /* ════════════════════════ UI builders ════════════════════════ */
+
+      function mkRow(label, ...els) {
+        const row = document.createElement("div");
+        row.className = "row";
+        const lab = document.createElement("label");
+        lab.textContent = label;
+        row.appendChild(lab);
+        for (const e of els) row.appendChild(e);
+        return row;
+      }
+
+      function mkColor(label, get, set) {
+        const inp = document.createElement("input");
+        inp.type = "color";
+        inp.value = get() || "#000000";
+        const hex = document.createElement("input");
+        hex.type = "text";
+        hex.className = "hexfield";
+        hex.value = get() || "#000000";
+        const apply = (v) => {
+          if (!/^#[0-9a-fA-F]{6}$/.test(v)) return;
+          set(v);
+          inp.value = v;
+          hex.value = v;
+          render();
+          save();
+        };
+        inp.oninput = () => apply(inp.value);
+        hex.onchange = () => apply(hex.value.startsWith("#") ? hex.value : "#" + hex.value);
+        const pip = document.createElement("button");
+        pip.className = "pipette";
+        pip.textContent = "⌖";
+        pip.title = "pick colour from the banner";
+        pip.onclick = () => {
+          const target = { apply: (v) => apply(v), btn: pip };
+          armEyedrop(eyedrop && eyedrop.btn === pip ? null : target);
+        };
+        const row = mkRow(label, inp, hex, pip);
+        row._sync = () => {
+          inp.value = get() || "#000000";
+          hex.value = get() || "#000000";
+        };
+        return row;
+      }
+
+      function mkRange(label, min, max, step, get, set, fmt) {
+        const inp = document.createElement("input");
+        inp.type = "range";
+        inp.min = min;
+        inp.max = max;
+        inp.step = step;
+        inp.value = get();
+        const val = document.createElement("span");
+        val.className = "val";
+        const show = () => (val.textContent = (fmt || ((v) => v))(parseFloat(inp.value)));
+        show();
+        inp.oninput = () => {
+          set(parseFloat(inp.value));
+          show();
+          render();
+          save();
+        };
+        const row = mkRow(label, inp, val);
+        row._sync = () => {
+          inp.value = get();
+          show();
+        };
+        return row;
+      }
+
+      function mkSelect(label, opts, get, set) {
+        const s = document.createElement("select");
+        for (const o of opts) {
+          const op = document.createElement("option");
+          op.value = o.v;
+          op.textContent = o.t;
+          s.appendChild(op);
+        }
+        s.value = String(get());
+        s.onchange = () => {
+          set(s.value);
+          render();
+          save();
+        };
+        const row = mkRow(label, s);
+        row._sync = () => (s.value = String(get()));
+        row._select = s;
+        return row;
+      }
+
+      function mkArea(get, set) {
+        const ta = document.createElement("textarea");
+        ta.value = get();
+        ta.oninput = () => {
+          set(ta.value);
+          render();
+          save();
+          refreshLayerList(false);
+        };
+        return ta;
+      }
+
+      function mkCheck(label, get, set) {
+        const c = document.createElement("input");
+        c.type = "checkbox";
+        c.checked = !!get();
+        c.onchange = () => {
+          set(c.checked);
+          render();
+          save();
+        };
+        const row = mkRow(label, c);
+        row._sync = () => (c.checked = !!get());
+        return row;
+      }
+
+      const pct = (v) => `${Math.round(v * 100)}%`;
+      const pctH = (v) => `${Math.round(v * 1000) / 10}%`;
+
+      /* ── font controls (family / weight / italic) ── */
+      function fontControls(box, l) {
+        const famRow = mkSelect(
+          "font",
+          FONTS.map((d) => ({ v: d.f, t: d.f })).concat([{ v: "__add", t: "+ add google font…" }]),
+          () => l.font,
+          (v) => {
+            if (v === "__add") {
+              const fam = addGoogleFont();
+              if (fam) {
+                l.font = fam;
+                l.weight = 400;
+              }
+              buildProps();
+              render();
+              save();
+              return;
+            }
+            l.font = v;
+            const def = fontDef(v);
+            if (!def.w.includes(l.weight)) l.weight = def.w.includes(400) ? 400 : def.w[0];
+            if (!def.i) l.italic = false;
+            buildProps();
+          },
+        );
+        box.appendChild(famRow);
+        const def = fontDef(l.font);
+        box.appendChild(
+          mkSelect(
+            "weight",
+            def.w.map((w) => ({ v: w, t: String(w) })),
+            () => l.weight,
+            (v) => (l.weight = parseInt(v, 10)),
+          ),
+        );
+        if (def.i) box.appendChild(mkCheck("italic", () => l.italic, (v) => (l.italic = v)));
+      }
+
+      function posControls(box, l) {
+        box.appendChild(mkRange("pos x", -0.3, 1.3, 0.001, () => l.fx, (v) => (l.fx = v), pct));
+        box.appendChild(mkRange("pos y", -0.3, 1.3, 0.001, () => l.fy, (v) => (l.fy = v), pct));
+      }
+
+      /* ── the contextual properties panel ── */
+      function buildProps() {
+        const box = $("props");
+        box.innerHTML = "";
+        const l = state.layers[sel];
+        $("propsSection").style.display = l ? "" : "none";
+        if (!l) return;
+        $("propsTitle").textContent = { text: "Text layer", box: "Content box", logos: "Logo plate", image: "Image layer" }[l.type];
+
+        if (l.type === "text" || l.type === "box") {
+          box.appendChild(mkArea(() => l.text, (v) => (l.text = v)));
+          const sp = document.createElement("div");
+          sp.style.height = "7px";
+          box.appendChild(sp);
+          fontControls(box, l);
+          box.appendChild(mkRange("size", 0.01, 0.5, 0.001, () => l.fs, (v) => (l.fs = v), pctH));
+          box.appendChild(mkColor("colour", () => l.color, (v) => (l.color = v)));
+          box.appendChild(mkRange("letter sp.", -0.05, 0.5, 0.005, () => l.ls, (v) => (l.ls = v), (v) => v.toFixed(2) + "em"));
+          box.appendChild(mkRange("line height", 0.8, 2.5, 0.01, () => l.lh, (v) => (l.lh = v), (v) => v.toFixed(2)));
+          box.appendChild(
+            mkSelect("align", [
+              { v: "left", t: "left" },
+              { v: "center", t: "center" },
+              { v: "right", t: "right" },
+            ], () => l.align, (v) => (l.align = v)),
+          );
+          if (l.type === "box") {
+            box.appendChild(mkColor("box colour", () => l.boxBg, (v) => (l.boxBg = v)));
+            box.appendChild(mkRange("box alpha", 0, 1, 0.01, () => l.boxA, (v) => (l.boxA = v), pct));
+            box.appendChild(mkRange("padding", 0, 0.12, 0.001, () => l.pad, (v) => (l.pad = v), pctH));
+            box.appendChild(mkRange("corner r.", 0, 0.08, 0.001, () => l.rad, (v) => (l.rad = v), pctH));
+          } else {
+            box.appendChild(mkRange("rotation", -45, 45, 0.5, () => l.rot || 0, (v) => (l.rot = v), (v) => v + "°"));
+          }
+          box.appendChild(mkRange("opacity", 0, 1, 0.01, () => l.opacity, (v) => (l.opacity = v), pct));
+          posControls(box, l);
+        } else if (l.type === "logos") {
+          box.appendChild(mkColor("plate colour", () => l.plateBg, (v) => (l.plateBg = v)));
+          box.appendChild(mkRange("plate alpha", 0, 1, 0.01, () => l.plateA, (v) => (l.plateA = v), pct));
+          box.appendChild(mkRange("logo height", 0.01, 0.3, 0.001, () => l.itemH, (v) => (l.itemH = v), pctH));
+          box.appendChild(mkRange("padding", 0, 0.1, 0.001, () => l.pad, (v) => (l.pad = v), pctH));
+          box.appendChild(mkRange("gap", 0, 0.15, 0.001, () => l.gap, (v) => (l.gap = v), pctH));
+          box.appendChild(mkRange("corner r.", 0, 0.08, 0.001, () => l.rad, (v) => (l.rad = v), pctH));
+          box.appendChild(mkRange("opacity", 0, 1, 0.01, () => l.opacity, (v) => (l.opacity = v), pct));
+          posControls(box, l);
+
+          const head = document.createElement("div");
+          head.className = "section-label";
+          head.style.marginTop = "10px";
+          head.textContent = "Logos on plate";
+          box.appendChild(head);
+
+          l.items.forEach((it, idx) => {
+            const card = document.createElement("div");
+            card.className = "logo-item";
+            const kindRow = mkSelect(
+              `#${idx + 1}`,
+              [
+                { v: "cca", t: "CCA logo" },
+                { v: "alab", t: "A-Lab mark" },
+                { v: "img", t: "custom image" },
+              ],
+              () => it.kind,
+              (v) => {
+                it.kind = v;
+                if (v === "img" && !it.img) pickFile((url) => {
+                  it.img = url;
+                  render();
+                  save();
+                });
+                buildProps();
+              },
+            );
+            const rm = document.createElement("button");
+            rm.className = "icon";
+            rm.textContent = "✕";
+            rm.title = "remove logo";
+            rm.onclick = () => {
+              l.items.splice(idx, 1);
+              buildProps();
+              render();
+              save();
+            };
+            kindRow.appendChild(rm);
+            card.appendChild(kindRow);
+            if (it.kind === "cca" || it.kind === "alab") {
+              card.appendChild(mkColor("colour", () => it.color, (v) => (it.color = v)));
+            }
+            if (it.kind === "cca") {
+              const accRow = mkColor("accent 'a'", () => it.accent || CCA_RED, (v) => (it.accent = v));
+              const on = document.createElement("input");
+              on.type = "checkbox";
+              on.checked = !!it.accent;
+              on.title = "colour the 'a' separately (classic red accent)";
+              on.onchange = () => {
+                it.accent = on.checked ? CCA_RED : "";
+                buildProps();
+                render();
+                save();
+              };
+              accRow.insertBefore(on, accRow.children[1]);
+              card.appendChild(accRow);
+            }
+            if (it.kind === "img") {
+              const rep = document.createElement("button");
+              rep.textContent = it.img ? "replace image" : "choose image…";
+              rep.onclick = () =>
+                pickFile((url) => {
+                  it.img = url;
+                  buildProps();
+                  render();
+                  save();
+                });
+              card.appendChild(mkRow("file", rep));
+            }
+            card.appendChild(mkRange("scale", 0.3, 3, 0.01, () => it.scale || 1, (v) => (it.scale = v), (v) => v.toFixed(2) + "×"));
+            box.appendChild(card);
+          });
+          const add = document.createElement("button");
+          add.textContent = "+ add logo";
+          add.onclick = () => {
+            l.items.push({ kind: "cca", color: "#141414", accent: "" });
+            buildProps();
+            render();
+            save();
+          };
+          box.appendChild(add);
+        } else if (l.type === "image") {
+          const rep = document.createElement("button");
+          rep.textContent = l.img ? "replace image" : "choose image…";
+          rep.onclick = () =>
+            pickFile((url) => {
+              l.img = url;
+              buildProps();
+              render();
+              save();
+            });
+          box.appendChild(mkRow("file", rep));
+          box.appendChild(mkRange("size", 0.02, 1.5, 0.005, () => l.fs, (v) => (l.fs = v), pctH));
+          box.appendChild(mkRange("rotation", -180, 180, 1, () => l.rot, (v) => (l.rot = v), (v) => v + "°"));
+          box.appendChild(mkRange("opacity", 0, 1, 0.01, () => l.opacity, (v) => (l.opacity = v), pct));
+          posControls(box, l);
+        }
+      }
+
+      function syncProps() {
+        document.querySelectorAll("#props .row").forEach((r) => r._sync && r._sync());
+      }
+
+      /* ── layer list ── */
+      const KIND_TAG = { text: "text", box: "box", logos: "logos", image: "img" };
+      function layerLabel(l) {
+        if (l.type === "text" || l.type === "box") return (l.text || "").split("\n")[0].slice(0, 26) || "(empty)";
+        if (l.type === "logos") return l.items.map((i) => (i.kind === "img" ? "image" : i.kind)).join(" + ") || "(no logos)";
+        return l.img ? "image" : "(no image)";
+      }
+
+      function refreshLayerList(rebuildPanel = true) {
+        const list = $("layerList");
+        list.innerHTML = "";
+        // topmost first in the list
+        for (let i = state.layers.length - 1; i >= 0; i--) {
+          const l = state.layers[i];
+          const item = document.createElement("div");
+          item.className = "layer-item" + (i === sel ? " sel" : "") + (l.visible ? "" : " hidden-layer");
+          item.onclick = () => selectLayer(i);
+          const kind = document.createElement("span");
+          kind.className = "kind";
+          kind.textContent = KIND_TAG[l.type];
+          const name = document.createElement("span");
+          name.className = "lname";
+          name.textContent = layerLabel(l);
+          item.append(kind, name);
+          const mk = (txt, title, fn) => {
+            const b = document.createElement("button");
+            b.className = "lbtn";
+            b.textContent = txt;
+            b.title = title;
+            b.onclick = (e) => {
+              e.stopPropagation();
+              fn();
+            };
+            item.appendChild(b);
+          };
+          mk(l.visible ? "◉" : "◌", "toggle visibility", () => {
+            l.visible = !l.visible;
+            refreshLayerList();
+            render();
+            save();
+          });
+          mk("↑", "bring forward", () => moveLayer(i, 1));
+          mk("↓", "send backward", () => moveLayer(i, -1));
+          list.appendChild(item);
+        }
+        if (rebuildPanel) buildProps();
+      }
+
+      function moveLayer(i, dir) {
+        const j = i + dir;
+        if (j < 0 || j >= state.layers.length) return;
+        const [l] = state.layers.splice(i, 1);
+        state.layers.splice(j, 0, l);
+        if (sel === i) sel = j;
+        else if (sel === j) sel = i;
+        refreshLayerList();
+        render();
+        save();
+      }
+
+      function selectLayer(i) {
+        if (sel === i) {
+          if (i >= 0) syncProps();
+          return;
+        }
+        sel = i;
+        refreshLayerList();
+        render();
+      }
+
+      function addLayer(type) {
+        const l = P[type]({});
+        if (type === "text") l.text = "New text";
+        if (type === "image") {
+          pickFile((url) => {
+            l.img = url;
+            render();
+            save();
+          });
+        }
+        state.layers.push(l);
+        sel = state.layers.length - 1;
+        refreshLayerList();
+        render();
+        save();
+      }
+
+      function deleteSel() {
+        if (sel < 0) return;
+        state.layers.splice(sel, 1);
+        sel = -1;
+        refreshLayerList();
+        render();
+        save();
+      }
+
+      function duplicateSel() {
+        const l = state.layers[sel];
+        if (!l) return;
+        const c = migrate({ layers: [JSON.parse(JSON.stringify(l, stripPrivate))] }).layers[0];
+        c.fx += 0.02;
+        c.fy += 0.03;
+        state.layers.splice(sel + 1, 0, c);
+        sel = sel + 1;
+        refreshLayerList();
+        render();
+        save();
+      }
+
+      /* ════════════════════════ format & background UI ════════════════════════ */
+
+      function formatOf(w, h) {
+        for (const [k, f] of Object.entries(FORMATS)) if (f.w === w && f.h === h) return k;
+        return "custom";
+      }
+
+      function setFormat(key, silent) {
+        if (key !== "custom") {
+          state.w = FORMATS[key].w;
+          state.h = FORMATS[key].h;
+        }
+        syncFormatUI();
+        if (!silent) {
+          render();
+          save();
+        }
+      }
+
+      function syncFormatUI() {
+        const key = formatOf(state.w, state.h);
+        document.querySelectorAll("#fmtSeg button").forEach((b) => b.classList.toggle("on", b.dataset.fmt === key));
+        $("customSize").style.display = key === "custom" ? "" : "none";
+        $("cw").value = state.w;
+        $("ch").value = state.h;
+        $("fmtHint").textContent = key === "custom" ? `${state.w} × ${state.h}px — custom` : FORMATS[key].hint;
+      }
+
+      $("cw").onchange = $("ch").onchange = () => {
+        state.w = clamp(parseInt($("cw").value, 10) || 1200, 200, 4000);
+        state.h = clamp(parseInt($("ch").value, 10) || 675, 200, 4000);
+        syncFormatUI();
+        render();
+        save();
+      };
+      document.querySelector('#fmtSeg [data-fmt="custom"]').onclick = () => {
+        $("customSize").style.display = "";
+        document.querySelectorAll("#fmtSeg button").forEach((b) => b.classList.toggle("on", b.dataset.fmt === "custom"));
+        $("fmtHint").textContent = `${state.w} × ${state.h}px — custom`;
+      };
+
+      function setBgImage(url) {
+        state.bg.img = url;
+        getImg(url);
+        syncBgUI();
+        render();
+        save();
+        extractPalette();
+      }
+      function clearBgImage() {
+        state.bg.img = null;
+        syncBgUI();
+        render();
+        save();
+        extractPalette();
+      }
+
+      function syncBgUI() {
+        $("bgImgCtl").style.display = state.bg.img ? "" : "none";
+        $("bgDrop").style.display = state.bg.img ? "none" : "";
+        $("bgFit").value = state.bg.fit;
+        $("bgZoom").value = state.bg.zoom;
+        $("bgZoomV").textContent = state.bg.zoom.toFixed(2) + "×";
+        $("bgOx").value = state.bg.ox;
+        $("bgOxV").textContent = pct(state.bg.ox);
+        $("bgOy").value = state.bg.oy;
+        $("bgOyV").textContent = pct(state.bg.oy);
+        $("bgTintA").value = state.bg.tintA;
+        $("bgTintAV").textContent = pct(state.bg.tintA);
+        document.querySelectorAll("#bgColorRow .row, #bgTintRow .row").forEach((r) => r._sync && r._sync());
+      }
+
+      function wireBgControls() {
+        $("bgColorRow").appendChild(mkColor("colour", () => state.bg.color, (v) => (state.bg.color = v)));
+        $("bgTintRow").appendChild(mkColor("tint", () => state.bg.tint, (v) => (state.bg.tint = v)));
+        $("bgFit").onchange = () => {
+          state.bg.fit = $("bgFit").value;
+          render();
+          save();
+        };
+        const wire = (id, key, vid, fmt) => {
+          $(id).oninput = () => {
+            state.bg[key] = parseFloat($(id).value);
+            $(vid).textContent = fmt(state.bg[key]);
+            render();
+            save();
+          };
+        };
+        wire("bgZoom", "zoom", "bgZoomV", (v) => v.toFixed(2) + "×");
+        wire("bgOx", "ox", "bgOxV", pct);
+        wire("bgOy", "oy", "bgOyV", pct);
+        wire("bgTintA", "tintA", "bgTintAV", pct);
+
+        const dz = $("bgDrop");
+        dz.onclick = () => pickFile(setBgImage);
+        for (const el of [dz, view]) {
+          el.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            dz.classList.add("over");
+          });
+          el.addEventListener("dragleave", () => dz.classList.remove("over"));
+          el.addEventListener("drop", (e) => {
+            e.preventDefault();
+            dz.classList.remove("over");
+            const f = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith("image/"));
+            if (!f) return;
+            const r = new FileReader();
+            r.onload = () => {
+              setBgImage(r.result);
+              toast("set as background image");
+            };
+            r.readAsDataURL(f);
+          });
+        }
+        document.addEventListener("paste", (e) => {
+          const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
+          if (!item) return;
+          const r = new FileReader();
+          r.onload = () => {
+            setBgImage(r.result);
+            toast("pasted as background image");
+          };
+          r.readAsDataURL(item.getAsFile());
+        });
+      }
+
+      /* ════════════════════════ presets ════════════════════════ */
+
+      function userPresets() {
+        try {
+          return JSON.parse(localStorage.getItem(LS_PRESETS)) || {};
+        } catch {
+          return {};
+        }
+      }
+
+      function refreshPresetList(selected) {
+        const s = $("presetSel");
+        s.innerHTML = "";
+        const none = document.createElement("option");
+        none.value = "";
+        none.textContent = "— apply a preset —";
+        s.appendChild(none);
+        const g1 = document.createElement("optgroup");
+        g1.label = "built-in";
+        for (const p of BUILTINS) {
+          const o = document.createElement("option");
+          o.value = "b:" + p.id;
+          o.textContent = p.name;
+          g1.appendChild(o);
+        }
+        s.appendChild(g1);
+        const saved = userPresets();
+        const names = Object.keys(saved).sort();
+        if (names.length) {
+          const g2 = document.createElement("optgroup");
+          g2.label = "saved";
+          for (const n of names) {
+            const o = document.createElement("option");
+            o.value = "u:" + n;
+            o.textContent = n;
+            g2.appendChild(o);
+          }
+          s.appendChild(g2);
+        }
+        s.value = selected || "";
+        $("presetDel").style.display = (selected || "").startsWith("u:") ? "" : "none";
+      }
+
+      function applyState(s) {
+        state = migrate(deep(s));
+        sel = -1;
+        syncFormatUI();
+        syncBgUI();
+        refreshLayerList();
+        render();
+        extractPalette();
+        save();
+      }
+
+      function onPresetPick(v) {
+        if (!v) return;
+        if (v.startsWith("b:")) {
+          const p = BUILTINS.find((p) => p.id === v.slice(2));
+          if (p) applyState(p.state);
+        } else if (v.startsWith("u:")) {
+          const p = userPresets()[v.slice(2)];
+          if (p) applyState(p);
+          else toast("preset not found");
+        }
+        refreshPresetList(v);
+      }
+
+      function savePreset() {
+        const name = $("presetName").value.trim();
+        if (!name) {
+          toast("give the preset a name first");
+          $("presetName").focus();
+          return;
+        }
+        const all = userPresets();
+        all[name] = JSON.parse(JSON.stringify(state, stripPrivate));
+        try {
+          localStorage.setItem(LS_PRESETS, JSON.stringify(all));
+          toast(`preset “${name}” saved`);
+          refreshPresetList("u:" + name);
+        } catch (e) {
+          toast("too big for browser storage (images) — use export instead");
+        }
+      }
+
+      function deletePreset() {
+        const v = $("presetSel").value;
+        if (!v.startsWith("u:")) return;
+        const name = v.slice(2);
+        const all = userPresets();
+        delete all[name];
+        localStorage.setItem(LS_PRESETS, JSON.stringify(all));
+        toast(`preset “${name}” deleted`);
+        refreshPresetList("");
+      }
+
+      function exportPreset() {
+        const name = $("presetName").value.trim() || "cca-banner-preset";
+        const blob = new Blob([JSON.stringify({ ccaBannerPreset: 1, name, state: JSON.parse(JSON.stringify(state, stripPrivate)) }, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = name.replace(/[^\w-]+/g, "-") + ".json";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+
+      function importPresetFile() {
+        const inp = $("jsonIn");
+        inp.onchange = () => {
+          const f = inp.files[0];
+          inp.value = "";
+          if (!f) return;
+          const r = new FileReader();
+          r.onload = () => {
+            try {
+              const data = JSON.parse(r.result);
+              const s = data.ccaBannerPreset ? data.state : data;
+              if (!s || !s.layers) throw new Error("bad file");
+              applyState(s);
+              if (data.name) $("presetName").value = data.name;
+              toast("preset loaded");
+            } catch {
+              toast("not a cca-banner preset file");
+            }
+          };
+          r.readAsText(f);
+        };
+        inp.click();
+      }
+
+      /* ════════════════════════ export ════════════════════════ */
+
+      async function exportImage(kind) {
+        try {
+          await document.fonts.ready;
+        } catch {}
+        const scale = parseFloat($("exportScale").value) || 1;
+        const W = Math.round(state.w * scale), H = Math.round(state.h * scale);
+        const c = document.createElement("canvas");
+        c.width = W;
+        c.height = H;
+        renderTo(c.getContext("2d"), W, H, false);
+        const mime = kind === "jpeg" ? "image/jpeg" : "image/png";
+        c.toBlob(
+          (blob) => {
+            if (!blob) {
+              toast("export failed");
+              return;
+            }
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            const date = new Date().toISOString().slice(0, 10);
+            a.download = `cca-banner-${W}x${H}-${date}.${kind === "jpeg" ? "jpg" : "png"}`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            toast(`exported ${W} × ${H} ${kind === "jpeg" ? "JPG" : "PNG"}`);
+          },
+          mime,
+          0.92,
+        );
+      }
+
+      /* ════════════════════════ init ════════════════════════ */
+
+      let restored = null;
+      try {
+        restored = JSON.parse(localStorage.getItem(LS_SESSION));
+      } catch {}
+      if (restored && restored.layers) {
+        state = migrate(restored);
+      } else {
+        state = migrate(deep(BUILTINS[0].state));
+      }
+      sel = -1;
+      wireBgControls();
+      refreshPresetList("");
+      syncFormatUI();
+      syncBgUI();
+      refreshLayerList();
+      render();
+      extractPalette();
+
+      new ResizeObserver(() => render()).observe($("canvasWrap"));
+      document.fonts.ready.then(() => render());
+    </script>
+  </body>
+</html>
