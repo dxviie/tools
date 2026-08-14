@@ -319,6 +319,29 @@
       </div>
       <div class="hint" id="stabStatusHint">—</div>
     </div>
+
+    <div class="section">
+      <div class="section-label">Frame crop <button class="btn tiny ghost" id="btnResetCrop" data-tip="Reset all four crop offsets to 0 mm.">RESET</button></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;">
+        <div class="ctl-row" style="margin:0;">
+          <label data-tip="Moves the left frame border, in mm. Positive trims into the frame, negative grows the frame into the surrounding sheet (limited by the extraction margin, ~12% of the frame).">left</label>
+          <input type="number" id="inCropL" step="0.5" value="0" style="width:56px;">
+        </div>
+        <div class="ctl-row" style="margin:0;">
+          <label data-tip="Moves the right frame border, in mm. Positive trims into the frame, negative grows it.">right</label>
+          <input type="number" id="inCropR" step="0.5" value="0" style="width:56px;">
+        </div>
+        <div class="ctl-row" style="margin:0;">
+          <label data-tip="Moves the top frame border, in mm. Positive trims into the frame, negative grows it.">top</label>
+          <input type="number" id="inCropT" step="0.5" value="0" style="width:56px;">
+        </div>
+        <div class="ctl-row" style="margin:0;">
+          <label data-tip="Moves the bottom frame border, in mm. Positive trims into the frame, negative grows it.">bottom</label>
+          <input type="number" id="inCropB" step="0.5" value="0" style="width:56px;">
+        </div>
+      </div>
+      <div class="hint">Applied to every frame at playback/export time — detection and stabilization stay untouched.</div>
+    </div>
   </div>
 
   <!-- ═══ 04 EXPORT ═══ -->
@@ -496,6 +519,7 @@ const DEFAULTS = {
   mode: 'sheets',
   detect: { thresholdOff: 0, polarity: 'auto', refine: true },
   anim: { fps: 12, reverse: false, pingpong: false, trim: 0 },
+  crop: { l: 0, r: 0, t: 0, b: 0 },
   stab: { on: false, strength: 100, lambda: 0.01 },
   look: { bright: 0, contrast: 0, sat: 0, ink: 0, invert: false, chroma: 0, vhs: 0, glitch: 0, grain: 0 },
   out: { width: 0, mp4bpp: 0.12, loops: 1 },
@@ -507,6 +531,7 @@ const S = {
   photos: [],              // {id, name, bmp, w, h, thumbURL, gray, autoQuad, quadScore, manualQuad, rotAuto, rotUser, _detKey}
   detect: { ...DEFAULTS.detect },
   anim: { ...DEFAULTS.anim },
+  crop: { ...DEFAULTS.crop },
   stab: { ...DEFAULTS.stab },
   look: { ...DEFAULTS.look },
   out: { ...DEFAULTS.out },
@@ -526,7 +551,7 @@ function saveSettings() {
   saveTimer = setTimeout(() => {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({
-        mode: S.mode, detect: S.detect, anim: S.anim, stab: S.stab, look: S.look, out: S.out,
+        mode: S.mode, detect: S.detect, anim: S.anim, crop: S.crop, stab: S.stab, look: S.look, out: S.out,
       }));
     } catch { /* private mode etc. */ }
   }, 250);
@@ -537,7 +562,7 @@ function loadSettings() {
     if (!raw) return;
     const j = JSON.parse(raw);
     if (j.mode === 'sheets' || j.mode === 'perframe') S.mode = j.mode;
-    for (const k of ['detect', 'anim', 'stab', 'look', 'out']) {
+    for (const k of ['detect', 'anim', 'crop', 'stab', 'look', 'out']) {
       if (j[k] && typeof j[k] === 'object') Object.assign(S[k], j[k]);
     }
   } catch { /* corrupted state — keep defaults */ }
@@ -545,7 +570,7 @@ function loadSettings() {
 function settingsSnapshot() {
   return {
     tool: 'framesheet-studio', version: 1,
-    mode: S.mode, detect: S.detect, anim: S.anim, stab: S.stab, look: S.look, out: S.out,
+    mode: S.mode, detect: S.detect, anim: S.anim, crop: S.crop, stab: S.stab, look: S.look, out: S.out,
     template: S.template ? { name: S.template.name, pageW: S.template.pageW, pageH: S.template.pageH, frames: S.template.frames.length } : null,
     photos: S.photos.map(p => ({
       name: p.name, rotUser: p.rotUser,
@@ -1266,19 +1291,14 @@ function templateInkSmall() {
   const T = effTemplate();
   if (!T || !T.raster) return null;
   if (_tplSmall && _tplSmall.src === T.raster) return _tplSmall;
-  const w = 200, h = Math.max(1, Math.round(w * T.pageH / T.pageW));
+  const w = 480, h = Math.max(1, Math.round(w * T.pageH / T.pageW));
   const g = grayFrom(T.raster, Math.max(w, h));
   const { mask } = inkMaskOf(Float32Array.from(g.data), g.w, g.h);
   _tplSmall = { src: T.raster, mask, w: g.w, h: g.h };
   return _tplSmall;
 }
-/** Pick the page orientation (corner-order rotation 0–3) whose rectified ink
-    pattern best matches the template raster. */
-function autoOrient(photo) {
-  const T = effTemplate();
-  const quad = effQuad(photo);
-  if (!T || !quad) { photo.rotAuto = 0; return; }
-  const tpl = templateInkSmall();
+/** Corner-order rotations whose aspect is compatible with the template page. */
+function aspectValidRotations(T, quad) {
   const sideLens = [0, 1, 2, 3].map(i => Math.hypot(quad[(i + 1) % 4].x - quad[i].x, quad[(i + 1) % 4].y - quad[i].y));
   const quadAspect = ((sideLens[0] + sideLens[2]) / 2) / Math.max(1, (sideLens[1] + sideLens[3]) / 2);
   const pageAspect = T.pageW / T.pageH;
@@ -1286,7 +1306,18 @@ function autoOrient(photo) {
     const a = (k % 2 === 0) ? quadAspect : 1 / quadAspect;
     return Math.abs(Math.log(a / pageAspect)) < 0.35;
   });
-  if (!ks.length) { photo.rotAuto = 0; return; }
+  return ks.length ? ks : [0, 1, 2, 3];
+}
+/** Pick the page orientation (corner-order rotation 0–3) whose rectified ink
+    pattern best matches the template raster. Fallback path — when the
+    template rasterizes, the probe-voted orientation choice in buildPhotoAll
+    is authoritative, since marks alone are 180°-symmetric. */
+function autoOrient(photo) {
+  const T = effTemplate();
+  const quad = effQuad(photo);
+  if (!T || !quad) { photo.rotAuto = 0; return; }
+  const tpl = templateInkSmall();
+  const ks = aspectValidRotations(T, quad);
   if (!tpl || ks.length === 1) { photo.rotAuto = ks[0]; return; }
   const g = grayOf(photo);
   const sc = 1 / g.scale;
@@ -1321,16 +1352,19 @@ function autoOrient(photo) {
 
 /* ── refinement: template-anchored frame corners ──────────────────────── */
 const REF_WIN_MM = 12, REF_SEARCH_MM = 3, REF_STEP_MM = 0.25;
-/** Measure the local offset of the photographed content vs the template at
-    point (mmX, mmY): correlate binary ink masks over a ± search window. */
-function measureAnchor(T, texInfo, texScale, H, mmX, mmY) {
+/** Correlate the template's ink around (tplX, tplY) against the photo's ink
+    around (photoX, photoY); returns how far the photographed content sits
+    from the photo seed. The two seeds differ while testing a plot-offset
+    candidate. Symmetric marks (crosses) make ±Δ peaks ambiguous, so the
+    search window should be as small as the seed quality allows. */
+function measureAnchor(T, texInfo, texScale, H, tplX, tplY, photoX, photoY, searchMm = REF_SEARCH_MM) {
   const s = T.rasterPpmm;
   const winPx = Math.round(REF_WIN_MM * s);
-  const searchPx = Math.round(REF_SEARCH_MM * s);
+  const searchPx = Math.max(2, Math.round(searchMm * s));
   const patchPx = winPx + 2 * searchPx;
   // template window (raster space)
   const tc = T.raster.getContext('2d', { willReadFrequently: true });
-  const tx = Math.round(mmX * s - winPx / 2), ty = Math.round(mmY * s - winPx / 2);
+  const tx = Math.round(tplX * s - winPx / 2), ty = Math.round(tplY * s - winPx / 2);
   if (tx < 0 || ty < 0 || tx + winPx > T.raster.width || ty + winPx > T.raster.height) return null;
   const tData = tc.getImageData(tx, ty, winPx, winPx).data;
   const tGray = new Float32Array(winPx * winPx);
@@ -1338,7 +1372,7 @@ function measureAnchor(T, texInfo, texScale, H, mmX, mmY) {
   const tInk = inkMaskOf(tGray, winPx, winPx);
   if (tInk.count < 24) return null; // nothing printed near this corner to anchor on
   // photo patch via GL warp: dest px → mm → source px → texture px
-  const mm0x = mmX - patchPx / (2 * s), mm0y = mmY - patchPx / (2 * s);
+  const mm0x = photoX - patchPx / (2 * s), mm0y = photoY - patchPx / (2 * s);
   const A = [1 / s, 0, mm0x, 0, 1 / s, mm0y, 0, 0, 1]; // dest px → mm
   const M = multH([texScale, 0, 0, 0, texScale, 0, 0, 0, 1], multH(H, A));
   glWarp(texInfo, M, patchPx, patchPx);
@@ -1383,6 +1417,121 @@ function measureAnchor(T, texInfo, texScale, H, mmX, mmY) {
   return { dx: (bestDx + fx) / s, dy: (bestDy + fy) / s, score: best };
 }
 
+/* ── global plot offset ───────────────────────────────────────────────────
+   The whole plotted design can sit a few mm off its template position (paper
+   registration in the plotter). Before trusting any frame position, measure
+   that sheet-wide offset by sliding the template's ink over the rectified
+   photo's ink: coarse ±10 mm at 1 px/mm, then fine ±1.5 mm at 3 px/mm. The
+   per-corner anchors afterwards only chase the small residual. */
+function grayAtSize(source, w, h) {
+  const c = canvas2d(w, h);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(source, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const g = new Float32Array(w * h);
+  for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+  return g;
+}
+function dilatedInkMask(gray, w, h) {
+  const { mask } = inkMaskOf(gray, w, h);
+  const d = new Uint8Array(mask.length);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!mask[y * w + x]) continue;
+      const y0 = Math.max(0, y - 1), y1 = Math.min(h - 1, y + 1);
+      const x0 = Math.max(0, x - 1), x1 = Math.min(w - 1, x + 1);
+      for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) d[yy * w + xx] = 1;
+    }
+  }
+  return d;
+}
+function templatePtsAt(T, ppmm, cap) {
+  if (!T._ptsCache) T._ptsCache = new Map();
+  const key = ppmm.toFixed(2);
+  if (T._ptsCache.has(key)) return T._ptsCache.get(key);
+  const w = Math.max(8, Math.round(T.pageW * ppmm)), h = Math.max(8, Math.round(T.pageH * ppmm));
+  const { mask } = inkMaskOf(grayAtSize(T.raster, w, h), w, h);
+  const all = [];
+  for (let i = 0; i < mask.length; i++) if (mask[i]) all.push(i);
+  const step = Math.max(1, Math.floor(all.length / cap));
+  const pts = new Int32Array(Math.ceil(all.length / step));
+  for (let i = 0, j = 0; i < all.length; i += step, j++) pts[j] = all[i];
+  const out = { pts, w, h };
+  T._ptsCache.set(key, out);
+  return out;
+}
+function slideScore(tp, dmask, dx, dy) {
+  const { pts, w, h } = tp;
+  let hits = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const idx = pts[i];
+    const x = (idx % w) + dx, y = ((idx / w) | 0) + dy;
+    if (x >= 0 && y >= 0 && x < w && y < h && dmask[y * w + x]) hits++;
+  }
+  return hits / pts.length;
+}
+/** Candidate sheet-wide plot offsets, best-first. The template's cross marks
+    are symmetric, so the correlation surface has ridge-shaped false peaks —
+    especially on later sheets whose art differs from the template. Every
+    local maximum is therefore returned; the caller disambiguates with
+    precise local anchor probes. */
+function plotOffsetCandidates(T, rectCanvas) {
+  if (!T.raster || !rectCanvas) return null;
+  const ppmm = 2, rangeMm = 10;
+  const tp = templatePtsAt(T, ppmm, 6000);
+  if (!tp || tp.pts.length < 60) return null;
+  const dmask = dilatedInkMask(grayAtSize(rectCanvas, tp.w, tp.h), tp.w, tp.h);
+  const range = Math.round(rangeMm * ppmm);
+  const side = 2 * range + 1;
+  const map = new Float32Array(side * side);
+  for (let dy = -range; dy <= range; dy++) {
+    for (let dx = -range; dx <= range; dx++) {
+      map[(dy + range) * side + (dx + range)] = slideScore(tp, dmask, dx, dy);
+    }
+  }
+  const peaks = [];
+  for (let y = 0; y < side; y++) {
+    for (let x = 0; x < side; x++) {
+      const v = map[y * side + x];
+      if (v <= 0.08) continue;
+      let isMax = true;
+      for (let ny = Math.max(0, y - 1); ny <= Math.min(side - 1, y + 1) && isMax; ny++) {
+        for (let nx = Math.max(0, x - 1); nx <= Math.min(side - 1, x + 1); nx++) {
+          if (map[ny * side + nx] > v) { isMax = false; break; }
+        }
+      }
+      if (isMax) peaks.push({ dx: (x - range) / ppmm, dy: (y - range) / ppmm, score: v });
+    }
+  }
+  peaks.sort((a, b) => b.score - a.score);
+  const cands = [];
+  for (const p of peaks) {
+    if (cands.length >= 5) break;
+    if (cands.length && p.score < cands[0].score * 0.5) break;
+    if (cands.some(q => Math.hypot(q.dx - p.dx, q.dy - p.dy) < 3)) continue;
+    cands.push(p);
+  }
+  // fine-tune each candidate at 3 px/mm over ±1 mm
+  const tpF = templatePtsAt(T, 3, 20000);
+  if (tpF && tpF.pts.length >= 60) {
+    const dmaskF = dilatedInkMask(grayAtSize(rectCanvas, tpF.w, tpF.h), tpF.w, tpF.h);
+    for (const c of cands) {
+      const sx = Math.round(c.dx * 3), sy = Math.round(c.dy * 3);
+      let best = -1, bx = sx, by = sy;
+      for (let dy = sy - 3; dy <= sy + 3; dy++) {
+        for (let dx = sx - 3; dx <= sx + 3; dx++) {
+          const sc = slideScore(tpF, dmaskF, dx, dy);
+          if (sc > best) { best = sc; bx = dx; by = dy; }
+        }
+      }
+      if (best >= 0) { c.dx = bx / 3; c.dy = by / 3; c.score = best; }
+    }
+  }
+  return cands;
+}
+
 /* ── pipeline ─────────────────────────────────────────────────────────── */
 const framesPerSheet = () => frameDefs().length;
 const globalFrameCount = () => S.photos.length * framesPerSheet();
@@ -1398,6 +1547,16 @@ const framesBuilt = () => {
 function quadCenter(q) {
   return { x: (q[0].x + q[1].x + q[2].x + q[3].x) / 4, y: (q[0].y + q[1].y + q[2].y + q[3].y) / 4 };
 }
+/** A handful of well-spread frame corners used to verify plot-offset candidates. */
+function pickProbeCorners(quads, n) {
+  const uniq = new Map();
+  quads.forEach(q => q.forEach(pt => uniq.set(Math.round(pt.x * 2) + ':' + Math.round(pt.y * 2), pt)));
+  const arr = [...uniq.values()];
+  const step = Math.max(1, Math.floor(arr.length / n));
+  const out = [];
+  for (let i = 0; i < arr.length && out.length < n; i += step) out.push(arr[i]);
+  return out;
+}
 function expandQuadMm(q, pad) {
   const un = (a, b) => { const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l }; };
   const u = un(q[0], q[1]), v = un(q[0], q[3]);
@@ -1409,6 +1568,47 @@ function expandQuadMm(q, pad) {
   ];
 }
 
+/** Rate one page orientation: rectify under rotation k, collect plot-offset
+    candidates, verify each with local anchor probes. The rank rewards probe
+    hits, probe match quality and the whole-page ink score — the terms that
+    separate the true orientation+offset from a 180°/ridge impostor. */
+function evalOrientation(T, texInfo, texScale, texScaleH, quad0, k) {
+  const H = homographyFrom(pageCornersMm(T), rotatedQuad(quad0, k));
+  if (!H) return null;
+  const prevW = Math.min(1400, Math.max(480, Math.round(T.pageW * 4)));
+  const ppmm = prevW / T.pageW;
+  const prevH = Math.max(1, Math.round(T.pageH * ppmm));
+  const A = [1 / ppmm, 0, 0, 0, 1 / ppmm, 0, 0, 0, 1];
+  glWarp(texInfo, multH(texScaleH, multH(H, A)), prevW, prevH);
+  const rect = glCanvasCopy(prevW, prevH);
+  const cands = plotOffsetCandidates(T, rect) || [];
+  const probes = pickProbeCorners(frameDefs().map(f => f.quad), 6);
+  let best = null;
+  for (const cand of cands) {
+    let ok = 0, sx = 0, sy = 0, scoreSum = 0;
+    for (const pt of probes) {
+      const m = measureAnchor(T, texInfo, texScale, H, pt.x, pt.y, pt.x + cand.dx, pt.y + cand.dy, 1.5);
+      if (m) { ok++; sx += m.dx; sy += m.dy; scoreSum += m.score; }
+    }
+    const rank = ok + scoreSum + cand.score * 6;
+    if (!best || rank > best.rank) {
+      best = {
+        rank, probeOk: ok, score: cand.score,
+        adjDx: cand.dx + (ok ? sx / ok : 0),
+        adjDy: cand.dy + (ok ? sy / ok : 0),
+      };
+    }
+  }
+  return {
+    k, H, rect, rectPpmm: ppmm,
+    probeOk: best ? best.probeOk : 0,
+    rank: best ? best.rank : -1,
+    adjDx: best ? best.adjDx : 0,
+    adjDy: best ? best.adjDy : 0,
+    score: best ? best.score : 0,
+  };
+}
+
 async function buildPhotoAll(photo, sheetIdx, gen) {
   const T = effTemplate();
   const fdefs = frameDefs();
@@ -1416,16 +1616,6 @@ async function buildPhotoAll(photo, sheetIdx, gen) {
   const quad0 = effQuad(photo);
   const setPlaceholders = () => { for (let li = 0; li < fpsN; li++) F.base.set(sheetIdx * fpsN + li, null); };
   if (!quad0) { G.perPhoto.delete(photo.id); setPlaceholders(); return; }
-  const quad = rotatedQuad(quad0, (photo.rotAuto + photo.rotUser) & 3);
-  const H = homographyFrom(pageCornersMm(T), quad);
-  if (!H) { G.perPhoto.delete(photo.id); setPlaceholders(); return; }
-  const geo = {
-    H, quad,
-    quadsMm: fdefs.map(f => f.quad.map(p => ({ x: p.x, y: p.y }))),
-    nominalMm: fdefs.map(f => f.quad.map(p => ({ x: p.x, y: p.y }))),
-    anchors: [], rect: null, rectPpmm: 0,
-  };
-  G.perPhoto.set(photo.id, geo);
 
   let texInfo = null, texScale = 1;
   if (glm.ok) {
@@ -1447,17 +1637,99 @@ async function buildPhotoAll(photo, sheetIdx, gen) {
   const texScaleH = [texScale, 0, 0, 0, texScale, 0, 0, 0, 1];
 
   try {
-    /* anchors: template-guided per-corner refinement */
+    /* orientation: probe-voted when the template rasterizes (marks alone are
+       180°-symmetric — ink-mask heuristics can silently flip the page), else
+       the ink-heuristic guess */
+    const canProbe = S.detect.refine && T.raster && texInfo;
+    let chosen = null;
+    if (canProbe) {
+      status(`orienting sheet ${sheetIdx + 1}/${S.photos.length}…`);
+      await nextFramePaint();
+      if (gen !== pipeGen) return;
+      let bestEv = null;
+      for (const k of aspectValidRotations(T, quad0)) {
+        const ev = evalOrientation(T, texInfo, texScale, texScaleH, quad0, k);
+        if (ev && (!bestEv || ev.rank > bestEv.rank)) bestEv = ev;
+        await nextFramePaint();
+        if (gen !== pipeGen) return;
+      }
+      if (bestEv && bestEv.probeOk >= 3) { photo.rotAuto = bestEv.k; chosen = bestEv; }
+      else autoOrient(photo);
+    } else {
+      autoOrient(photo);
+    }
+    const kEff = (photo.rotAuto + photo.rotUser) & 3;
+    if (chosen && chosen.k !== kEff) {
+      chosen = canProbe ? evalOrientation(T, texInfo, texScale, texScaleH, quad0, kEff) : null;
+      if (chosen && chosen.probeOk < 3) chosen = null;
+    }
+
+    const quad = rotatedQuad(quad0, kEff);
+    const H = chosen ? chosen.H : homographyFrom(pageCornersMm(T), quad);
+    if (!H) { G.perPhoto.delete(photo.id); setPlaceholders(); return; }
+    const geo = {
+      H, quad,
+      quadsMm: fdefs.map(f => f.quad.map(p => ({ x: p.x, y: p.y }))),
+      nominalMm: fdefs.map(f => f.quad.map(p => ({ x: p.x, y: p.y }))),
+      anchors: [], rect: null, rectPpmm: 0,
+      plotOffset: { dx: 0, dy: 0, score: 0, ok: false },
+    };
+    G.perPhoto.set(photo.id, geo);
+
+    /* rectified page preview */
+    if (chosen) {
+      geo.rect = chosen.rect;
+      geo.rectPpmm = chosen.rectPpmm;
+    } else {
+      const prevW = Math.min(1400, Math.max(480, Math.round(T.pageW * 4)));
+      const ppmm = prevW / T.pageW;
+      const prevH = Math.max(1, Math.round(T.pageH * ppmm));
+      const A = [1 / ppmm, 0, 0, 0, 1 / ppmm, 0, 0, 0, 1];
+      if (texInfo) {
+        glWarp(texInfo, multH(texScaleH, multH(H, A)), prevW, prevH);
+        geo.rect = glCanvasCopy(prevW, prevH);
+      } else {
+        geo.rect = cpuWarpToCanvas(photo.bmp, multH(H, A), prevW, prevH);
+      }
+      geo.rectPpmm = ppmm;
+    }
+
+    /* sheet-wide plot offset: never assume the plot sits exactly on template */
+    if (chosen) {
+      geo.plotOffset = { dx: chosen.adjDx, dy: chosen.adjDy, score: chosen.score, ok: true };
+    } else if (S.detect.refine && T.raster && !texInfo) {
+      // CPU fallback: only trust an unambiguous whole-page correlation peak
+      const cands = plotOffsetCandidates(T, geo.rect) || [];
+      if (cands.length === 1 || (cands.length > 1 && cands[0].score > 1.25 * cands[1].score)) {
+        geo.plotOffset = { dx: cands[0].dx, dy: cands[0].dy, score: cands[0].score, ok: true };
+      }
+    }
+    if (geo.plotOffset.ok && (geo.plotOffset.dx || geo.plotOffset.dy)) {
+      for (const q of geo.quadsMm) for (const pt of q) { pt.x += geo.plotOffset.dx; pt.y += geo.plotOffset.dy; }
+    }
+
+    /* anchors: template-guided per-corner refinement. Template window reads
+       at the nominal template corner; the photo seed already carries the
+       sheet-wide plot offset, so only the local residual is searched. */
     if (S.detect.refine && T.raster && texInfo) {
       const pts = new Map();
-      geo.quadsMm.forEach((q, fi) => q.forEach((p, ci) => {
-        const key = Math.round(p.x * 4) + ':' + Math.round(p.y * 4);
-        if (!pts.has(key)) pts.set(key, { x: p.x, y: p.y, uses: [], ok: false, dx: 0, dy: 0 });
+      geo.nominalMm.forEach((q, fi) => q.forEach((p0, ci) => {
+        const key = Math.round(p0.x * 4) + ':' + Math.round(p0.y * 4);
+        if (!pts.has(key)) {
+          pts.set(key, {
+            tx: p0.x, ty: p0.y,
+            x: p0.x + geo.plotOffset.dx, y: p0.y + geo.plotOffset.dy,
+            uses: [], ok: false, dx: 0, dy: 0,
+          });
+        }
         pts.get(key).uses.push([fi, ci]);
       }));
+      // with a trusted sheet-wide offset, only a small residual is left to
+      // search — a tight window also defuses the symmetric-mark ±Δ ambiguity
+      const anchorSearch = geo.plotOffset.ok ? 1.5 : REF_SEARCH_MM;
       let done = 0;
       for (const a of pts.values()) {
-        const m = measureAnchor(T, texInfo, texScale, H, a.x, a.y);
+        const m = measureAnchor(T, texInfo, texScale, H, a.tx, a.ty, a.x, a.y, anchorSearch);
         if (m) {
           a.ok = true; a.dx = m.dx; a.dy = m.dy; a.score = m.score;
           for (const [fi, ci] of a.uses) {
@@ -1472,21 +1744,6 @@ async function buildPhotoAll(photo, sheetIdx, gen) {
           if (gen !== pipeGen) return;
         }
       }
-    }
-
-    /* rectified page preview */
-    {
-      const prevW = Math.min(1400, Math.max(480, Math.round(T.pageW * 4)));
-      const ppmm = prevW / T.pageW;
-      const prevH = Math.max(1, Math.round(T.pageH * ppmm));
-      const A = [1 / ppmm, 0, 0, 0, 1 / ppmm, 0, 0, 0, 1];
-      if (texInfo) {
-        glWarp(texInfo, multH(texScaleH, multH(H, A)), prevW, prevH);
-        geo.rect = glCanvasCopy(prevW, prevH);
-      } else {
-        geo.rect = cpuWarpToCanvas(photo.bmp, multH(H, A), prevW, prevH);
-      }
-      geo.rectPpmm = ppmm;
     }
 
     /* frame extraction (padded, so stabilization can shift without gaps) */
@@ -1796,18 +2053,34 @@ function updateStabHint(text) {
 }
 
 /* ── final frames + playback ──────────────────────────────────────────── */
+/** Effective crop window in frame px: user crop (mm, both directions) clamped
+    so expansion stays inside the extraction margin. */
+function cropPx(fr) {
+  const p = G.outPpmm || 4;
+  const maxOut = fr.pad * 0.85;
+  const l = clamp((S.crop.l || 0) * p, -maxOut, fr.w * 0.45);
+  const r = clamp((S.crop.r || 0) * p, -maxOut, fr.w * 0.45);
+  const t = clamp((S.crop.t || 0) * p, -maxOut, fr.h * 0.45);
+  const b = clamp((S.crop.b || 0) * p, -maxOut, fr.h * 0.45);
+  return {
+    l, t,
+    w: Math.max(8, Math.round(fr.w - l - r)),
+    h: Math.max(8, Math.round(fr.h - t - b)),
+  };
+}
 function finalFrame(g) {
   const fr = F.base.get(g);
   if (!fr || !fr.canvas) return null;
   const o = stabOffsetOf(g);
-  const key = o.x.toFixed(2) + ':' + o.y.toFixed(2);
+  const cp = cropPx(fr);
+  const key = `${o.x.toFixed(2)}:${o.y.toFixed(2)}:${cp.l.toFixed(1)}:${cp.t.toFixed(1)}:${cp.w}x${cp.h}`;
   if (fr.final && fr.finalKey === key) return fr.final;
-  const c = fr.final && fr.final.width === fr.w && fr.final.height === fr.h ? fr.final : canvas2d(fr.w, fr.h);
+  const c = fr.final && fr.final.width === cp.w && fr.final.height === cp.h ? fr.final : canvas2d(cp.w, cp.h);
   const ctx = c.getContext('2d');
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.clearRect(0, 0, fr.w, fr.h);
-  ctx.drawImage(fr.canvas, fr.pad + o.x, fr.pad + o.y, fr.w, fr.h, 0, 0, fr.w, fr.h);
+  ctx.clearRect(0, 0, cp.w, cp.h);
+  ctx.drawImage(fr.canvas, fr.pad + cp.l + o.x, fr.pad + cp.t + o.y, cp.w, cp.h, 0, 0, cp.w, cp.h);
   fr.final = c;
   fr.finalKey = key;
   return c;
@@ -1930,6 +2203,28 @@ function drawDetectSource(p) {
   const quad = p._previewQuad || effQuad(p);
   const ctx = stageCtx;
   if (quad) {
+    // frame borders projected through the *current* page quad — live feedback
+    // while corners are being dragged
+    const T = effTemplate();
+    if (T) {
+      const k = (p.rotAuto + p.rotUser) & 3;
+      const liveH = homographyFrom(pageCornersMm(T), rotatedQuad(quad, k));
+      if (liveH) {
+        const geo = G.perPhoto.get(p.id);
+        const quads = geo && geo.quadsMm.length ? geo.quadsMm : frameDefs().map(f => f.quad);
+        ctx.strokeStyle = 'rgba(200,240,96,.45)';
+        ctx.lineWidth = 1;
+        for (const q of quads) {
+          ctx.beginPath();
+          q.forEach((pt, i) => {
+            const s = applyH(liveH, pt.x, pt.y);
+            if (i) ctx.lineTo(s.x * sc, s.y * sc); else ctx.moveTo(s.x * sc, s.y * sc);
+          });
+          ctx.closePath();
+          ctx.stroke();
+        }
+      }
+    }
     ctx.strokeStyle = '#c8f060';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -2017,8 +2312,12 @@ function drawDetectRect(p) {
     }
   }
   const okA = geo.anchors.filter(a => a.ok).length;
-  $('stageInfo').textContent = geo.anchors.length
-    ? `refinement anchors ${okA}/${geo.anchors.length}` : 'refinement off';
+  const po = geo.plotOffset;
+  const poText = po && po.ok
+    ? ` · plot offset ${po.dx >= 0 ? '+' : ''}${po.dx.toFixed(1)} / ${po.dy >= 0 ? '+' : ''}${po.dy.toFixed(1)} mm`
+    : '';
+  $('stageInfo').textContent = (geo.anchors.length
+    ? `refinement anchors ${okA}/${geo.anchors.length}` : 'refinement off') + poText;
 }
 
 /* ── detect interactions: corner dragging + magnifier ─────────────────── */
@@ -2130,8 +2429,11 @@ function syncDetectToolbar() {
     b.classList.toggle('active', b.dataset.view === S.ui.detectView));
   const hint = $('detectStatusHint');
   if (p) {
+    const geoP = G.perPhoto.get(p.id);
+    const po = geoP && geoP.plotOffset;
     hint.textContent = effQuad(p)
-      ? (p.manualQuad ? 'page: manual corners' : 'page: auto ✓') + ` · orientation ${((p.rotAuto + p.rotUser) & 3) * 90}°`
+      ? (p.manualQuad ? 'page: manual corners' : 'page: auto ✓') + ` · orientation ${((p.rotAuto + p.rotUser) & 3) * 90}°` +
+        (po && po.ok ? ` · plot offset ${po.dx >= 0 ? '+' : ''}${po.dx.toFixed(1)}/${po.dy >= 0 ? '+' : ''}${po.dy.toFixed(1)} mm` : '')
       : 'page: not found — tune threshold/paper or place corners by hand';
   } else hint.textContent = '—';
   const geo = p && G.perPhoto.get(p.id);
@@ -2277,7 +2579,7 @@ function updateExportInfo() {
 function exportDims() {
   const fr = F.base.get(0);
   let nw = 0, nh = 0;
-  if (fr && fr.canvas) { nw = fr.w; nh = fr.h; }
+  if (fr && fr.canvas) { const cp = cropPx(fr); nw = cp.w; nh = cp.h; }
   else {
     const fd = frameDefs()[0];
     if (fd && G.outPpmm) {
@@ -2532,6 +2834,8 @@ function syncControlsFromState() {
   $('inStab').checked = S.stab.on;
   $('inStabStrength').value = S.stab.strength; $('vStabStrength').textContent = S.stab.strength + '%';
   $('inStabLambda').value = S.stab.lambda;
+  $('inCropL').value = S.crop.l; $('inCropR').value = S.crop.r;
+  $('inCropT').value = S.crop.t; $('inCropB').value = S.crop.b;
   $('inBright').value = S.look.bright; $('vBright').textContent = String(S.look.bright);
   $('inContrast').value = S.look.contrast; $('vContrast').textContent = String(S.look.contrast);
   $('inSat').value = S.look.sat; $('vSat').textContent = String(S.look.sat);
@@ -2652,6 +2956,21 @@ function wireControls() {
     requestRedraw();
   });
 
+  // frame crop
+  const cropChanged = () => {
+    for (const k of ['l', 'r', 't', 'b']) S.crop[k] = clamp(S.crop[k] || 0, -25, 25);
+    updateExportInfo();
+    requestRedraw();
+  };
+  bindNumber('inCropL', S.crop, 'l', cropChanged);
+  bindNumber('inCropR', S.crop, 'r', cropChanged);
+  bindNumber('inCropT', S.crop, 't', cropChanged);
+  bindNumber('inCropB', S.crop, 'b', cropChanged);
+  on($('btnResetCrop'), 'click', () => {
+    Object.assign(S.crop, DEFAULTS.crop);
+    saveSettings(); syncControlsFromState(); updateExportInfo(); requestRedraw();
+  });
+
   // look + fx
   bindRange('inBright', S.look, 'bright', 'vBright');
   bindRange('inContrast', S.look, 'contrast', 'vContrast');
@@ -2682,7 +3001,7 @@ function wireControls() {
   on($('btnResetSettings'), 'click', () => {
     localStorage.removeItem(LS_KEY);
     S.mode = DEFAULTS.mode;
-    for (const k of ['detect', 'anim', 'stab', 'look', 'out']) Object.assign(S[k], DEFAULTS[k]);
+    for (const k of ['detect', 'anim', 'crop', 'stab', 'look', 'out']) Object.assign(S[k], DEFAULTS[k]);
     S.photos.forEach(ph => { ph._detKey = ''; ph.manualQuad = null; ph.rotUser = 0; });
     syncControlsFromState();
     updateSourcesUI();
