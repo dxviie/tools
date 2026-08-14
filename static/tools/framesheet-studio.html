@@ -276,6 +276,14 @@
     </div>
 
     <div class="section">
+      <div class="section-label">Frame layer</div>
+      <div class="hint">The cyan rectangle outlines all frames together. When the plot sits off the template (plotter registration), drag its corners on the photo — every frame border follows live, and downstream processing uses your alignment as the new baseline.</div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn ghost" id="btnResetFrameLayer" data-tip="Discard the manual frame-layer alignment of the current photo and return to automatic placement (template position + measured plot offset).">RESET FRAME LAYER</button>
+      </div>
+    </div>
+
+    <div class="section">
       <div class="section-label">Frame refinement</div>
       <div class="ctl-row">
         <label data-tip="After the page is rectified, each frame corner is fine-tuned by matching the plotted content of the template (crop marks, art) against the photo in a small window around its expected position — corrects lens distortion and small detection error. Corners with no printed content nearby fall back to the template position.">refine with template</label>
@@ -582,6 +590,7 @@ function settingsSnapshot() {
     photos: S.photos.map(p => ({
       name: p.name, rotUser: p.rotUser,
       manualQuad: p.manualQuad ? p.manualQuad.map(pt => [Math.round(pt.x), Math.round(pt.y)]) : null,
+      frameLayerQuad: p.frameLayerQuad ? p.frameLayerQuad.map(pt => [Math.round(pt.x * 100) / 100, Math.round(pt.y * 100) / 100]) : null,
     })),
   };
 }
@@ -804,7 +813,7 @@ async function addPhotos(files) {
       S.photos.push({
         id: photoIdSeq++, name: f.name, bmp, w: bmp.width, h: bmp.height,
         thumbURL: tc.toDataURL('image/jpeg', 0.7),
-        gray: null, autoQuad: null, quadScore: 0, manualQuad: null,
+        gray: null, autoQuad: null, quadScore: 0, manualQuad: null, frameLayerQuad: null,
         rotAuto: 0, rotUser: 0, _detKey: '',
       });
     } catch {
@@ -1554,6 +1563,21 @@ const framesBuilt = () => {
 function quadCenter(q) {
   return { x: (q[0].x + q[1].x + q[2].x + q[3].x) / 4, y: (q[0].y + q[1].y + q[2].y + q[3].y) / 4 };
 }
+/** Corners (TL,TR,BR,BL) of the box bounding every frame, in template mm. */
+function frameLayerBoundsMm() {
+  const fdefs = frameDefs();
+  if (!fdefs.length) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const f of fdefs) {
+    for (const p of f.quad) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+  }
+  return [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }];
+}
 /** A handful of well-spread frame corners used to verify plot-offset candidates. */
 function pickProbeCorners(quads, n) {
   const uniq = new Map();
@@ -1646,8 +1670,10 @@ async function buildPhotoAll(photo, sheetIdx, gen) {
   try {
     /* orientation: probe-voted when the template rasterizes (marks alone are
        180°-symmetric — ink-mask heuristics can silently flip the page), else
-       the ink-heuristic guess */
-    const canProbe = S.detect.refine && T.raster && texInfo;
+       the ink-heuristic guess. A manual frame-layer alignment locks the
+       current orientation and skips the automatic hunt entirely. */
+    const flOverride = photo.frameLayerQuad;
+    const canProbe = S.detect.refine && T.raster && texInfo && !flOverride;
     let chosen = null;
     if (canProbe) {
       status(`orienting sheet ${sheetIdx + 1}/${S.photos.length}…`);
@@ -1662,7 +1688,7 @@ async function buildPhotoAll(photo, sheetIdx, gen) {
       }
       if (bestEv && bestEv.probeOk >= 3) { photo.rotAuto = bestEv.k; chosen = bestEv; }
       else autoOrient(photo);
-    } else {
+    } else if (!flOverride) {
       autoOrient(photo);
     }
     const kEff = (photo.rotAuto + photo.rotUser) & 3;
@@ -1701,18 +1727,31 @@ async function buildPhotoAll(photo, sheetIdx, gen) {
       geo.rectPpmm = ppmm;
     }
 
-    /* sheet-wide plot offset: never assume the plot sits exactly on template */
-    if (chosen) {
-      geo.plotOffset = { dx: chosen.adjDx, dy: chosen.adjDy, score: chosen.score, ok: true };
-    } else if (S.detect.refine && T.raster && !texInfo) {
-      // CPU fallback: only trust an unambiguous whole-page correlation peak
-      const cands = plotOffsetCandidates(T, geo.rect) || [];
-      if (cands.length === 1 || (cands.length > 1 && cands[0].score > 1.25 * cands[1].score)) {
-        geo.plotOffset = { dx: cands[0].dx, dy: cands[0].dy, score: cands[0].score, ok: true };
+    /* frame seeds: manual frame-layer warp > measured plot offset > template */
+    if (flOverride) {
+      const bounds = frameLayerBoundsMm();
+      const W = bounds ? homographyFrom(bounds, flOverride) : null;
+      if (W) {
+        geo.quadsMm = geo.nominalMm.map(q => q.map(p => applyH(W, p.x, p.y)));
+        geo.plotOffset = {
+          dx: (flOverride[0].x + flOverride[2].x - bounds[0].x - bounds[2].x) / 2,
+          dy: (flOverride[0].y + flOverride[2].y - bounds[0].y - bounds[2].y) / 2,
+          score: 1, ok: true, manual: true,
+        };
       }
-    }
-    if (geo.plotOffset.ok && (geo.plotOffset.dx || geo.plotOffset.dy)) {
-      for (const q of geo.quadsMm) for (const pt of q) { pt.x += geo.plotOffset.dx; pt.y += geo.plotOffset.dy; }
+    } else {
+      if (chosen) {
+        geo.plotOffset = { dx: chosen.adjDx, dy: chosen.adjDy, score: chosen.score, ok: true };
+      } else if (S.detect.refine && T.raster && !texInfo) {
+        // CPU fallback: only trust an unambiguous whole-page correlation peak
+        const cands = plotOffsetCandidates(T, geo.rect) || [];
+        if (cands.length === 1 || (cands.length > 1 && cands[0].score > 1.25 * cands[1].score)) {
+          geo.plotOffset = { dx: cands[0].dx, dy: cands[0].dy, score: cands[0].score, ok: true };
+        }
+      }
+      if (geo.plotOffset.ok && (geo.plotOffset.dx || geo.plotOffset.dy)) {
+        for (const q of geo.quadsMm) for (const pt of q) { pt.x += geo.plotOffset.dx; pt.y += geo.plotOffset.dy; }
+      }
     }
 
     /* anchors: template-guided per-corner refinement. Template window reads
@@ -1723,9 +1762,10 @@ async function buildPhotoAll(photo, sheetIdx, gen) {
       geo.nominalMm.forEach((q, fi) => q.forEach((p0, ci) => {
         const key = Math.round(p0.x * 4) + ':' + Math.round(p0.y * 4);
         if (!pts.has(key)) {
+          const seed = geo.quadsMm[fi][ci]; // pre-anchor position: plot offset or manual warp
           pts.set(key, {
             tx: p0.x, ty: p0.y,
-            x: p0.x + geo.plotOffset.dx, y: p0.y + geo.plotOffset.dy,
+            x: seed.x, y: seed.y,
             uses: [], ok: false, dx: 0, dy: 0,
           });
         }
@@ -2218,7 +2258,13 @@ function drawDetectSource(p) {
       const liveH = homographyFrom(pageCornersMm(T), rotatedQuad(quad, k));
       if (liveH) {
         const geo = G.perPhoto.get(p.id);
-        const quads = geo && geo.quadsMm.length ? geo.quadsMm : frameDefs().map(f => f.quad);
+        let quads = geo && geo.quadsMm.length ? geo.quadsMm : frameDefs().map(f => f.quad);
+        // during a frame-layer drag, re-warp the nominal frames live
+        if (drag && drag.type === 'frame' && p.frameLayerQuad) {
+          const bounds = frameLayerBoundsMm();
+          const W = bounds ? homographyFrom(bounds, p.frameLayerQuad) : null;
+          if (W) quads = frameDefs().map(f => f.quad.map(pt => applyH(W, pt.x, pt.y)));
+        }
         ctx.strokeStyle = 'rgba(200,240,96,.45)';
         ctx.lineWidth = 1;
         for (const q of quads) {
@@ -2229,6 +2275,33 @@ function drawDetectSource(p) {
           });
           ctx.closePath();
           ctx.stroke();
+        }
+        // frame-layer quad + diamond handles (cyan; amber once manually set)
+        const fl = frameLayerDisplayQuad(p);
+        if (fl) {
+          ctx.strokeStyle = 'rgba(122,217,242,.85)';
+          ctx.setLineDash([6, 5]);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          fl.forEach((pt, i) => {
+            const s = applyH(liveH, pt.x, pt.y);
+            if (i) ctx.lineTo(s.x * sc, s.y * sc); else ctx.moveTo(s.x * sc, s.y * sc);
+          });
+          ctx.closePath();
+          ctx.stroke();
+          ctx.setLineDash([]);
+          for (const pt of fl) {
+            const s = applyH(liveH, pt.x, pt.y);
+            ctx.save();
+            ctx.translate(s.x * sc, s.y * sc);
+            ctx.rotate(Math.PI / 4);
+            ctx.fillStyle = '#0e0e0e';
+            ctx.fillRect(-5, -5, 10, 10);
+            ctx.strokeStyle = p.frameLayerQuad ? '#e0a856' : '#7ad9f2';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(-5, -5, 10, 10);
+            ctx.restore();
+          }
         }
       }
     }
@@ -2334,6 +2407,17 @@ function stagePos(e) {
   const r = stage.getBoundingClientRect();
   return { x: (e.clientX - r.left) * (stage.width / r.width), y: (e.clientY - r.top) * (stage.height / r.height) };
 }
+/** The frame-layer quad shown/edited for a photo: manual override, or the
+    template bounds moved by the measured plot offset. */
+function frameLayerDisplayQuad(p) {
+  if (!effTemplate() || !frameDefs().length) return null;
+  if (p.frameLayerQuad) return p.frameLayerQuad;
+  const b = frameLayerBoundsMm();
+  if (!b) return null;
+  const geo = G.perPhoto.get(p.id);
+  const off = geo && geo.plotOffset && geo.plotOffset.ok ? geo.plotOffset : { dx: 0, dy: 0 };
+  return b.map(pt => ({ x: pt.x + off.dx, y: pt.y + off.dy }));
+}
 on(stage, 'pointerdown', e => {
   if (S.ui.step !== 'detect' || S.ui.detectView !== 'source') return;
   const p = S.photos[S.ui.photoIdx];
@@ -2348,15 +2432,33 @@ on(stage, 'pointerdown', e => {
     p.manualQuad = quad;
     requestRedraw();
   }
-  const hitR = Math.max(14, 10 * (stage.getBoundingClientRect().width ? stage.width / stage.getBoundingClientRect().width : 1));
-  let idx = -1, bd = Infinity;
+  const hitR = Math.max(14, 10 * (stage.getBoundingClientRect().width ? stage.width / stage.getBoundingClientRect().width : 1)) * 1.6;
+  let best = null; // nearest handle across both editable quads
   quad.forEach((pt, i) => {
     const d = Math.hypot(pt.x * detectViewScale - pos.x, pt.y * detectViewScale - pos.y);
-    if (d < bd) { bd = d; idx = i; }
+    if (!best || d < best.d) best = { type: 'page', idx: i, d };
   });
-  if (bd > hitR * 1.6) return;
-  if (!p.manualQuad) p.manualQuad = quad.map(pt => ({ x: pt.x, y: pt.y }));
-  drag = { p, idx };
+  const T = effTemplate();
+  const kEff = (p.rotAuto + p.rotUser) & 3;
+  const liveH = T ? homographyFrom(pageCornersMm(T), rotatedQuad(quad, kEff)) : null;
+  const fl = liveH ? frameLayerDisplayQuad(p) : null;
+  if (fl) {
+    fl.forEach((pt, i) => {
+      const s = applyH(liveH, pt.x, pt.y);
+      const d = Math.hypot(s.x * detectViewScale - pos.x, s.y * detectViewScale - pos.y);
+      if (!best || d < best.d) best = { type: 'frame', idx: i, d };
+    });
+  }
+  if (!best || best.d > hitR) return;
+  if (best.type === 'page') {
+    if (!p.manualQuad) p.manualQuad = quad.map(pt => ({ x: pt.x, y: pt.y }));
+    drag = { p, idx: best.idx, type: 'page' };
+  } else {
+    const Hinv = homographyFrom(rotatedQuad(quad, kEff), pageCornersMm(T)); // photo px → template mm
+    if (!Hinv) return;
+    if (!p.frameLayerQuad) p.frameLayerQuad = fl.map(pt => ({ x: pt.x, y: pt.y }));
+    drag = { p, idx: best.idx, type: 'frame', Hinv, liveH };
+  }
   stage.setPointerCapture(e.pointerId);
   stage.classList.add('grabber');
   magEl.hidden = false;
@@ -2366,14 +2468,22 @@ on(stage, 'pointermove', e => { if (drag) updateDrag(e); });
 function updateDrag(e) {
   const pos = stagePos(e);
   const p = drag.p;
-  p.manualQuad[drag.idx] = {
-    x: clamp(pos.x / detectViewScale, 0, p.w - 1),
-    y: clamp(pos.y / detectViewScale, 0, p.h - 1),
-  };
+  let cp; // dragged corner in photo px, for the magnifier
+  if (drag.type === 'frame') {
+    const mm = applyH(drag.Hinv, pos.x / detectViewScale, pos.y / detectViewScale);
+    p.frameLayerQuad[drag.idx] = { x: mm.x, y: mm.y };
+    const s = applyH(drag.liveH, mm.x, mm.y);
+    cp = { x: clamp(s.x, 0, p.w - 1), y: clamp(s.y, 0, p.h - 1) };
+  } else {
+    p.manualQuad[drag.idx] = {
+      x: clamp(pos.x / detectViewScale, 0, p.w - 1),
+      y: clamp(pos.y / detectViewScale, 0, p.h - 1),
+    };
+    cp = p.manualQuad[drag.idx];
+  }
   drawDetect();
-  // magnifier: 5× zoom around the corner, placed near the pointer
+  // magnifier: zoom around the corner, placed near the pointer
   const mctx = magEl.getContext('2d');
-  const cp = p.manualQuad[drag.idx];
   const r = Math.max(24, p.w * 0.012);
   mctx.imageSmoothingEnabled = false;
   mctx.fillStyle = '#000';
@@ -2440,7 +2550,8 @@ function syncDetectToolbar() {
     const po = geoP && geoP.plotOffset;
     hint.textContent = effQuad(p)
       ? (p.manualQuad ? 'page: manual corners' : 'page: auto ✓') + ` · orientation ${((p.rotAuto + p.rotUser) & 3) * 90}°` +
-        (po && po.ok ? ` · plot offset ${po.dx >= 0 ? '+' : ''}${po.dx.toFixed(1)}/${po.dy >= 0 ? '+' : ''}${po.dy.toFixed(1)} mm` : '')
+        (p.frameLayerQuad ? ' · frame layer: manual' :
+          (po && po.ok ? ` · plot offset ${po.dx >= 0 ? '+' : ''}${po.dx.toFixed(1)}/${po.dy >= 0 ? '+' : ''}${po.dy.toFixed(1)} mm` : ''))
       : 'page: not found — tune threshold/paper or place corners by hand';
   } else hint.textContent = '—';
   const geo = p && G.perPhoto.get(p.id);
@@ -2929,6 +3040,13 @@ function wireControls() {
     const p = S.photos[S.ui.photoIdx];
     if (!p) return;
     p.rotUser = (p.rotUser + 1) & 3;
+    p.frameLayerQuad = null; // alignment was made under the old orientation
+    rebuildPipeline();
+  });
+  on($('btnResetFrameLayer'), 'click', () => {
+    const p = S.photos[S.ui.photoIdx];
+    if (!p) return;
+    p.frameLayerQuad = null;
     rebuildPipeline();
   });
   on($('btnPrevPhoto'), 'click', () => { S.ui.photoIdx = Math.max(0, S.ui.photoIdx - 1); renderPhotoList(); requestRedraw(); });
@@ -3038,6 +3156,7 @@ async function loadTemplateFiles(files) {
     const text = await f.text();
     S.template = await parseTemplate(text, f.name);
     _tplSmall = null;
+    S.photos.forEach(ph => { ph.frameLayerQuad = null; }); // bounds belong to the old template
     status(`template ✓ — ${S.template.frames.length} frames on ${fmtMm(S.template.pageW)}×${fmtMm(S.template.pageH)} mm` +
       (S.template.warn.length ? ' · ⚠ ' + S.template.warn.join(' · ') : ''), S.template.warn.length ? 'warn' : '');
   } catch (err) {
@@ -3079,7 +3198,7 @@ showStep('sources');
 syncBadge();
 status(glm.ok ? 'ready — drop a template SVG and sheet photos' : 'ready (no WebGL — slower, FX limited)', glm.ok ? '' : 'warn');
 // minimal debug handle (drives automated tests; harmless in normal use)
-window.__fs = { S, G, F, ST, glm, playlist, finalFrame, rebuildPipeline, addPhotos, exportDims };
+window.__fs = { S, G, F, ST, glm, playlist, finalFrame, rebuildPipeline, addPhotos, exportDims, frameLayerBoundsMm };
 requestAnimationFrame(tick);
 </script>
 </body>
