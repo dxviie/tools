@@ -1,0 +1,32 @@
+{
+  "categories": [
+    {
+      "id": "plotting",
+      "label": "Plotting & Print",
+      "tagline": "SVG and PDF generators for pen plotters and paper — single-stroke fonts, calibration, page formats",
+      "color": "#c8f060",
+      "icon": "hatch"
+    },
+    {
+      "id": "vision",
+      "label": "Camera & Vision",
+      "tagline": "Webcam experiments with in-browser ML — segmentation, depth, landmarks, generative output",
+      "color": "#7ad9f2",
+      "icon": "contour"
+    },
+    {
+      "id": "studio",
+      "label": "Design & Social",
+      "tagline": "Banners, reels and visuals for meetups and social media",
+      "color": "#f2a25c",
+      "icon": "blocks"
+    },
+    {
+      "id": "misc",
+      "label": "Misc",
+      "tagline": "Odds and ends — not yet categorized",
+      "color": "#b9a1f5",
+      "icon": "grid"
+    }
+  ]
+}

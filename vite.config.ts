@@ -24,6 +24,7 @@ function toolsManifestPlugin(): Plugin {
             name:        meta.name        ?? basename(filename, '.html'),
             slug:        meta.slug        ?? basename(filename, '.html'),
             description: meta.description ?? '',
+            category:    meta.category    ?? 'misc',
             tags:        meta.tags        ?? [],
             filename
           }];

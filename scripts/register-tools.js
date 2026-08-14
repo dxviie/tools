@@ -27,10 +27,16 @@ const c = {
   accent: s => `\x1b[38;2;200;240;96m${s}\x1b[0m`,  // #c8f060
 };
 
-const TOOLS_DIR   = join(process.cwd(), 'static', 'tools');
-const META_RE     = /<!--\s*tool-meta:\s*(\{[\s\S]*?\})\s*-->/;
-const VERIFY_FLAG = process.argv.includes('--verify');
-const FORCE_FLAG  = process.argv.includes('--force');
+const TOOLS_DIR      = join(process.cwd(), 'static', 'tools');
+const CATEGORIES_SRC = join(process.cwd(), 'src', 'lib', 'categories.json');
+const META_RE        = /<!--\s*tool-meta:\s*(\{[\s\S]*?\})\s*-->/;
+const VERIFY_FLAG    = process.argv.includes('--verify');
+const FORCE_FLAG     = process.argv.includes('--force');
+
+// Canonical categories — single source of truth is src/lib/categories.json.
+// See CLAUDE.md for the rules on picking (or adding) a category.
+const CATEGORIES = JSON.parse(readFileSync(CATEGORIES_SRC, 'utf8')).categories;
+const CATEGORY_IDS = CATEGORIES.map(cat => cat.id);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function getHtmlFiles() {
@@ -46,7 +52,7 @@ function parseMeta(content) {
 }
 
 function isValid(meta) {
-  return meta && meta.name && meta.slug;
+  return meta && meta.name && meta.slug && CATEGORY_IDS.includes(meta.category);
 }
 
 function defaultSlug(filename) {
@@ -59,6 +65,23 @@ function ask(rl, question) {
   );
 }
 
+async function promptCategory(rl, existing) {
+  const fallback = CATEGORY_IDS.includes(existing) ? existing : 'misc';
+  const options  = CATEGORIES
+    .map((cat, i) => `${c.accent(String(i + 1))} ${cat.id} ${c.dim(`(${cat.label})`)}`)
+    .join('  ');
+
+  console.log(`  │ category    ${options}`);
+  const input = await ask(rl, `  │             ${c.dim(`[${fallback}] `)}: `);
+
+  if (!input) return fallback;
+  const byNumber = CATEGORIES[parseInt(input, 10) - 1];
+  if (byNumber) return byNumber.id;
+  if (CATEGORY_IDS.includes(input)) return input;
+  console.log(c.yellow(`  │             unknown category "${input}" → using "${fallback}"`));
+  return fallback;
+}
+
 async function promptMeta(rl, filename, existing) {
   const slug = existing?.slug ?? defaultSlug(filename);
   const name = existing?.name ?? '';
@@ -68,15 +91,17 @@ async function promptMeta(rl, filename, existing) {
   console.log('');
   console.log(c.bold(c.yellow(`  ┌ ${filename}`)));
 
-  const nameIn = await ask(rl,   `  │ name        ${name ? c.dim(`[${name}] `) : ''}: `);
-  const slugIn = await ask(rl,   `  │ slug        ${c.dim(`[${slug}] `)}: `);
-  const descIn = await ask(rl,   `  │ description ${desc ? c.dim(`[${desc}] `) : ''}: `);
-  const tagsIn = await ask(rl,   `  └ tags        ${tags ? c.dim(`[${tags}] `) : c.dim('[comma-separated] ')}: `);
+  const nameIn   = await ask(rl, `  │ name        ${name ? c.dim(`[${name}] `) : ''}: `);
+  const slugIn   = await ask(rl, `  │ slug        ${c.dim(`[${slug}] `)}: `);
+  const descIn   = await ask(rl, `  │ description ${desc ? c.dim(`[${desc}] `) : ''}: `);
+  const category = await promptCategory(rl, existing?.category);
+  const tagsIn   = await ask(rl, `  └ tags        ${tags ? c.dim(`[${tags}] `) : c.dim('[comma-separated] ')}: `);
 
   return {
     name:        nameIn  || name  || defaultSlug(filename),
     slug:        slugIn  || slug,
     description: descIn  || desc,
+    category,
     tags:        (tagsIn || tags)
                    ? (tagsIn || tags).split(',').map(t => t.trim()).filter(Boolean)
                    : []
@@ -134,7 +159,8 @@ async function main() {
       if (FORCE_FLAG && isValid(meta)) {
         console.log(`  ${c.yellow('↻')} ${file.padEnd(40)} ${c.dim('→')} ${c.dim(meta.name)} ${c.dim('(forced)')}`);
       } else {
-        console.log(`  ${c.yellow('!')} ${file.padEnd(40)} ${c.dim('→')} ${c.yellow('missing metadata')}`);
+        const reason = meta ? 'missing/invalid metadata (needs name, slug, category)' : 'missing metadata';
+        console.log(`  ${c.yellow('!')} ${file.padEnd(40)} ${c.dim('→')} ${c.yellow(reason)}`);
       }
     }
   }
@@ -173,6 +199,7 @@ async function main() {
   console.log('');
   console.log(c.green('  Done.'));
   console.log(c.dim('  Restart the dev server to pick up changes.'));
+  console.log(c.dim('  Remember to add the tool to the README (see CLAUDE.md → "Keeping the README up to date").'));
 }
 
 main().catch(err => {
