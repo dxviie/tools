@@ -50,6 +50,7 @@ Banners, reels and visuals for meetups and social media.
 |------|-------------|
 | [Banner generator CCA](static/tools/generate-2026-03-22.html) | Banner generator for the March 2026 meetup of [Creative Coding Amsterdam](https://cca.codes) |
 | [CCA Banner](static/tools/cca-banner.html) | Meetup banner generator for [Creative Coding Amsterdam](https://cca.codes) — title text, info boxes, logo plates, background images, palette picking, presets; 16:9 & square |
+| [Framesheet Studio](static/tools/framesheet-studio.html) | Turns photos of plotted framesheets into looping animations — SVG-template frame detection, page rectification, stabilization, post FX, GIF / MP4 / frame-ZIP export at source quality |
 | [Reel Studio](static/tools/reel-studio.html) | Timeline reel editor for socials — image/video clips with animation presets, trims, cued text overlays, clip audio + music track mixed into square or portrait MP4 export |
 
 ---
