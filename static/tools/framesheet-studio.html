@@ -1,0 +1,2761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- tool-meta: {"name":"Framesheet Studio","slug":"framesheet-studio","description":"Turns photos of plotted framesheets into looping animations — SVG-template-guided frame detection, page rectification, neighbor stabilization, post FX (chromatic aberration, VHS, glitch), GIF / MP4 / frame-ZIP export at source quality.","category":"studio","tags":["animation","plotter","template","stabilization","gif","mp4","fx","svg"]} -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Framesheet Studio</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
+  :root {
+    --bg:#0e0e0e; --panel:#161616; --panel2:#131313; --border:#2a2a2a; --border-hi:#404040;
+    --accent:#c8f060; --accent-dim:#8aaa3a; --text:#d4d4d4; --text-dim:#666;
+    --text-muted:#444; --input-bg:#1c1c1c; --danger:#e05656; --warn:#e0a856; --cyan:#7ad9f2;
+    --mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  [hidden]{display:none !important;}
+  html,body{height:100%;}
+  body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:12px;
+       display:flex;flex-direction:column;overflow:hidden;}
+  button{font-family:var(--mono);}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:#2e2e2e;}
+  ::-webkit-scrollbar-thumb:hover{background:#3a3a3a;}
+
+  /* ── header ─────────────────────────────────────────────────────────── */
+  header{display:flex;align-items:center;gap:14px;padding:8px 14px;border-bottom:1px solid var(--border);
+         background:var(--panel);flex-shrink:0;flex-wrap:wrap;}
+  .logo{font-size:11px;font-weight:600;letter-spacing:.18em;color:var(--accent);text-transform:uppercase;white-space:nowrap;}
+  .steps{display:flex;gap:0;}
+  .step-tab{background:transparent;border:1px solid var(--border);color:var(--text-dim);font-size:10px;
+            padding:5px 12px;cursor:pointer;letter-spacing:.12em;margin-left:-1px;display:flex;gap:7px;align-items:center;}
+  .step-tab:first-child{margin-left:0;}
+  .step-tab .s-num{color:var(--text-muted);font-size:9px;}
+  .step-tab:hover{border-color:var(--border-hi);color:var(--text);z-index:1;position:relative;}
+  .step-tab.active{background:#232815;border-color:var(--accent-dim);color:var(--accent);z-index:2;position:relative;}
+  .step-tab.active .s-num{color:var(--accent-dim);}
+  .step-tab.done .s-num{color:var(--accent-dim);}
+  .step-tab:disabled{opacity:.35;cursor:default;}
+  .step-tab:disabled:hover{border-color:var(--border);color:var(--text-dim);}
+  .header-right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .badge{font-size:10px;padding:3px 8px;border:1px solid var(--border-hi);color:var(--text-dim);
+         letter-spacing:.08em;white-space:nowrap;}
+  .badge.ok{border-color:var(--accent-dim);color:var(--accent);}
+  .badge.warn{border-color:var(--warn);color:var(--warn);}
+
+  /* ── buttons / inputs ───────────────────────────────────────────────── */
+  .btn{background:var(--input-bg);border:1px solid var(--border);color:var(--text);font-size:11px;
+       padding:5px 10px;cursor:pointer;letter-spacing:.04em;white-space:nowrap;}
+  .btn:hover{border-color:var(--border-hi);background:#222;}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#101400;font-weight:600;}
+  .btn.primary:hover{background:#d6fa74;}
+  .btn.ghost{background:transparent;}
+  .btn.danger{color:var(--danger);}
+  .btn.danger:hover{border-color:var(--danger);}
+  .btn.tiny{padding:2px 6px;font-size:10px;}
+  .btn:disabled{opacity:.4;cursor:default;pointer-events:none;}
+  select,input[type=text],input[type=number]{
+    background:var(--input-bg);border:1px solid var(--border);color:var(--text);
+    font-family:var(--mono);font-size:11px;padding:4px 7px;outline:none;}
+  select:focus,input:focus{border-color:var(--border-hi);}
+  input[type=range]{accent-color:var(--accent);width:100%;}
+  input[type=checkbox]{accent-color:var(--accent);}
+  input[type=number]{width:64px;}
+  .seg{display:flex;gap:0;}
+  .seg button{background:var(--input-bg);border:1px solid var(--border);color:var(--text-dim);
+              font-size:10px;padding:4px 9px;cursor:pointer;margin-left:-1px;letter-spacing:.06em;}
+  .seg button:first-child{margin-left:0;}
+  .seg button.active{background:#232815;border-color:var(--accent-dim);color:var(--accent);z-index:1;position:relative;}
+
+  /* ── main layout ────────────────────────────────────────────────────── */
+  .main{display:grid;grid-template-columns:minmax(272px,320px) 1fr;flex:1;overflow:hidden;min-height:0;}
+
+  /* ── sidebar ────────────────────────────────────────────────────────── */
+  .sidebar{border-right:1px solid var(--border);background:var(--panel);display:flex;flex-direction:column;overflow:hidden;}
+  .sidebar-scroll{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0;}
+  .section{padding:11px 13px;border-bottom:1px solid var(--border);}
+  .section-label{font-size:9px;font-weight:500;letter-spacing:.16em;color:var(--text-dim);text-transform:uppercase;
+                 margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+  .section-label::after{content:'';flex:1;height:1px;background:var(--border);}
+  .section-label .btn{margin-left:auto;}
+  .hint{font-size:10px;color:var(--text-dim);line-height:1.5;margin-top:6px;}
+  .hint.warn{color:var(--warn);}
+  .kv{display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim);padding:1px 0;}
+  .kv b{color:var(--text);font-weight:400;}
+
+  .dropzone{border:1px dashed var(--border-hi);padding:12px 10px;text-align:center;color:var(--text-dim);
+            font-size:10px;cursor:pointer;letter-spacing:.05em;line-height:1.6;}
+  .dropzone:hover,.dropzone.over{border-color:var(--accent-dim);color:var(--text);background:#181a12;}
+
+  .ctl{margin-bottom:9px;}
+  .ctl:last-child{margin-bottom:0;}
+  .ctl label{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--text-dim);
+             letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px;cursor:help;}
+  .ctl label .val{color:var(--accent);font-size:10px;text-transform:none;}
+  .ctl-row{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+  .ctl-row:last-child{margin-bottom:0;}
+  .ctl-row > label{font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;
+                   flex:1;cursor:help;display:flex;align-items:center;gap:6px;}
+  .btn-row{display:flex;gap:6px;flex-wrap:wrap;}
+  .btn-row .btn{flex:1;text-align:center;}
+
+  /* sheet list */
+  .rowlist{display:flex;flex-direction:column;gap:4px;margin-top:9px;}
+  .rowitem{display:flex;align-items:center;gap:7px;border:1px solid var(--border);background:var(--panel2);
+           padding:4px 6px;font-size:10px;}
+  .rowitem.active{border-color:var(--accent-dim);}
+  .rowitem .r-idx{color:var(--accent);font-size:9px;min-width:16px;}
+  .rowitem .r-thumb{width:34px;height:24px;object-fit:cover;background:#000;border:1px solid var(--border);flex-shrink:0;}
+  .rowitem .r-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);}
+  .rowitem .r-sub{font-size:9px;color:var(--text-dim);white-space:nowrap;}
+  .rowitem .r-sub.bad{color:var(--danger);}
+  .rowitem .r-btn{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:11px;padding:1px 3px;font-family:var(--mono);}
+  .rowitem .r-btn:hover{color:var(--text);}
+  .rowitem .r-btn.del:hover{color:var(--danger);}
+  .rowitem .r-btn:disabled{opacity:.25;cursor:default;}
+
+  /* ── stage ──────────────────────────────────────────────────────────── */
+  .stage{display:flex;flex-direction:column;overflow:hidden;background:var(--panel2);min-width:0;}
+  .stage-toolbar{display:flex;align-items:center;gap:10px;padding:7px 14px;border-bottom:1px solid var(--border);
+                 background:var(--panel);flex-shrink:0;min-height:37px;flex-wrap:wrap;}
+  .stage-toolbar .spacer{flex:1;}
+  .stage-toolbar .tb-lbl{font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;}
+  .stage-toolbar .tb-lbl b{color:var(--text);font-weight:400;}
+  .canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:14px;position:relative;overflow:hidden;
+    background-image:radial-gradient(#1a1a1a 1px, transparent 1px);background-size:24px 24px;}
+  #stageCanvas{max-width:100%;max-height:100%;background:#000;border:1px solid var(--border);
+               box-shadow:0 0 40px rgba(0,0,0,.5);}
+  #stageCanvas.grabber{cursor:crosshair;}
+  #stageEmpty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+              color:var(--text-dim);font-size:11px;pointer-events:none;text-align:center;line-height:2;}
+  #stageEmpty b{color:var(--text);font-weight:400;}
+  #magnifier{position:absolute;width:132px;height:132px;border:1px solid var(--accent-dim);background:#000;
+             pointer-events:none;z-index:30;image-rendering:pixelated;}
+  #magnifier::after{content:'';position:absolute;left:50%;top:50%;width:9px;height:9px;margin:-5px 0 0 -5px;
+                    border:1px solid var(--accent);}
+
+  /* sources view (html, not canvas) */
+  #sourcesView{position:absolute;inset:0;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:18px;}
+  .sv-block .section-label{margin-bottom:10px;}
+  #svTemplateWrap{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;}
+  #svTemplateCanvas{max-width:min(620px,100%);border:1px solid var(--border);background:#fff;}
+  .sv-meta{font-size:10px;color:var(--text-dim);line-height:1.9;}
+  .sv-meta b{color:var(--text);font-weight:400;}
+  #svSheets{display:flex;gap:10px;flex-wrap:wrap;}
+  .sv-sheet{position:relative;border:1px solid var(--border);background:#000;width:150px;}
+  .sv-sheet img{width:100%;display:block;opacity:.9;}
+  .sv-sheet .n{position:absolute;top:4px;left:4px;font-size:9px;padding:1px 5px;background:rgba(0,0,0,.75);
+               color:var(--accent);letter-spacing:.08em;}
+  .sv-sheet .s{position:absolute;bottom:0;left:0;right:0;font-size:9px;padding:2px 5px;background:rgba(0,0,0,.75);
+               color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  /* transport */
+  .transport{display:flex;align-items:center;gap:9px;padding:8px 14px;border-top:1px solid var(--border);
+             background:var(--panel);flex-shrink:0;flex-wrap:wrap;}
+  .transport .btn{padding:4px 9px;}
+  .transport input[type=range]{flex:1;min-width:120px;}
+  .frame-lbl{font-size:10px;color:var(--text-dim);min-width:86px;text-align:right;}
+  .frame-lbl b{color:var(--accent);font-weight:400;}
+
+  /* ── status bar ─────────────────────────────────────────────────────── */
+  .statusbar{display:flex;align-items:center;gap:12px;padding:5px 14px;border-top:1px solid var(--border);
+             background:var(--panel);flex-shrink:0;font-size:10px;color:var(--text-dim);}
+  .statusbar .progress{width:180px;height:3px;background:var(--input-bg);position:relative;display:none;}
+  .statusbar .progress.on{display:block;}
+  .statusbar .progress i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);display:block;}
+  #statusText{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #statusText.warn{color:var(--warn);}
+  #statusText.err{color:var(--danger);}
+  #statusRight{margin-left:auto;white-space:nowrap;}
+
+  /* ── tooltip ────────────────────────────────────────────────────────── */
+  #tooltip{position:fixed;z-index:99;max-width:290px;background:#191d10;border:1px solid var(--accent-dim);
+           color:var(--text);font-size:10px;line-height:1.55;padding:7px 9px;pointer-events:none;display:none;}
+  #tooltip b{color:var(--accent);font-weight:400;}
+
+  @media (max-width:760px){
+    .main{grid-template-columns:1fr;grid-template-rows:auto 1fr;}
+    .sidebar{max-height:44vh;border-right:none;border-bottom:1px solid var(--border);}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Framesheet Studio</div>
+  <nav class="steps">
+    <button class="step-tab active" data-step="sources" data-tip="Load your framesheet template SVG and the photos of the plotted sheets."><span class="s-num">01</span>SOURCES</button>
+    <button class="step-tab" data-step="detect" data-tip="Check page detection and frame placement. The view shows the detected page border and every frame border — drag the green page corners to correct them."><span class="s-num">02</span>DETECT</button>
+    <button class="step-tab" data-step="animate" data-tip="Play the animation, set speed and order, and enable stabilization."><span class="s-num">03</span>ANIMATE</button>
+    <button class="step-tab" data-step="export" data-tip="Grade the look, add effects, and export MP4 / GIF / frame ZIP."><span class="s-num">04</span>EXPORT</button>
+  </nav>
+  <div class="header-right">
+    <span class="badge" id="statBadge">no sources</span>
+  </div>
+</header>
+
+<div class="main">
+<aside class="sidebar">
+<div class="sidebar-scroll">
+
+  <!-- ═══ 01 SOURCES ═══ -->
+  <div class="panel" id="panel-sources">
+    <div class="section">
+      <div class="section-label">Workflow</div>
+      <div class="seg" id="modeSeg">
+        <button data-mode="sheets" class="active" data-tip="<b>Framesheets</b> — each photo is a full sheet holding a grid of frames. The template SVG tells the tool where each frame sits on the page. Multiple sheets chain into one animation in list order.">FRAMESHEETS</button>
+        <button data-mode="perframe" data-tip="<b>Photo per frame</b> — each photo is one animation frame (a full page each). Pages are detected and rectified independently; a single-frame template is optional and crops a region within each page.">PHOTO / FRAME</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Template <button class="btn tiny ghost" id="btnClearTemplate" data-tip="Remove the loaded template SVG.">✕</button></div>
+      <div class="dropzone" id="dropTemplate" data-tip="The template is the SVG you plotted, with one extra layer of shapes labelled frame-0, frame-1, … (via id, inkscape:label or data-frame). Page size is read from the SVG width/height. The plotted marks and art in it anchor the frame refinement.">
+        drop template SVG here<br>or click to choose
+      </div>
+      <div id="templateInfo" class="sv-meta" style="margin-top:8px;display:none;"></div>
+      <div class="hint" id="templateHint">One template is shared by all sheets. Label frame shapes <b>frame-0 … frame-N</b>; frame number order = animation order.</div>
+    </div>
+
+    <div class="section">
+      <div class="section-label" id="photosLabel">Sheets</div>
+      <div class="dropzone" id="dropPhotos" data-tip="Photos or scans of the plotted sheets. Keep the page fully inside the photo on a contrasting background. Drop several at once — order in the list below is animation order.">
+        drop sheet photos here<br>or click to choose
+      </div>
+      <div class="rowlist" id="photoList"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Frames</div>
+      <div class="kv"><span>frames / sheet</span><b id="kvPerSheet">—</b></div>
+      <div class="kv"><span>sheets</span><b id="kvSheets">0</b></div>
+      <div class="kv"><span>total detected</span><b id="kvTotal">0</b></div>
+      <div class="ctl-row" style="margin-top:8px;">
+        <label data-tip="How many frames of the total end up in the animation, counted from frame 0. Use this to trim a partly-filled last sheet. 0 = use all frames.">frames used</label>
+        <input type="number" id="inTrim" min="0" step="1" value="0">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="btn-row">
+        <button class="btn ghost" id="btnResetSettings" data-tip="Reset every setting of this tool to its default and clear the saved state in this browser. Loaded photos and template stay.">RESET SETTINGS</button>
+      </div>
+      <div class="hint">Settings persist in this browser. Photos &amp; template are never uploaded — everything runs locally.</div>
+    </div>
+  </div>
+
+  <!-- ═══ 02 DETECT ═══ -->
+  <div class="panel" id="panel-detect" hidden>
+    <div class="section">
+      <div class="section-label">Page detection</div>
+      <div class="ctl">
+        <label data-tip="Nudges the automatic black/white threshold that separates the page from the background. Move it until the green page border hugs the paper edge. 0 = automatic (Otsu). Applies to all photos.">threshold<span class="val" id="vThreshold">0</span></label>
+        <input type="range" id="inThreshold" min="-100" max="100" value="0">
+      </div>
+      <div class="ctl-row">
+        <label data-tip="Which is brighter — the paper or the background it lies on. <b>Auto</b> tries both and keeps the better page candidate. Set it explicitly if auto picks the wrong region.">paper</label>
+        <select id="inPolarity">
+          <option value="auto">auto</option>
+          <option value="light">light paper · dark bg</option>
+          <option value="dark">dark paper · light bg</option>
+        </select>
+      </div>
+      <div class="hint" id="detectStatusHint">—</div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Page corners</div>
+      <div class="hint">Drag the green corner handles on the photo to correct the page border. A magnifier follows while dragging.</div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn ghost" id="btnResetCorners" data-tip="Discard the manual corner edits of the current photo and return to automatic detection.">RESET CORNERS</button>
+        <button class="btn ghost" id="btnRotatePage" data-tip="Rotate how the template maps onto the detected page by 90° — for photos taken upside down or sideways. Orientation is auto-guessed from the template; this overrides it per photo.">ROTATE 90°</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Frame refinement</div>
+      <div class="ctl-row">
+        <label data-tip="After the page is rectified, each frame corner is fine-tuned by matching the plotted content of the template (crop marks, art) against the photo in a small window around its expected position — corrects lens distortion and small detection error. Corners with no printed content nearby fall back to the template position.">refine with template</label>
+        <input type="checkbox" id="inRefine" checked>
+      </div>
+      <div class="hint" id="refineStatusHint">Switch the view to RECTIFIED to inspect: bright green = refined frame borders, grey = template positions, ✚ = matched anchor, ○ = no match.</div>
+    </div>
+  </div>
+
+  <!-- ═══ 03 ANIMATE ═══ -->
+  <div class="panel" id="panel-animate" hidden>
+    <div class="section">
+      <div class="section-label">Playback</div>
+      <div class="ctl-row">
+        <label data-tip="Frames per second of the preview and of the MP4/GIF exports.">fps</label>
+        <input type="number" id="inFps" min="1" max="60" step="1" value="12">
+      </div>
+      <div class="ctl-row">
+        <label data-tip="Play the frames in reverse order.">reverse</label>
+        <input type="checkbox" id="inReverse">
+      </div>
+      <div class="ctl-row">
+        <label data-tip="Play forward then backward in one loop (frame 0…N…0). Doubles the loop length without new frames.">ping-pong</label>
+        <input type="checkbox" id="inPingpong">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Stabilization</div>
+      <div class="ctl-row">
+        <label data-tip="Removes residual frame-to-frame jitter. Neighboring frames on the sheet are compared pairwise and a global per-frame translation field is solved from those measurements (translation only — no rotation or scale).">stabilize</label>
+        <input type="checkbox" id="inStab">
+      </div>
+      <div class="ctl">
+        <label data-tip="How much of the solved stabilization translation is applied. 100% = full correction; lower it if stabilization overcorrects and introduces drift.">strength<span class="val" id="vStabStrength">100%</span></label>
+        <input type="range" id="inStabStrength" min="0" max="100" value="100">
+      </div>
+      <div class="ctl-row">
+        <label data-tip="Regularization of the stabilization solve. Higher values keep corrections smaller and stiffer (trust the detected geometry more); lower values follow the image matches more freely. Default 0.01.">rigidity</label>
+        <input type="number" id="inStabLambda" min="0" max="1" step="0.005" value="0.01" style="width:74px;">
+      </div>
+      <div class="hint" id="stabStatusHint">—</div>
+    </div>
+  </div>
+
+  <!-- ═══ 04 EXPORT ═══ -->
+  <div class="panel" id="panel-export" hidden>
+    <div class="section">
+      <div class="section-label">Look <button class="btn tiny ghost" id="btnResetLook" data-tip="Reset the four look sliders and invert to neutral.">RESET</button></div>
+      <div class="ctl">
+        <label data-tip="Lifts or darkens the whole image.">brightness<span class="val" id="vBright">0</span></label>
+        <input type="range" id="inBright" min="-100" max="100" value="0">
+      </div>
+      <div class="ctl">
+        <label data-tip="Increases or decreases contrast around mid grey.">contrast<span class="val" id="vContrast">0</span></label>
+        <input type="range" id="inContrast" min="-100" max="100" value="0">
+      </div>
+      <div class="ctl">
+        <label data-tip="Color saturation. −100 = greyscale.">saturation<span class="val" id="vSat">0</span></label>
+        <input type="range" id="inSat" min="-100" max="100" value="0">
+      </div>
+      <div class="ctl">
+        <label data-tip="Cleans the paper: pushes near-white to white and near-black to black while keeping the ink. Works for both light and dark paper.">ink boost<span class="val" id="vInk">0</span></label>
+        <input type="range" id="inInk" min="0" max="100" value="0">
+      </div>
+      <div class="ctl-row">
+        <label data-tip="Inverts all colors — turns a white-paper plot into a light-on-dark one and vice versa.">invert</label>
+        <input type="checkbox" id="inInvert">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Effects <button class="btn tiny ghost" id="btnResetFx" data-tip="Turn all four effects off.">RESET</button></div>
+      <div class="ctl">
+        <label data-tip="Chromatic aberration — splits the color channels radially from the center, like a cheap lens.">chromatic<span class="val" id="vChroma">0</span></label>
+        <input type="range" id="inChroma" min="0" max="100" value="0">
+      </div>
+      <div class="ctl">
+        <label data-tip="VHS tape look — line wobble, scanlines, noise and slight desaturation. Deterministic per frame, so exports match the preview.">vhs<span class="val" id="vVhs">0</span></label>
+        <input type="range" id="inVhs" min="0" max="100" value="0">
+      </div>
+      <div class="ctl">
+        <label data-tip="Digital glitch — horizontal band slips and channel tearing on random rows, seeded per frame.">glitch<span class="val" id="vGlitch">0</span></label>
+        <input type="range" id="inGlitch" min="0" max="100" value="0">
+      </div>
+      <div class="ctl">
+        <label data-tip="Film grain overlay.">grain<span class="val" id="vGrain">0</span></label>
+        <input type="range" id="inGrain" min="0" max="100" value="0">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Output</div>
+      <div class="ctl-row">
+        <label data-tip="Width of the exported animation in pixels; height follows the frame aspect. 0 = native — the full resolution extracted from your photos, nothing is scaled down.">width px</label>
+        <input type="number" id="inOutWidth" min="0" step="2" value="0">
+      </div>
+      <div class="kv"><span>native size</span><b id="kvNative">—</b></div>
+      <div class="ctl-row">
+        <label data-tip="Video bitrate preset, in bits per pixel. <b>high</b> ≈ 0.12 bpp is visually clean; <b>ultra</b> ≈ 0.25 for gradient-heavy footage; <b>max</b> ≈ 0.5 for archival quality.">mp4 quality</label>
+        <select id="inMp4Quality">
+          <option value="0.12">high</option>
+          <option value="0.25">ultra</option>
+          <option value="0.5">max</option>
+        </select>
+      </div>
+      <div class="ctl-row">
+        <label data-tip="How many times the loop is repeated inside the MP4. Instagram needs ≥ 3 s of video — the duration readout below includes the loops.">mp4 loops</label>
+        <input type="number" id="inLoops" min="1" max="99" step="1" value="1">
+      </div>
+      <div class="kv"><span>mp4 duration</span><b id="kvDuration">—</b></div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn primary" id="btnMp4" data-tip="Encode the animation as H.264 MP4 via WebCodecs at the chosen width, quality and loop count.">↓ MP4</button>
+        <button class="btn" id="btnGif" data-tip="Encode a looping GIF (256 colors, dithered) at the chosen width and fps.">↓ GIF</button>
+        <button class="btn" id="btnZip" data-tip="Download every frame as a numbered PNG plus a settings.json snapshot, zipped.">↓ ZIP</button>
+      </div>
+      <div class="hint" id="exportHint"></div>
+    </div>
+  </div>
+
+</div>
+</aside>
+
+<section class="stage">
+  <div class="stage-toolbar" id="stageToolbar">
+    <!-- detect toolbar -->
+    <div class="seg" id="detectViewSeg" hidden>
+      <button data-view="source" class="active" data-tip="The raw photo with the detected page border and draggable corner handles.">SOURCE</button>
+      <button data-view="rectified" data-tip="The page warped flat, with every frame border overlaid — template positions in grey, refined borders in green, refinement anchors as ✚/○.">RECTIFIED</button>
+    </div>
+    <div id="photoNav" hidden style="display:flex;align-items:center;gap:7px;">
+      <button class="btn tiny" id="btnPrevPhoto" data-tip="Previous photo">‹</button>
+      <span class="tb-lbl"><b id="photoNavLbl">–</b></span>
+      <button class="btn tiny" id="btnNextPhoto" data-tip="Next photo">›</button>
+      <span class="tb-lbl" id="photoNavName"></span>
+    </div>
+    <div class="spacer"></div>
+    <span class="tb-lbl" id="stageInfo"></span>
+  </div>
+
+  <div class="canvas-wrap" id="stageWrap">
+    <canvas id="stageCanvas" width="16" height="16"></canvas>
+    <div id="sourcesView"></div>
+    <div id="stageEmpty"><span>drop a <b>template SVG</b> + <b>sheet photos</b> in 01 SOURCES<br>to build an animation</span></div>
+    <canvas id="magnifier" width="132" height="132" hidden></canvas>
+  </div>
+
+  <div class="transport" id="transport" hidden>
+    <button class="btn tiny" id="btnFirst" data-tip="Jump to frame 0 (Home)">|‹</button>
+    <button class="btn tiny" id="btnStepBack" data-tip="Step one frame back (←)">‹</button>
+    <button class="btn" id="btnPlay" data-tip="Play / pause the animation (Space)">▶</button>
+    <button class="btn tiny" id="btnStepFwd" data-tip="Step one frame forward (→)">›</button>
+    <input type="range" id="inScrub" min="0" max="0" value="0" data-tip="Scrub through the playback sequence.">
+    <span class="frame-lbl"><b id="frameLblCur">–</b> / <span id="frameLblTotal">–</span></span>
+  </div>
+</section>
+</div>
+
+<footer class="statusbar">
+  <span id="statusText">ready</span>
+  <div class="progress" id="progressWrap"><i id="progressBar" style="width:0%"></i></div>
+  <span id="statusRight"></span>
+</footer>
+
+<div id="tooltip"></div>
+<input type="file" id="fileTemplate" accept=".svg,image/svg+xml" hidden>
+<input type="file" id="filePhotos" accept="image/*" multiple hidden>
+
+<!-- mp4-muxer v5.2.1 — (c) Vanilagy, MIT license — https://github.com/Vanilagy/mp4-muxer
+     Embedded (jsDelivr terser build) so this tool stays a single offline-capable file. -->
+<script>
+/**
+ * Minified by jsDelivr using Terser v5.39.0.
+ * Original file: /npm/mp4-muxer@5.2.1/build/mp4-muxer.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+"use strict";var Mp4Muxer=(()=>{var e=Object.defineProperty,t=Object.getOwnPropertyDescriptor,i=Object.getOwnPropertyNames,s=Object.prototype.hasOwnProperty,a=(e,t,i)=>{if(!t.has(e))throw TypeError("Cannot "+i)},r=(e,t,i)=>(a(e,t,"read from private field"),i?i.call(e):t.get(e)),n=(e,t,i)=>{if(t.has(e))throw TypeError("Cannot add the same private member more than once");t instanceof WeakSet?t.add(e):t.set(e,i)},o=(e,t,i,s)=>(a(e,t,"write to private field"),s?s.call(e,i):t.set(e,i),i),h=(e,t,i)=>(a(e,t,"access private method"),i),l={};((t,i)=>{for(var s in i)e(t,s,{get:i[s],enumerable:!0})})(l,{ArrayBufferTarget:()=>Me,FileSystemWritableFileStreamTarget:()=>Oe,Muxer:()=>Rt,StreamTarget:()=>We});var d,f,u,m,p,c,w,g,b=new Uint8Array(8),y=new DataView(b.buffer),k=e=>[(e%256+256)%256],T=e=>(y.setUint16(0,e,!1),[b[0],b[1]]),C=e=>(y.setUint32(0,e,!1),[b[1],b[2],b[3]]),v=e=>(y.setUint32(0,e,!1),[b[0],b[1],b[2],b[3]]),S=e=>(y.setUint32(0,Math.floor(e/2**32),!1),y.setUint32(4,e,!1),[b[0],b[1],b[2],b[3],b[4],b[5],b[6],b[7]]),x=e=>(y.setInt16(0,256*e,!1),[b[0],b[1]]),z=e=>(y.setInt32(0,65536*e,!1),[b[0],b[1],b[2],b[3]]),E=e=>(y.setInt32(0,2**30*e,!1),[b[0],b[1],b[2],b[3]]),A=(e,t=!1)=>{let i=Array(e.length).fill(null).map(((t,i)=>e.charCodeAt(i)));return t&&i.push(0),i},M=e=>e&&e[e.length-1],W=e=>{let t;for(let i of e)(!t||i.presentationTimestamp>t.presentationTimestamp)&&(t=i);return t},O=(e,t,i=!0)=>{let s=e*t;return i?Math.round(s):s},B=e=>{let t=e*(Math.PI/180),i=Math.cos(t),s=Math.sin(t);return[i,s,0,-s,i,0,0,0,1]},U=B(0),D=e=>[z(e[0]),z(e[1]),E(e[2]),z(e[3]),z(e[4]),E(e[5]),z(e[6]),z(e[7]),E(e[8])],j=e=>e?"object"!=typeof e?e:Array.isArray(e)?e.map(j):Object.fromEntries(Object.entries(e).map((([e,t])=>[e,j(t)]))):e,R=e=>e>=0&&e<2**32,I=(e,t,i)=>({type:e,contents:t&&new Uint8Array(t.flat(10)),children:i}),N=(e,t,i,s,a)=>I(e,[k(t),C(i),s??[]],a),V=e=>({type:"mdat",largeSize:e}),F=(e,t,i=!1)=>I("moov",null,[L(t,e),...e.map((e=>$(e,t))),i?me(e):null]),L=(e,t)=>{let i=O(Math.max(0,...t.filter((e=>e.samples.length>0)).map((e=>{const t=W(e.samples);return t.presentationTimestamp+t.duration}))),Bt),s=Math.max(...t.map((e=>e.id)))+1,a=!R(e)||!R(i),r=a?S:v;return N("mvhd",+a,0,[r(e),r(e),v(Bt),r(i),z(1),x(1),Array(10).fill(0),D(U),Array(24).fill(0),v(s)])},$=(e,t)=>I("trak",null,[P(e,t),H(e,t)]),P=(e,t)=>{let i,s=W(e.samples),a=O(s?s.presentationTimestamp+s.duration:0,Bt),r=!R(t)||!R(a),n=r?S:v;return i="video"===e.info.type?"number"==typeof e.info.rotation?B(e.info.rotation):e.info.rotation:U,N("tkhd",+r,3,[n(t),n(t),v(e.id),v(0),n(a),Array(8).fill(0),T(0),T(0),x("audio"===e.info.type?1:0),T(0),D(i),z("video"===e.info.type?e.info.width:0),z("video"===e.info.type?e.info.height:0)])},H=(e,t)=>I("mdia",null,[_(e,t),q("video"===e.info.type?"vide":"soun"),G(e)]),_=(e,t)=>{let i=W(e.samples),s=O(i?i.presentationTimestamp+i.duration:0,e.timescale),a=!R(t)||!R(s),r=a?S:v;return N("mdhd",+a,0,[r(t),r(t),v(e.timescale),r(s),T(21956),T(0)])},q=e=>N("hdlr",0,0,[A("mhlr"),A(e),v(0),v(0),v(0),A("mp4-muxer-hdlr",!0)]),G=e=>I("minf",null,["video"===e.info.type?J():K(),Q(),Z(e)]),J=()=>N("vmhd",0,1,[T(0),T(0),T(0),T(0)]),K=()=>N("smhd",0,0,[T(0),T(0)]),Q=()=>I("dinf",null,[X()]),X=()=>N("dref",0,0,[v(1)],[Y()]),Y=()=>N("url ",0,1),Z=e=>{const t=e.compositionTimeOffsetTable.length>1||e.compositionTimeOffsetTable.some((e=>0!==e.sampleCompositionTimeOffset));return I("stbl",null,[ee(e),oe(e),he(e),le(e),de(e),fe(e),t?ue(e):null])},ee=e=>N("stsd",0,0,[v(1)],["video"===e.info.type?te(Se[e.info.codec],e):ne(ze[e.info.codec],e)]),te=(e,t)=>{return I(e,[Array(6).fill(0),T(1),T(0),T(0),Array(12).fill(0),T(t.info.width),T(t.info.height),v(4718592),v(4718592),v(0),T(1),Array(32).fill(0),T(24),(i=65535,y.setInt16(0,i,!1),[b[0],b[1]])],[xe[t.info.codec](t),t.info.decoderConfig.colorSpace?re(t):null]);var i},ie={bt709:1,bt470bg:5,smpte170m:6},se={bt709:1,smpte170m:6,"iec61966-2-1":13},ae={rgb:0,bt709:1,bt470bg:5,smpte170m:6},re=e=>I("colr",[A("nclx"),T(ie[e.info.decoderConfig.colorSpace.primaries]),T(se[e.info.decoderConfig.colorSpace.transfer]),T(ae[e.info.decoderConfig.colorSpace.matrix]),k((e.info.decoderConfig.colorSpace.fullRange?1:0)<<7)]),ne=(e,t)=>I(e,[Array(6).fill(0),T(1),T(0),T(0),v(0),T(t.info.numberOfChannels),T(16),T(0),T(0),z(t.info.sampleRate)],[Ee[t.info.codec](t)]),oe=e=>N("stts",0,0,[v(e.timeToSampleTable.length),e.timeToSampleTable.map((e=>[v(e.sampleCount),v(e.sampleDelta)]))]),he=e=>{if(e.samples.every((e=>"key"===e.type)))return null;let t=[...e.samples.entries()].filter((([,e])=>"key"===e.type));return N("stss",0,0,[v(t.length),t.map((([e])=>v(e+1)))])},le=e=>N("stsc",0,0,[v(e.compactlyCodedChunkTable.length),e.compactlyCodedChunkTable.map((e=>[v(e.firstChunk),v(e.samplesPerChunk),v(1)]))]),de=e=>N("stsz",0,0,[v(0),v(e.samples.length),e.samples.map((e=>v(e.size)))]),fe=e=>e.finalizedChunks.length>0&&M(e.finalizedChunks).offset>=2**32?N("co64",0,0,[v(e.finalizedChunks.length),e.finalizedChunks.map((e=>S(e.offset)))]):N("stco",0,0,[v(e.finalizedChunks.length),e.finalizedChunks.map((e=>v(e.offset)))]),ue=e=>N("ctts",0,0,[v(e.compositionTimeOffsetTable.length),e.compositionTimeOffsetTable.map((e=>[v(e.sampleCount),v(e.sampleCompositionTimeOffset)]))]),me=e=>I("mvex",null,e.map(pe)),pe=e=>N("trex",0,0,[v(e.id),v(1),v(0),v(0),v(0)]),ce=(e,t)=>I("moof",null,[we(e),...t.map(be)]),we=e=>N("mfhd",0,0,[v(e)]),ge=e=>{let t=0,i=0,s="delta"===e.type;return i|=+s,t|=s?1:2,t<<24|i<<16},be=e=>I("traf",null,[ye(e),ke(e),Te(e)]),ye=e=>{let t=0;t|=8,t|=16,t|=32,t|=131072;let i=e.currentChunk.samples[1]??e.currentChunk.samples[0],s={duration:i.timescaleUnitsToNextSample,size:i.size,flags:ge(i)};return N("tfhd",0,131128,[v(e.id),v(s.duration),v(s.size),v(s.flags)])},ke=e=>N("tfdt",1,0,[S(O(e.currentChunk.startTimestamp,e.timescale))]),Te=e=>{let t=e.currentChunk.samples.map((e=>e.timescaleUnitsToNextSample)),i=e.currentChunk.samples.map((e=>e.size)),s=e.currentChunk.samples.map(ge),a=e.currentChunk.samples.map((t=>O(t.presentationTimestamp-t.decodeTimestamp,e.timescale))),r=new Set(t),n=new Set(i),o=new Set(s),h=new Set(a),l=2===o.size&&s[0]!==s[1],d=r.size>1,f=n.size>1,u=!l&&o.size>1,m=h.size>1||[...h].some((e=>0!==e)),p=0;return p|=1,p|=4*+l,p|=256*+d,p|=512*+f,p|=1024*+u,p|=2048*+m,N("trun",1,p,[v(e.currentChunk.samples.length),v(e.currentChunk.offset-e.currentChunk.moofOffset||0),l?v(s[0]):[],e.currentChunk.samples.map(((e,r)=>{return[d?v(t[r]):[],f?v(i[r]):[],u?v(s[r]):[],m?(n=a[r],y.setInt32(0,n,!1),[b[0],b[1],b[2],b[3]]):[]];var n}))])},Ce=(e,t)=>N("tfra",1,0,[v(e.id),v(63),v(e.finalizedChunks.length),e.finalizedChunks.map((i=>[S(O(i.startTimestamp,e.timescale)),S(i.moofOffset),v(t+1),v(1),v(1)]))]),ve=()=>N("mfro",0,0,[v(0)]),Se={avc:"avc1",hevc:"hvc1",vp9:"vp09",av1:"av01"},xe={avc:e=>e.info.decoderConfig&&I("avcC",[...new Uint8Array(e.info.decoderConfig.description)]),hevc:e=>e.info.decoderConfig&&I("hvcC",[...new Uint8Array(e.info.decoderConfig.description)]),vp9:e=>{if(!e.info.decoderConfig)return null;let t=e.info.decoderConfig;if(!t.colorSpace)throw new Error("'colorSpace' is required in the decoder config for VP9.");let i=t.codec.split("."),s=Number(i[1]),a=Number(i[2]),r=0+(Number(i[3])<<4)+Number(t.colorSpace.fullRange);return N("vpcC",1,0,[k(s),k(a),k(r),k(2),k(2),k(2),T(0)])},av1:()=>I("av1C",[129,0,0,0])},ze={aac:"mp4a",opus:"Opus"},Ee={aac:e=>{let t=new Uint8Array(e.info.decoderConfig.description);return N("esds",0,0,[v(58753152),k(32+t.byteLength),T(1),k(0),v(75530368),k(18+t.byteLength),k(64),k(21),C(0),v(130071),v(130071),v(92307584),k(t.byteLength),...t,v(109084800),k(1),k(2)])},opus:e=>{let t=3840,i=0;const s=e.info.decoderConfig?.description;if(s){if(s.byteLength<18)throw new TypeError("Invalid decoder description provided for Opus; must be at least 18 bytes long.");const e=ArrayBuffer.isView(s)?new DataView(s.buffer,s.byteOffset,s.byteLength):new DataView(s);t=e.getUint16(10,!0),i=e.getInt16(14,!0)}return I("dOps",[k(0),k(e.info.numberOfChannels),T(t),v(e.info.sampleRate),x(i),k(0)])}},Ae=(Symbol("isTarget"),class{}),Me=class extends Ae{constructor(){super(...arguments),this.buffer=null}},We=class extends Ae{constructor(e){if(super(),this.options=e,"object"!=typeof e)throw new TypeError("StreamTarget requires an options object to be passed to its constructor.");if(e.onData){if("function"!=typeof e.onData)throw new TypeError("options.onData, when provided, must be a function.");if(e.onData.length<2)throw new TypeError("options.onData, when provided, must be a function that takes in at least two arguments (data and position). Ignoring the position argument, which specifies the byte offset at which the data is to be written, can lead to broken outputs.")}if(void 0!==e.chunked&&"boolean"!=typeof e.chunked)throw new TypeError("options.chunked, when provided, must be a boolean.");if(void 0!==e.chunkSize&&(!Number.isInteger(e.chunkSize)||e.chunkSize<1024))throw new TypeError("options.chunkSize, when provided, must be an integer and not smaller than 1024.")}},Oe=class extends Ae{constructor(e,t){if(super(),this.stream=e,this.options=t,!(e instanceof FileSystemWritableFileStream))throw new TypeError("FileSystemWritableFileStreamTarget requires a FileSystemWritableFileStream instance.");if(void 0!==t&&"object"!=typeof t)throw new TypeError("FileSystemWritableFileStreamTarget's options, when provided, must be an object.");if(t&&void 0!==t.chunkSize&&(!Number.isInteger(t.chunkSize)||t.chunkSize<=0))throw new TypeError("options.chunkSize, when provided, must be a positive integer")}},Be=class{constructor(){this.pos=0,n(this,d,new Uint8Array(8)),n(this,f,new DataView(r(this,d).buffer)),this.offsets=new WeakMap}seek(e){this.pos=e}writeU32(e){r(this,f).setUint32(0,e,!1),this.write(r(this,d).subarray(0,4))}writeU64(e){r(this,f).setUint32(0,Math.floor(e/2**32),!1),r(this,f).setUint32(4,e,!1),this.write(r(this,d).subarray(0,8))}writeAscii(e){for(let t=0;t<e.length;t++)r(this,f).setUint8(t%8,e.charCodeAt(t)),t%8==7&&this.write(r(this,d));e.length%8!=0&&this.write(r(this,d).subarray(0,e.length%8))}writeBox(e){if(this.offsets.set(e,this.pos),e.contents&&!e.children)this.writeBoxHeader(e,e.size??e.contents.byteLength+8),this.write(e.contents);else{let t=this.pos;if(this.writeBoxHeader(e,0),e.contents&&this.write(e.contents),e.children)for(let t of e.children)t&&this.writeBox(t);let i=this.pos,s=e.size??i-t;this.seek(t),this.writeBoxHeader(e,s),this.seek(i)}}writeBoxHeader(e,t){this.writeU32(e.largeSize?1:t),this.writeAscii(e.type),e.largeSize&&this.writeU64(t)}measureBoxHeader(e){return 8+(e.largeSize?8:0)}patchBox(e){let t=this.pos;this.seek(this.offsets.get(e)),this.writeBox(e),this.seek(t)}measureBox(e){if(e.contents&&!e.children){return this.measureBoxHeader(e)+e.contents.byteLength}{let t=this.measureBoxHeader(e);if(e.contents&&(t+=e.contents.byteLength),e.children)for(let i of e.children)i&&(t+=this.measureBox(i));return t}}};d=new WeakMap,f=new WeakMap;var Ue=class extends Be{constructor(e){super(),n(this,w),n(this,u,void 0),n(this,m,new ArrayBuffer(65536)),n(this,p,new Uint8Array(r(this,m))),n(this,c,0),o(this,u,e)}write(e){h(this,w,g).call(this,this.pos+e.byteLength),r(this,p).set(e,this.pos),this.pos+=e.byteLength,o(this,c,Math.max(r(this,c),this.pos))}finalize(){h(this,w,g).call(this,this.pos),r(this,u).buffer=r(this,m).slice(0,Math.max(r(this,c),this.pos))}};u=new WeakMap,m=new WeakMap,p=new WeakMap,c=new WeakMap,w=new WeakSet,g=function(e){let t=r(this,m).byteLength;for(;t<e;)t*=2;if(t===r(this,m).byteLength)return;let i=new ArrayBuffer(t),s=new Uint8Array(i);s.set(r(this,p),0),o(this,m,i),o(this,p,s)};var De,je,Re,Ie,Ne,Ve,Fe,Le,$e,Pe,He,_e,qe,Ge=class extends Be{constructor(e){super(),n(this,Ve),n(this,Le),n(this,Pe),n(this,_e),n(this,De,void 0),n(this,je,[]),n(this,Re,void 0),n(this,Ie,void 0),n(this,Ne,[]),o(this,De,e),o(this,Re,e.options?.chunked??!1),o(this,Ie,e.options?.chunkSize??16777216)}write(e){r(this,je).push({data:e.slice(),start:this.pos}),this.pos+=e.byteLength}flush(){if(0===r(this,je).length)return;let e=[],t=[...r(this,je)].sort(((e,t)=>e.start-t.start));e.push({start:t[0].start,size:t[0].data.byteLength});for(let i=1;i<t.length;i++){let s=e[e.length-1],a=t[i];a.start<=s.start+s.size?s.size=Math.max(s.size,a.start+a.data.byteLength-s.start):e.push({start:a.start,size:a.data.byteLength})}for(let t of e){t.data=new Uint8Array(t.size);for(let e of r(this,je))t.start<=e.start&&e.start<t.start+t.size&&t.data.set(e.data,e.start-t.start);r(this,Re)?(h(this,Ve,Fe).call(this,t.data,t.start),h(this,_e,qe).call(this)):r(this,De).options.onData?.(t.data,t.start)}r(this,je).length=0}finalize(){r(this,Re)&&h(this,_e,qe).call(this,!0)}};De=new WeakMap,je=new WeakMap,Re=new WeakMap,Ie=new WeakMap,Ne=new WeakMap,Ve=new WeakSet,Fe=function(e,t){let i=r(this,Ne).findIndex((e=>e.start<=t&&t<e.start+r(this,Ie)));-1===i&&(i=h(this,Pe,He).call(this,t));let s=r(this,Ne)[i],a=t-s.start,n=e.subarray(0,Math.min(r(this,Ie)-a,e.byteLength));s.data.set(n,a);let o={start:a,end:a+n.byteLength};if(h(this,Le,$e).call(this,s,o),0===s.written[0].start&&s.written[0].end===r(this,Ie)&&(s.shouldFlush=!0),r(this,Ne).length>2){for(let e=0;e<r(this,Ne).length-1;e++)r(this,Ne)[e].shouldFlush=!0;h(this,_e,qe).call(this)}n.byteLength<e.byteLength&&h(this,Ve,Fe).call(this,e.subarray(n.byteLength),t+n.byteLength)},Le=new WeakSet,$e=function(e,t){let i=0,s=e.written.length-1,a=-1;for(;i<=s;){let r=Math.floor(i+(s-i+1)/2);e.written[r].start<=t.start?(i=r+1,a=r):s=r-1}for(e.written.splice(a+1,0,t),(-1===a||e.written[a].end<t.start)&&a++;a<e.written.length-1&&e.written[a].end>=e.written[a+1].start;)e.written[a].end=Math.max(e.written[a].end,e.written[a+1].end),e.written.splice(a+1,1)},Pe=new WeakSet,He=function(e){let t={start:Math.floor(e/r(this,Ie))*r(this,Ie),data:new Uint8Array(r(this,Ie)),written:[],shouldFlush:!1};return r(this,Ne).push(t),r(this,Ne).sort(((e,t)=>e.start-t.start)),r(this,Ne).indexOf(t)},_e=new WeakSet,qe=function(e=!1){for(let t=0;t<r(this,Ne).length;t++){let i=r(this,Ne)[t];if(i.shouldFlush||e){for(let e of i.written)r(this,De).options.onData?.(i.data.subarray(e.start,e.end),i.start+e.start);r(this,Ne).splice(t--,1)}}};var Je,Ke,Qe,Xe,Ye,Ze,et,tt,it,st,at,rt,nt,ot,ht,lt,dt,ft,ut,mt,pt,ct,wt,gt,bt,yt,kt,Tt,Ct,vt,St,xt,zt,Et,At,Mt,Wt,Ot=class extends Ge{constructor(e){super(new We({onData:(t,i)=>e.stream.write({type:"write",data:t,position:i}),chunked:!0,chunkSize:e.options?.chunkSize}))}},Bt=1e3,Ut=["avc","hevc","vp9","av1"],Dt=["aac","opus"],jt=["strict","offset","cross-track-offset"],Rt=class{constructor(e){if(n(this,nt),n(this,ht),n(this,dt),n(this,ut),n(this,pt),n(this,wt),n(this,bt),n(this,kt),n(this,Ct),n(this,St),n(this,zt),n(this,At),n(this,Je,void 0),n(this,Ke,void 0),n(this,Qe,void 0),n(this,Xe,void 0),n(this,Ye,null),n(this,Ze,null),n(this,et,Math.floor(Date.now()/1e3)+2082844800),n(this,tt,[]),n(this,it,1),n(this,st,[]),n(this,at,[]),n(this,rt,!1),h(this,nt,ot).call(this,e),e.video=j(e.video),e.audio=j(e.audio),e.fastStart=j(e.fastStart),this.target=e.target,o(this,Je,{firstTimestampBehavior:"strict",...e}),e.target instanceof Me)o(this,Ke,new Ue(e.target));else if(e.target instanceof We)o(this,Ke,new Ge(e.target));else{if(!(e.target instanceof Oe))throw new Error(`Invalid target: ${e.target}`);o(this,Ke,new Ot(e.target))}h(this,ut,mt).call(this),h(this,ht,lt).call(this)}addVideoChunk(e,t,i,s){if(!(e instanceof EncodedVideoChunk))throw new TypeError("addVideoChunk's first argument (sample) must be of type EncodedVideoChunk.");if(t&&"object"!=typeof t)throw new TypeError("addVideoChunk's second argument (meta), when provided, must be an object.");if(void 0!==i&&(!Number.isFinite(i)||i<0))throw new TypeError("addVideoChunk's third argument (timestamp), when provided, must be a non-negative real number.");if(void 0!==s&&!Number.isFinite(s))throw new TypeError("addVideoChunk's fourth argument (compositionTimeOffset), when provided, must be a real number.");let a=new Uint8Array(e.byteLength);e.copyTo(a),this.addVideoChunkRaw(a,e.type,i??e.timestamp,e.duration,t,s)}addVideoChunkRaw(e,t,i,s,a,n){if(!(e instanceof Uint8Array))throw new TypeError("addVideoChunkRaw's first argument (data) must be an instance of Uint8Array.");if("key"!==t&&"delta"!==t)throw new TypeError("addVideoChunkRaw's second argument (type) must be either 'key' or 'delta'.");if(!Number.isFinite(i)||i<0)throw new TypeError("addVideoChunkRaw's third argument (timestamp) must be a non-negative real number.");if(!Number.isFinite(s)||s<0)throw new TypeError("addVideoChunkRaw's fourth argument (duration) must be a non-negative real number.");if(a&&"object"!=typeof a)throw new TypeError("addVideoChunkRaw's fifth argument (meta), when provided, must be an object.");if(void 0!==n&&!Number.isFinite(n))throw new TypeError("addVideoChunkRaw's sixth argument (compositionTimeOffset), when provided, must be a real number.");if(h(this,At,Mt).call(this),!r(this,Je).video)throw new Error("No video track declared.");if("object"==typeof r(this,Je).fastStart&&r(this,Ye).samples.length===r(this,Je).fastStart.expectedVideoChunks)throw new Error(`Cannot add more video chunks than specified in 'fastStart' (${r(this,Je).fastStart.expectedVideoChunks}).`);let o=h(this,wt,gt).call(this,r(this,Ye),e,t,i,s,a,n);if("fragmented"===r(this,Je).fastStart&&r(this,Ze)){for(;r(this,at).length>0&&r(this,at)[0].decodeTimestamp<=o.decodeTimestamp;){let e=r(this,at).shift();h(this,bt,yt).call(this,r(this,Ze),e)}o.decodeTimestamp<=r(this,Ze).lastDecodeTimestamp?h(this,bt,yt).call(this,r(this,Ye),o):r(this,st).push(o)}else h(this,bt,yt).call(this,r(this,Ye),o)}addAudioChunk(e,t,i){if(!(e instanceof EncodedAudioChunk))throw new TypeError("addAudioChunk's first argument (sample) must be of type EncodedAudioChunk.");if(t&&"object"!=typeof t)throw new TypeError("addAudioChunk's second argument (meta), when provided, must be an object.");if(void 0!==i&&(!Number.isFinite(i)||i<0))throw new TypeError("addAudioChunk's third argument (timestamp), when provided, must be a non-negative real number.");let s=new Uint8Array(e.byteLength);e.copyTo(s),this.addAudioChunkRaw(s,e.type,i??e.timestamp,e.duration,t)}addAudioChunkRaw(e,t,i,s,a){if(!(e instanceof Uint8Array))throw new TypeError("addAudioChunkRaw's first argument (data) must be an instance of Uint8Array.");if("key"!==t&&"delta"!==t)throw new TypeError("addAudioChunkRaw's second argument (type) must be either 'key' or 'delta'.");if(!Number.isFinite(i)||i<0)throw new TypeError("addAudioChunkRaw's third argument (timestamp) must be a non-negative real number.");if(!Number.isFinite(s)||s<0)throw new TypeError("addAudioChunkRaw's fourth argument (duration) must be a non-negative real number.");if(a&&"object"!=typeof a)throw new TypeError("addAudioChunkRaw's fifth argument (meta), when provided, must be an object.");if(h(this,At,Mt).call(this),!r(this,Je).audio)throw new Error("No audio track declared.");if("object"==typeof r(this,Je).fastStart&&r(this,Ze).samples.length===r(this,Je).fastStart.expectedAudioChunks)throw new Error(`Cannot add more audio chunks than specified in 'fastStart' (${r(this,Je).fastStart.expectedAudioChunks}).`);let n=h(this,wt,gt).call(this,r(this,Ze),e,t,i,s,a);if("fragmented"===r(this,Je).fastStart&&r(this,Ye)){for(;r(this,st).length>0&&r(this,st)[0].decodeTimestamp<=n.decodeTimestamp;){let e=r(this,st).shift();h(this,bt,yt).call(this,r(this,Ye),e)}n.decodeTimestamp<=r(this,Ye).lastDecodeTimestamp?h(this,bt,yt).call(this,r(this,Ze),n):r(this,at).push(n)}else h(this,bt,yt).call(this,r(this,Ze),n)}finalize(){if(r(this,rt))throw new Error("Cannot finalize a muxer more than once.");if("fragmented"===r(this,Je).fastStart){for(let e of r(this,st))h(this,bt,yt).call(this,r(this,Ye),e);for(let e of r(this,at))h(this,bt,yt).call(this,r(this,Ze),e);h(this,St,xt).call(this,!1)}else r(this,Ye)&&h(this,Ct,vt).call(this,r(this,Ye)),r(this,Ze)&&h(this,Ct,vt).call(this,r(this,Ze));let e=[r(this,Ye),r(this,Ze)].filter(Boolean);if("in-memory"===r(this,Je).fastStart){let t;for(let i=0;i<2;i++){let i=F(e,r(this,et)),s=r(this,Ke).measureBox(i);t=r(this,Ke).measureBox(r(this,Xe));let a=r(this,Ke).pos+s+t;for(let e of r(this,tt)){e.offset=a;for(let{data:i}of e.samples)a+=i.byteLength,t+=i.byteLength}if(a<2**32)break;t>=2**32&&(r(this,Xe).largeSize=!0)}let i=F(e,r(this,et));r(this,Ke).writeBox(i),r(this,Xe).size=t,r(this,Ke).writeBox(r(this,Xe));for(let e of r(this,tt))for(let t of e.samples)r(this,Ke).write(t.data),t.data=null}else if("fragmented"===r(this,Je).fastStart){let t=r(this,Ke).pos,i=(e=>I("mfra",null,[...e.map(Ce),ve()]))(e);r(this,Ke).writeBox(i);let s=r(this,Ke).pos-t;r(this,Ke).seek(r(this,Ke).pos-4),r(this,Ke).writeU32(s)}else{let t=r(this,Ke).offsets.get(r(this,Xe)),i=r(this,Ke).pos-t;r(this,Xe).size=i,r(this,Xe).largeSize=i>=2**32,r(this,Ke).patchBox(r(this,Xe));let s=F(e,r(this,et));if("object"==typeof r(this,Je).fastStart){r(this,Ke).seek(r(this,Qe)),r(this,Ke).writeBox(s);let e=t-r(this,Ke).pos;r(this,Ke).writeBox({type:"free",size:e})}else r(this,Ke).writeBox(s)}h(this,zt,Et).call(this),r(this,Ke).finalize(),o(this,rt,!0)}};return Je=new WeakMap,Ke=new WeakMap,Qe=new WeakMap,Xe=new WeakMap,Ye=new WeakMap,Ze=new WeakMap,et=new WeakMap,tt=new WeakMap,it=new WeakMap,st=new WeakMap,at=new WeakMap,rt=new WeakMap,nt=new WeakSet,ot=function(e){if("object"!=typeof e)throw new TypeError("The muxer requires an options object to be passed to its constructor.");if(!(e.target instanceof Ae))throw new TypeError("The target must be provided and an instance of Target.");if(e.video){if(!Ut.includes(e.video.codec))throw new TypeError(`Unsupported video codec: ${e.video.codec}`);if(!Number.isInteger(e.video.width)||e.video.width<=0)throw new TypeError(`Invalid video width: ${e.video.width}. Must be a positive integer.`);if(!Number.isInteger(e.video.height)||e.video.height<=0)throw new TypeError(`Invalid video height: ${e.video.height}. Must be a positive integer.`);const t=e.video.rotation;if("number"==typeof t&&![0,90,180,270].includes(t))throw new TypeError(`Invalid video rotation: ${t}. Has to be 0, 90, 180 or 270.`);if(Array.isArray(t)&&(9!==t.length||t.some((e=>"number"!=typeof e))))throw new TypeError(`Invalid video transformation matrix: ${t.join()}`);if(void 0!==e.video.frameRate&&(!Number.isInteger(e.video.frameRate)||e.video.frameRate<=0))throw new TypeError(`Invalid video frame rate: ${e.video.frameRate}. Must be a positive integer.`)}if(e.audio){if(!Dt.includes(e.audio.codec))throw new TypeError(`Unsupported audio codec: ${e.audio.codec}`);if(!Number.isInteger(e.audio.numberOfChannels)||e.audio.numberOfChannels<=0)throw new TypeError(`Invalid number of audio channels: ${e.audio.numberOfChannels}. Must be a positive integer.`);if(!Number.isInteger(e.audio.sampleRate)||e.audio.sampleRate<=0)throw new TypeError(`Invalid audio sample rate: ${e.audio.sampleRate}. Must be a positive integer.`)}if(e.firstTimestampBehavior&&!jt.includes(e.firstTimestampBehavior))throw new TypeError(`Invalid first timestamp behavior: ${e.firstTimestampBehavior}`);if("object"==typeof e.fastStart){if(e.video){if(void 0===e.fastStart.expectedVideoChunks)throw new TypeError("'fastStart' is an object but is missing property 'expectedVideoChunks'.");if(!Number.isInteger(e.fastStart.expectedVideoChunks)||e.fastStart.expectedVideoChunks<0)throw new TypeError("'expectedVideoChunks' must be a non-negative integer.")}if(e.audio){if(void 0===e.fastStart.expectedAudioChunks)throw new TypeError("'fastStart' is an object but is missing property 'expectedAudioChunks'.");if(!Number.isInteger(e.fastStart.expectedAudioChunks)||e.fastStart.expectedAudioChunks<0)throw new TypeError("'expectedAudioChunks' must be a non-negative integer.")}}else if(![!1,"in-memory","fragmented"].includes(e.fastStart))throw new TypeError("'fastStart' option must be false, 'in-memory', 'fragmented' or an object.");if(void 0!==e.minFragmentDuration&&(!Number.isFinite(e.minFragmentDuration)||e.minFragmentDuration<0))throw new TypeError("'minFragmentDuration' must be a non-negative number.")},ht=new WeakSet,lt=function(){var e;if(r(this,Ke).writeBox((e={holdsAvc:"avc"===r(this,Je).video?.codec,fragmented:"fragmented"===r(this,Je).fastStart}).fragmented?I("ftyp",[A("iso5"),v(512),A("iso5"),A("iso6"),A("mp41")]):I("ftyp",[A("isom"),v(512),A("isom"),e.holdsAvc?A("avc1"):[],A("mp41")])),o(this,Qe,r(this,Ke).pos),"in-memory"===r(this,Je).fastStart)o(this,Xe,V(!1));else if("fragmented"===r(this,Je).fastStart);else{if("object"==typeof r(this,Je).fastStart){let e=h(this,dt,ft).call(this);r(this,Ke).seek(r(this,Ke).pos+e)}o(this,Xe,V(!0)),r(this,Ke).writeBox(r(this,Xe))}h(this,zt,Et).call(this)},dt=new WeakSet,ft=function(){if("object"!=typeof r(this,Je).fastStart)return;let e=0,t=[r(this,Je).fastStart.expectedVideoChunks,r(this,Je).fastStart.expectedAudioChunks];for(let i of t)i&&(e+=8*Math.ceil(2/3*i),e+=4*i,e+=12*Math.ceil(2/3*i),e+=4*i,e+=8*i);return e+=4096,e},ut=new WeakSet,mt=function(){if(r(this,Je).video&&o(this,Ye,{id:1,info:{type:"video",codec:r(this,Je).video.codec,width:r(this,Je).video.width,height:r(this,Je).video.height,rotation:r(this,Je).video.rotation??0,decoderConfig:null},timescale:r(this,Je).video.frameRate??57600,samples:[],finalizedChunks:[],currentChunk:null,firstDecodeTimestamp:void 0,lastDecodeTimestamp:-1,timeToSampleTable:[],compositionTimeOffsetTable:[],lastTimescaleUnits:null,lastSample:null,compactlyCodedChunkTable:[]}),r(this,Je).audio&&(o(this,Ze,{id:r(this,Je).video?2:1,info:{type:"audio",codec:r(this,Je).audio.codec,numberOfChannels:r(this,Je).audio.numberOfChannels,sampleRate:r(this,Je).audio.sampleRate,decoderConfig:null},timescale:r(this,Je).audio.sampleRate,samples:[],finalizedChunks:[],currentChunk:null,firstDecodeTimestamp:void 0,lastDecodeTimestamp:-1,timeToSampleTable:[],compositionTimeOffsetTable:[],lastTimescaleUnits:null,lastSample:null,compactlyCodedChunkTable:[]}),"aac"===r(this,Je).audio.codec)){let e=h(this,pt,ct).call(this,2,r(this,Je).audio.sampleRate,r(this,Je).audio.numberOfChannels);r(this,Ze).info.decoderConfig={codec:r(this,Je).audio.codec,description:e,numberOfChannels:r(this,Je).audio.numberOfChannels,sampleRate:r(this,Je).audio.sampleRate}}},pt=new WeakSet,ct=function(e,t,i){let s=[96e3,88200,64e3,48e3,44100,32e3,24e3,22050,16e3,12e3,11025,8e3,7350].indexOf(t),a=i,r="";r+=e.toString(2).padStart(5,"0"),r+=s.toString(2).padStart(4,"0"),15===s&&(r+=t.toString(2).padStart(24,"0")),r+=a.toString(2).padStart(4,"0");let n=8*Math.ceil(r.length/8);r=r.padEnd(n,"0");let o=new Uint8Array(r.length/8);for(let e=0;e<r.length;e+=8)o[e/8]=parseInt(r.slice(e,e+8),2);return o},wt=new WeakSet,gt=function(e,t,i,s,a,r,n){let o=s/1e6,l=(s-(n??0))/1e6,d=a/1e6,f=h(this,kt,Tt).call(this,o,l,e);return o=f.presentationTimestamp,l=f.decodeTimestamp,r?.decoderConfig&&(null===e.info.decoderConfig?e.info.decoderConfig=r.decoderConfig:Object.assign(e.info.decoderConfig,r.decoderConfig)),{presentationTimestamp:o,decodeTimestamp:l,duration:d,data:t,size:t.byteLength,type:i,timescaleUnitsToNextSample:O(d,e.timescale)}},bt=new WeakSet,yt=function(e,t){"fragmented"!==r(this,Je).fastStart&&e.samples.push(t);const i=O(t.presentationTimestamp-t.decodeTimestamp,e.timescale);if(null!==e.lastTimescaleUnits){let s=O(t.decodeTimestamp,e.timescale,!1),a=Math.round(s-e.lastTimescaleUnits);if(e.lastTimescaleUnits+=a,e.lastSample.timescaleUnitsToNextSample=a,"fragmented"!==r(this,Je).fastStart){let t=M(e.timeToSampleTable);1===t.sampleCount?(t.sampleDelta=a,t.sampleCount++):t.sampleDelta===a?t.sampleCount++:(t.sampleCount--,e.timeToSampleTable.push({sampleCount:2,sampleDelta:a}));const s=M(e.compositionTimeOffsetTable);s.sampleCompositionTimeOffset===i?s.sampleCount++:e.compositionTimeOffsetTable.push({sampleCount:1,sampleCompositionTimeOffset:i})}}else e.lastTimescaleUnits=0,"fragmented"!==r(this,Je).fastStart&&(e.timeToSampleTable.push({sampleCount:1,sampleDelta:O(t.duration,e.timescale)}),e.compositionTimeOffsetTable.push({sampleCount:1,sampleCompositionTimeOffset:i}));e.lastSample=t;let s=!1;if(e.currentChunk){let i=t.presentationTimestamp-e.currentChunk.startTimestamp;if("fragmented"===r(this,Je).fastStart){let a=r(this,Ye)??r(this,Ze);const n=r(this,Je).minFragmentDuration??1;e===a&&"key"===t.type&&i>=n&&(s=!0,h(this,St,xt).call(this))}else s=i>=.5}else s=!0;s&&(e.currentChunk&&h(this,Ct,vt).call(this,e),e.currentChunk={startTimestamp:t.presentationTimestamp,samples:[]}),e.currentChunk.samples.push(t)},kt=new WeakSet,Tt=function(e,t,i){const s="strict"===r(this,Je).firstTimestampBehavior,a=-1===i.lastDecodeTimestamp;if(s&&a&&0!==t)throw new Error(`The first chunk for your media track must have a timestamp of 0 (received DTS=${t}).Non-zero first timestamps are often caused by directly piping frames or audio data from a MediaStreamTrack into the encoder. Their timestamps are typically relative to the age of thedocument, which is probably what you want.\n\nIf you want to offset all timestamps of a track such that the first one is zero, set firstTimestampBehavior: 'offset' in the options.\n`);if("offset"===r(this,Je).firstTimestampBehavior||"cross-track-offset"===r(this,Je).firstTimestampBehavior){let s;void 0===i.firstDecodeTimestamp&&(i.firstDecodeTimestamp=t),s="offset"===r(this,Je).firstTimestampBehavior?i.firstDecodeTimestamp:Math.min(r(this,Ye)?.firstDecodeTimestamp??1/0,r(this,Ze)?.firstDecodeTimestamp??1/0),t-=s,e-=s}if(t<i.lastDecodeTimestamp)throw new Error(`Timestamps must be monotonically increasing (DTS went from ${1e6*i.lastDecodeTimestamp} to ${1e6*t}).`);return i.lastDecodeTimestamp=t,{presentationTimestamp:e,decodeTimestamp:t}},Ct=new WeakSet,vt=function(e){if("fragmented"===r(this,Je).fastStart)throw new Error("Can't finalize individual chunks if 'fastStart' is set to 'fragmented'.");if(e.currentChunk)if(e.finalizedChunks.push(e.currentChunk),r(this,tt).push(e.currentChunk),0!==e.compactlyCodedChunkTable.length&&M(e.compactlyCodedChunkTable).samplesPerChunk===e.currentChunk.samples.length||e.compactlyCodedChunkTable.push({firstChunk:e.finalizedChunks.length,samplesPerChunk:e.currentChunk.samples.length}),"in-memory"!==r(this,Je).fastStart){e.currentChunk.offset=r(this,Ke).pos;for(let t of e.currentChunk.samples)r(this,Ke).write(t.data),t.data=null;h(this,zt,Et).call(this)}else e.currentChunk.offset=0},St=new WeakSet,xt=function(e=!0){if("fragmented"!==r(this,Je).fastStart)throw new Error("Can't finalize a fragment unless 'fastStart' is set to 'fragmented'.");let t=[r(this,Ye),r(this,Ze)].filter((e=>e&&e.currentChunk));if(0===t.length)return;let i=(s=this,a=it,{set _(e){o(s,a,e,n)},get _(){return r(s,a,l)}})._++;var s,a,n,l;if(1===i){let e=F(t,r(this,et),!0);r(this,Ke).writeBox(e)}let d=r(this,Ke).pos,f=ce(i,t);r(this,Ke).writeBox(f);{let e=V(!1),i=0;for(let e of t)for(let t of e.currentChunk.samples)i+=t.size;let s=r(this,Ke).measureBox(e)+i;s>=2**32&&(e.largeSize=!0,s=r(this,Ke).measureBox(e)+i),e.size=s,r(this,Ke).writeBox(e)}for(let e of t){e.currentChunk.offset=r(this,Ke).pos,e.currentChunk.moofOffset=d;for(let t of e.currentChunk.samples)r(this,Ke).write(t.data),t.data=null}let u=r(this,Ke).pos;r(this,Ke).seek(r(this,Ke).offsets.get(f));let m=ce(i,t);r(this,Ke).writeBox(m),r(this,Ke).seek(u);for(let e of t)e.finalizedChunks.push(e.currentChunk),r(this,tt).push(e.currentChunk),e.currentChunk=null;e&&h(this,zt,Et).call(this)},zt=new WeakSet,Et=function(){r(this,Ke)instanceof Ge&&r(this,Ke).flush()},At=new WeakSet,Mt=function(){if(r(this,rt))throw new Error("Cannot add new video or audio chunks after the file has been finalized.")},Wt=l,((a,r,n,o)=>{if(r&&"object"==typeof r||"function"==typeof r)for(let h of i(r))s.call(a,h)||h===n||e(a,h,{get:()=>r[h],enumerable:!(o=t(r,h))||o.enumerable});return a})(e({},"__esModule",{value:!0}),Wt)})();"object"==typeof module&&"object"==typeof module.exports&&Object.assign(module.exports,Mp4Muxer);
+</script>
+<script type="module">
+'use strict';
+/* ═══════════════════════════════════════════════════════════════════════
+   FRAMESHEET STUDIO — photos of plotted framesheets → looping animations
+   Workflow: 01 sources (template SVG + sheet photos) → 02 detect (page +
+   template-guided frame borders) → 03 animate (playback + stabilization)
+   → 04 export (look/FX + MP4/GIF/ZIP).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── tiny helpers ─────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const on = (el, ev, fn) => el.addEventListener(ev, fn);
+const mk = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const fmtMm = v => (Math.round(v * 10) / 10).toString();
+const median = arr => { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m] : 0.5 * (s[m - 1] + s[m]); };
+const canvas2d = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
+const nextFramePaint = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+
+function status(text, kind) {
+  const el = $('statusText');
+  el.textContent = text;
+  el.className = kind || '';
+}
+function progress(frac) {
+  $('progressWrap').classList.toggle('on', frac != null);
+  if (frac != null) $('progressBar').style.width = (clamp(frac, 0, 1) * 100).toFixed(1) + '%';
+}
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+
+/* ── state ────────────────────────────────────────────────────────────── */
+const DEFAULTS = {
+  mode: 'sheets',
+  detect: { thresholdOff: 0, polarity: 'auto', refine: true },
+  anim: { fps: 12, reverse: false, pingpong: false, trim: 0 },
+  stab: { on: false, strength: 100, lambda: 0.01 },
+  look: { bright: 0, contrast: 0, sat: 0, ink: 0, invert: false, chroma: 0, vhs: 0, glitch: 0, grain: 0 },
+  out: { width: 0, mp4bpp: 0.12, loops: 1 },
+};
+const S = {
+  mode: DEFAULTS.mode,
+  template: null,          // {name, pageW, pageH (mm), frames:[{n, quad:[{x,y}mm×4]}], raster, rasterPpmm, warn}
+  synthT: null,            // synthesized template for per-frame mode without an SVG
+  photos: [],              // {id, name, bmp, w, h, thumbURL, gray, autoQuad, quadScore, manualQuad, rotAuto, rotUser, _detKey}
+  detect: { ...DEFAULTS.detect },
+  anim: { ...DEFAULTS.anim },
+  stab: { ...DEFAULTS.stab },
+  look: { ...DEFAULTS.look },
+  out: { ...DEFAULTS.out },
+  ui: { step: 'sources', detectView: 'source', photoIdx: 0, playing: true, pos: 0 },
+};
+const G = { perPhoto: new Map(), outPpmm: 0 };   // geometry: photoId → {H, quadsMm, anchors, rect, rectPpmm, density}
+const F = { base: new Map() };                    // frame gIdx → {canvas (padded), pad, w, h}
+const ST = { match: new Map(), edges: null, offsets: null, measuring: false, token: 0 };
+let pipeGen = 0;
+let photoIdSeq = 1;
+
+/* ── settings persistence ─────────────────────────────────────────────── */
+const LS_KEY = 'framesheet-studio:v1';
+let saveTimer = 0;
+function saveSettings() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        mode: S.mode, detect: S.detect, anim: S.anim, stab: S.stab, look: S.look, out: S.out,
+      }));
+    } catch { /* private mode etc. */ }
+  }, 250);
+}
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    const j = JSON.parse(raw);
+    if (j.mode === 'sheets' || j.mode === 'perframe') S.mode = j.mode;
+    for (const k of ['detect', 'anim', 'stab', 'look', 'out']) {
+      if (j[k] && typeof j[k] === 'object') Object.assign(S[k], j[k]);
+    }
+  } catch { /* corrupted state — keep defaults */ }
+}
+function settingsSnapshot() {
+  return {
+    tool: 'framesheet-studio', version: 1,
+    mode: S.mode, detect: S.detect, anim: S.anim, stab: S.stab, look: S.look, out: S.out,
+    template: S.template ? { name: S.template.name, pageW: S.template.pageW, pageH: S.template.pageH, frames: S.template.frames.length } : null,
+    photos: S.photos.map(p => ({
+      name: p.name, rotUser: p.rotUser,
+      manualQuad: p.manualQuad ? p.manualQuad.map(pt => [Math.round(pt.x), Math.round(pt.y)]) : null,
+    })),
+  };
+}
+
+/* ── tooltips ─────────────────────────────────────────────────────────── */
+const tipEl = $('tooltip');
+let tipTarget = null;
+function showTip(target) {
+  const text = target.getAttribute('data-tip');
+  if (!text) return;
+  tipTarget = target;
+  tipEl.innerHTML = text;
+  tipEl.style.display = 'block';
+  const r = target.getBoundingClientRect();
+  const tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
+  let x = clamp(r.left, 8, innerWidth - tw - 8);
+  let y = r.bottom + 8;
+  if (y + th > innerHeight - 8) y = r.top - th - 8;
+  tipEl.style.left = x + 'px';
+  tipEl.style.top = Math.max(8, y) + 'px';
+}
+function hideTip() { tipTarget = null; tipEl.style.display = 'none'; }
+on(document, 'mouseover', e => {
+  const t = e.target.closest('[data-tip]');
+  if (t !== tipTarget) { if (t) showTip(t); else hideTip(); }
+});
+on(document, 'mouseout', e => {
+  if (tipTarget && !tipTarget.contains(e.relatedTarget)) hideTip();
+});
+on(document, 'focusin', e => { const t = e.target.closest('[data-tip]'); if (t) showTip(t); });
+on(document, 'focusout', hideTip);
+
+/* ── linear algebra ───────────────────────────────────────────────────── */
+/** Gaussian elimination with partial pivoting. a = n×n rows, b = rhs. */
+function solveLinear(a, b) {
+  const n = b.length;
+  const m = a.map((row, i) => [...row, b[i]]);
+  for (let p = 0; p < n; p++) {
+    let best = p, bestV = Math.abs(m[p][p]);
+    for (let r = p + 1; r < n; r++) { const v = Math.abs(m[r][p]); if (v > bestV) { bestV = v; best = r; } }
+    if (bestV < 1e-11) return null;
+    if (best !== p) { const t = m[p]; m[p] = m[best]; m[best] = t; }
+    const pv = m[p][p];
+    for (let c = p; c <= n; c++) m[p][c] /= pv;
+    for (let r = 0; r < n; r++) {
+      if (r === p) continue;
+      const f = m[r][p];
+      if (Math.abs(f) < 1e-13) continue;
+      for (let c = p; c <= n; c++) m[r][c] -= f * m[p][c];
+    }
+  }
+  return m.map(row => row[n]);
+}
+/** 4-point DLT homography src→dst; returns row-major 9-vector or null. */
+function homographyFrom(src, dst) {
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const { x, y } = src[i], { x: X, y: Y } = dst[i];
+    A.push([x, y, 1, 0, 0, 0, -X * x, -X * y]); b.push(X);
+    A.push([0, 0, 0, x, y, 1, -Y * x, -Y * y]); b.push(Y);
+  }
+  const h = solveLinear(A, b);
+  return h ? [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1] : null;
+}
+const applyH = (h, x, y) => {
+  const w = h[6] * x + h[7] * y + h[8];
+  return { x: (h[0] * x + h[1] * y + h[2]) / w, y: (h[3] * x + h[4] * y + h[5]) / w };
+};
+function multH(a, b) { // row-major 3×3 product a·b
+  const r = new Array(9);
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++)
+    r[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
+  return r;
+}
+function scaleH(h, s) { // compose: first scale dest-space input by s, then h  (h · diag(s,s,1))
+  return multH(h, [s, 0, 0, 0, s, 0, 0, 0, 1]);
+}
+
+/* ── template SVG parsing ─────────────────────────────────────────────── */
+const FRAME_RE = /(?:^|[^a-z0-9])frame[-_ ]?(\d+)\s*$/i;
+const TPL_PPMM = 4; // raster resolution used for orientation + refinement matching
+
+function parseLenMm(str, fallbackUnit) {
+  if (!str) return null;
+  const m = /^\s*([\d.]+)\s*(mm|cm|in|pt|px)?\s*$/.exec(str);
+  if (!m) return null;
+  const v = parseFloat(m[1]);
+  const u = m[2] || fallbackUnit || '';
+  if (u === 'mm') return v;
+  if (u === 'cm') return v * 10;
+  if (u === 'in') return v * 25.4;
+  if (u === 'pt') return v / 72 * 25.4;
+  if (u === 'px') return v / 96 * 25.4;
+  // unitless: plot SVGs are usually mm-sized; page-plausible values are taken as mm
+  return (v >= 40 && v <= 3000) ? v : v / 96 * 25.4;
+}
+
+function frameLabelOf(el) {
+  const cands = [el.getAttribute('id'), el.getAttribute('inkscape:label'),
+                 el.getAttribute('data-frame'), el.getAttribute('aria-label'), el.getAttribute('class')];
+  for (const c of cands) {
+    if (!c) continue;
+    const m = FRAME_RE.exec(c);
+    if (m) return parseInt(m[1], 10);
+  }
+  return null;
+}
+
+async function parseTemplate(svgText, name) {
+  const clean = svgText.replace(/<script[\s\S]*?<\/script\s*>/gi, '');
+  let doc = new DOMParser().parseFromString(clean, 'image/svg+xml');
+  if (doc.querySelector('parsererror')) {
+    // lenient fallback: HTML parser tolerates undeclared namespace prefixes
+    const div = document.createElement('div');
+    div.innerHTML = clean;
+    doc = null;
+    var svgEl = div.querySelector('svg');
+  } else {
+    var svgEl = document.importNode(doc.documentElement, true);
+  }
+  if (!svgEl || svgEl.tagName.toLowerCase() !== 'svg') throw new Error('not an SVG file');
+
+  // page size in mm + viewBox
+  let pageW = parseLenMm(svgEl.getAttribute('width'));
+  let pageH = parseLenMm(svgEl.getAttribute('height'));
+  let vb = (svgEl.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+  if (vb.length !== 4 || vb.some(isNaN) || vb[2] <= 0 || vb[3] <= 0) {
+    vb = pageW && pageH ? [0, 0, pageW, pageH] : null;
+  }
+  if (!vb && !(pageW && pageH)) throw new Error('SVG has no usable width/height or viewBox');
+  if (!vb) vb = [0, 0, pageW, pageH];
+  if (!pageW || !pageH) { pageW = vb[2]; pageH = vb[3]; } // assume viewBox units ≈ mm
+
+  // attach off-screen so getBBox()/getCTM() work; pin viewport px = viewBox units
+  svgEl.setAttribute('width', vb[2] + 'px');
+  svgEl.setAttribute('height', vb[3] + 'px');
+  svgEl.setAttribute('viewBox', vb.join(' '));
+  const holder = mk('div');
+  holder.style.cssText = 'position:fixed;left:-100000px;top:0;overflow:hidden;';
+  holder.appendChild(svgEl);
+  document.body.appendChild(holder);
+
+  const warn = [];
+  const frames = [];
+  try {
+    const seen = new Set();
+    for (const el of svgEl.querySelectorAll('*')) {
+      const n = frameLabelOf(el);
+      if (n == null) continue;
+      if (seen.has(n)) { warn.push(`duplicate frame-${n} ignored`); continue; }
+      seen.add(n);
+      let bb;
+      try { bb = el.getBBox(); } catch { continue; }
+      if (!bb || bb.width <= 0 || bb.height <= 0) continue;
+      let ctm = null;
+      try { ctm = el.getCTM(); } catch { /* fine */ }
+      // getCTM maps user units → viewport px; viewport px == viewBox units here, and the
+      // viewBox min is already folded into the CTM, so viewport (0,0) = page top-left.
+      const toMm = (x, y) => {
+        if (ctm) {
+          const px = ctm.a * x + ctm.c * y + ctm.e, py = ctm.b * x + ctm.d * y + ctm.f;
+          return { x: px / vb[2] * pageW, y: py / vb[3] * pageH };
+        }
+        return { x: (x - vb[0]) / vb[2] * pageW, y: (y - vb[1]) / vb[3] * pageH };
+      };
+      frames.push({ n, quad: [
+        toMm(bb.x, bb.y), toMm(bb.x + bb.width, bb.y),
+        toMm(bb.x + bb.width, bb.y + bb.height), toMm(bb.x, bb.y + bb.height),
+      ] });
+    }
+  } finally {
+    holder.remove();
+  }
+  if (!frames.length) throw new Error('no shapes labelled frame-0…frame-N found (id / inkscape:label / data-frame)');
+  frames.sort((a, b) => a.n - b.n);
+  for (let i = 0; i < frames.length; i++) {
+    if (frames[i].n !== i) { warn.push(`frame numbering has gaps (missing frame-${i}) — order of the found numbers is used`); break; }
+  }
+
+  // raster of the plotted design (frame-label shapes hidden) for orientation + refinement
+  let raster = null;
+  try {
+    const clone = svgEl.cloneNode(true);
+    for (const el of clone.querySelectorAll('*')) {
+      if (frameLabelOf(el) != null) el.setAttribute('style', 'display:none');
+    }
+    const rw = Math.round(pageW * TPL_PPMM), rh = Math.round(pageH * TPL_PPMM);
+    clone.setAttribute('width', rw + 'px');
+    clone.setAttribute('height', rh + 'px');
+    const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('raster failed')); img.src = url; });
+    const c = canvas2d(rw, rh);
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, rw, rh);
+    ctx.drawImage(img, 0, 0, rw, rh);
+    URL.revokeObjectURL(url);
+    raster = c;
+  } catch {
+    warn.push('template could not be rasterized — orientation guess and frame refinement are off');
+  }
+
+  return { name, pageW, pageH, frames, raster, rasterPpmm: TPL_PPMM, warn };
+}
+
+/* ── photo loading ────────────────────────────────────────────────────── */
+async function addPhotos(files) {
+  const list = [...files].filter(f => /image\//.test(f.type) || /\.(png|jpe?g|webp)$/i.test(f.name));
+  if (!list.length) return;
+  list.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  status(`loading ${list.length} photo${list.length > 1 ? 's' : ''}…`);
+  for (const f of list) {
+    try {
+      const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
+      const tw = 150, th = Math.max(1, Math.round(tw * bmp.height / bmp.width));
+      const tc = canvas2d(tw, th);
+      tc.getContext('2d').drawImage(bmp, 0, 0, tw, th);
+      S.photos.push({
+        id: photoIdSeq++, name: f.name, bmp, w: bmp.width, h: bmp.height,
+        thumbURL: tc.toDataURL('image/jpeg', 0.7),
+        gray: null, autoQuad: null, quadScore: 0, manualQuad: null,
+        rotAuto: 0, rotUser: 0, _detKey: '',
+      });
+    } catch {
+      status(`could not decode ${f.name}`, 'warn');
+    }
+  }
+  S.ui.photoIdx = clamp(S.ui.photoIdx, 0, S.photos.length - 1);
+  renderPhotoList();
+  rebuildPipeline();
+}
+function removePhoto(id) {
+  const i = S.photos.findIndex(p => p.id === id);
+  if (i < 0) return;
+  S.photos[i].bmp?.close?.();
+  S.photos.splice(i, 1);
+  S.ui.photoIdx = clamp(S.ui.photoIdx, 0, Math.max(0, S.photos.length - 1));
+  renderPhotoList();
+  rebuildPipeline();
+}
+function movePhoto(id, dir) {
+  const i = S.photos.findIndex(p => p.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= S.photos.length) return;
+  const t = S.photos[i]; S.photos[i] = S.photos[j]; S.photos[j] = t;
+  renderPhotoList();
+  rebuildPipeline();
+}
+
+/* ── grayscale + threshold ────────────────────────────────────────────── */
+function grayFrom(source, maxDim) {
+  const scale = Math.max(1, Math.max(source.width, source.height) / maxDim);
+  const w = Math.max(1, Math.round(source.width / scale));
+  const h = Math.max(1, Math.round(source.height / scale));
+  const c = canvas2d(w, h);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(source, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const g = new Uint8Array(w * h);
+  for (let i = 0, j = 0; j < g.length; i += 4, j++) {
+    g[j] = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0;
+  }
+  return { data: g, w, h, scale };
+}
+function grayOf(photo) {
+  if (!photo.gray) photo.gray = grayFrom(photo.bmp, 1000);
+  return photo.gray;
+}
+function otsu(gray) {
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < gray.data.length; i++) hist[gray.data[i]]++;
+  const total = gray.data.length;
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0, wB = 0, best = 127, bestVar = -1;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (!wB) continue;
+    const wF = total - wB;
+    if (!wF) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB, mF = (sum - sumB) / wF;
+    const v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > bestVar) { bestVar = v; best = t; }
+  }
+  return best;
+}
+
+/* ── page detection ───────────────────────────────────────────────────── */
+/** Largest paper-like component → convex hull → 4-corner quad (gray-space px). */
+function findPageQuadIn(gray, paperIsLight, threshold) {
+  const { data, w, h } = gray;
+  const mask = new Uint8Array(w * h);
+  for (let i = 0; i < data.length; i++) {
+    mask[i] = paperIsLight ? (data[i] >= threshold ? 1 : 0) : (data[i] < threshold ? 1 : 0);
+  }
+  // connected components (4-neighborhood BFS), keep the best-scoring one
+  const label = new Int32Array(w * h);
+  const stack = new Int32Array(w * h);
+  let nextLabel = 0, bestScore = 0, bestLabel = -1, bestArea = 0;
+  for (let start = 0; start < mask.length; start++) {
+    if (!mask[start] || label[start]) continue;
+    nextLabel++;
+    let sp = 0, area = 0, touches = 0;
+    let minX = w, maxX = -1, minY = h, maxY = -1;
+    stack[sp++] = start;
+    label[start] = nextLabel;
+    while (sp > 0) {
+      const idx = stack[--sp];
+      area++;
+      const x = idx % w, y = (idx / w) | 0;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (x > 0 && mask[idx - 1] && !label[idx - 1]) { label[idx - 1] = nextLabel; stack[sp++] = idx - 1; }
+      if (x < w - 1 && mask[idx + 1] && !label[idx + 1]) { label[idx + 1] = nextLabel; stack[sp++] = idx + 1; }
+      if (y > 0 && mask[idx - w] && !label[idx - w]) { label[idx - w] = nextLabel; stack[sp++] = idx - w; }
+      if (y < h - 1 && mask[idx + w] && !label[idx + w]) { label[idx + w] = nextLabel; stack[sp++] = idx + w; }
+    }
+    if (area < w * h * 0.04) continue;
+    touches = (minX <= 1 ? 1 : 0) + (maxX >= w - 2 ? 1 : 0) + (minY <= 1 ? 1 : 0) + (maxY >= h - 2 ? 1 : 0);
+    const score = area * (touches === 0 ? 1 : touches === 1 ? 0.6 : touches === 2 ? 0.22 : 0.04);
+    if (score > bestScore) { bestScore = score; bestLabel = nextLabel; bestArea = area; }
+  }
+  if (bestLabel < 0) return null;
+
+  // boundary superset: per-row min/max x and per-col min/max y of the winning component
+  const rowMin = new Int32Array(h).fill(w), rowMax = new Int32Array(h).fill(-1);
+  const colMin = new Int32Array(w).fill(h), colMax = new Int32Array(w).fill(-1);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      if (label[row + x] !== bestLabel) continue;
+      if (x < rowMin[y]) rowMin[y] = x;
+      if (x > rowMax[y]) rowMax[y] = x;
+      if (y < colMin[x]) colMin[x] = y;
+      if (y > colMax[x]) colMax[x] = y;
+    }
+  }
+  const pts = [];
+  for (let y = 0; y < h; y++) if (rowMax[y] >= 0) { pts.push([rowMin[y], y], [rowMax[y], y]); }
+  for (let x = 0; x < w; x++) if (colMax[x] >= 0) { pts.push([x, colMin[x]], [x, colMax[x]]); }
+  const hull = convexHull(pts);
+  if (hull.length < 4) return null;
+  const quad = quadFromHull(hull);
+  if (!quad) return null;
+  return { quad: quad.map(p => ({ x: p[0], y: p[1] })), score: bestScore, area: bestArea };
+}
+function convexHull(pts) {
+  pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [], upper = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop(); upper.pop();
+  return lower.concat(upper);
+}
+/** Reduce a convex hull to its 4 dominant corners by repeatedly dropping the
+    vertex whose removal changes the polygon area least. */
+function quadFromHull(hull) {
+  const poly = hull.map(p => [p[0], p[1]]);
+  const triArea = (a, b, c) => Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) * 0.5;
+  while (poly.length > 4) {
+    let minA = Infinity, minI = -1;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[(i + poly.length - 1) % poly.length], b = poly[i], c = poly[(i + 1) % poly.length];
+      const ar = triArea(a, b, c);
+      if (ar < minA) { minA = ar; minI = i; }
+    }
+    poly.splice(minI, 1);
+  }
+  if (poly.length !== 4) return null;
+  // sanity: no degenerate corner angles
+  for (let i = 0; i < 4; i++) {
+    const a = poly[(i + 3) % 4], b = poly[i], c = poly[(i + 1) % 4];
+    const v1 = [a[0] - b[0], a[1] - b[1]], v2 = [c[0] - b[0], c[1] - b[1]];
+    const dot = v1[0] * v2[0] + v1[1] * v2[1];
+    const n1 = Math.hypot(v1[0], v1[1]), n2 = Math.hypot(v2[0], v2[1]);
+    if (n1 < 4 || n2 < 4) return null;
+    const ang = Math.acos(clamp(dot / (n1 * n2), -1, 1)) * 180 / Math.PI;
+    if (ang < 28 || ang > 152) return null;
+  }
+  return orderQuadPts(poly);
+}
+function orderQuadPts(poly) {
+  const bySum = [...poly].sort((a, b) => (a[0] + a[1]) - (b[0] + b[1]));
+  const byDiff = [...poly].sort((a, b) => (a[0] - a[1]) - (b[0] - b[1]));
+  const tl = bySum[0], br = bySum[3], bl = byDiff[0], tr = byDiff[3];
+  const ids = new Set([tl, tr, br, bl]);
+  if (ids.size !== 4) { // fallback: angular sort around centroid, start top-left-most
+    const cx = poly.reduce((s, p) => s + p[0], 0) / 4, cy = poly.reduce((s, p) => s + p[1], 0) / 4;
+    const sorted = [...poly].sort((a, b) => Math.atan2(a[1] - cy, a[0] - cx) - Math.atan2(b[1] - cy, b[0] - cx));
+    let tlIdx = 0, tlV = Infinity;
+    sorted.forEach((p, i) => { const v = p[0] + p[1]; if (v < tlV) { tlV = v; tlIdx = i; } });
+    return [0, 1, 2, 3].map(i => sorted[(tlIdx + i) % 4]);
+  }
+  return [tl, tr, br, bl];
+}
+
+/** Sub-pixel page-edge refinement on a ≤2200px grayscale: sample each edge,
+    find the paper/background crossing along the normal, PCA-fit lines,
+    intersect them into corners. */
+function refineQuadEdges(photo, quadFull) {
+  const g = photo._gray2200 || (photo._gray2200 = grayFrom(photo.bmp, 2200));
+  const sc = 1 / g.scale;
+  const q = quadFull.map(p => ({ x: p.x * sc, y: p.y * sc }));
+  const cx = q.reduce((s, p) => s + p.x, 0) / 4, cy = q.reduce((s, p) => s + p.y, 0) / 4;
+  const sample = (x, y) => {
+    const xi = clamp(x | 0, 0, g.w - 2), yi = clamp(y | 0, 0, g.h - 2);
+    const fx = x - xi, fy = y - yi;
+    const i = yi * g.w + xi;
+    return g.data[i] * (1 - fx) * (1 - fy) + g.data[i + 1] * fx * (1 - fy) +
+           g.data[i + g.w] * (1 - fx) * fy + g.data[i + g.w + 1] * fx * fy;
+  };
+  const lines = [];
+  const win = Math.max(6, Math.min(g.w, g.h) * 0.008);
+  for (let e = 0; e < 4; e++) {
+    const a = q[e], b = q[(e + 1) % 4];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+    const mx = (a.x + b.x) / 2 - cx, my = (a.y + b.y) / 2 - cy;
+    let nx = -uy, ny = ux; // outward normal
+    if (nx * mx + ny * my < 0) { nx = -nx; ny = -ny; }
+    const pts = [];
+    for (let s = 0; s < 15; s++) {
+      const t = 0.10 + 0.80 * s / 14;
+      const px = a.x + (b.x - a.x) * t, py = a.y + (b.y - a.y) * t;
+      const inner = [], outer = [];
+      for (let d = 3; d <= win; d++) {
+        inner.push(sample(px - nx * d, py - ny * d));
+        outer.push(sample(px + nx * d, py + ny * d));
+      }
+      const iv = median(inner), ov = median(outer);
+      if (Math.abs(iv - ov) < 14) continue;
+      const th = (iv + ov) / 2;
+      // walk inside → outside, find first threshold crossing, sub-pixel interpolate
+      let prev = sample(px - nx * win, py - ny * win), found = null;
+      for (let d = -win + 0.5; d <= win; d += 0.5) {
+        const v = sample(px + nx * d, py + ny * d);
+        if ((prev - th) * (v - th) <= 0 && prev !== v) {
+          const f = (th - prev) / (v - prev);
+          found = d - 0.5 + f * 0.5;
+          break;
+        }
+        prev = v;
+      }
+      if (found !== null && Math.abs(found) <= win) {
+        pts.push([px + nx * found, py + ny * found]);
+      }
+    }
+    if (pts.length < 6) { lines.push(null); continue; }
+    lines.push(fitLine(pts));
+  }
+  const out = [];
+  for (let i = 0; i < 4; i++) {
+    const l1 = lines[(i + 3) % 4], l2 = lines[i]; // edges meeting at corner i
+    let pt = null;
+    if (l1 && l2) pt = lineIntersect(l1, l2);
+    if (!pt || Math.hypot(pt.x - q[i].x, pt.y - q[i].y) > Math.min(g.w, g.h) * 0.03) pt = q[i];
+    out.push({ x: pt.x * g.scale, y: pt.y * g.scale });
+  }
+  return out;
+}
+function fitLine(pts) {
+  const n = pts.length;
+  let mx = 0, my = 0;
+  for (const p of pts) { mx += p[0]; my += p[1]; }
+  mx /= n; my /= n;
+  let sxx = 0, sxy = 0, syy = 0;
+  for (const p of pts) {
+    const dx = p[0] - mx, dy = p[1] - my;
+    sxx += dx * dx; sxy += dx * dy; syy += dy * dy;
+  }
+  const theta = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  return { px: mx, py: my, dx: Math.cos(theta), dy: Math.sin(theta) };
+}
+function lineIntersect(l1, l2) {
+  const d = l1.dx * l2.dy - l1.dy * l2.dx; // solve p1 + t·d1 = p2 + s·d2
+  if (Math.abs(d) < 1e-9) return null;
+  const t = ((l2.px - l1.px) * l2.dy - (l2.py - l1.py) * l2.dx) / d;
+  return { x: l1.px + l1.dx * t, y: l1.py + l1.dy * t };
+}
+
+function detectPage(photo) {
+  const key = `${S.detect.thresholdOff}:${S.detect.polarity}`;
+  if (photo._detKey === key && photo.autoQuad) return;
+  const g = grayOf(photo);
+  const base = otsu(g);
+  const th = clamp(base + S.detect.thresholdOff, 2, 253);
+  const tries = S.detect.polarity === 'auto' ? [true, false]
+              : S.detect.polarity === 'light' ? [true] : [false];
+  let best = null, bestLight = true;
+  for (const light of tries) {
+    const r = findPageQuadIn(g, light, th);
+    if (r && (!best || r.score > best.score)) { best = r; bestLight = light; }
+  }
+  photo._detKey = key;
+  photo._previewQuad = null;
+  photo.paperLight = bestLight;
+  if (!best) { photo.autoQuad = null; photo.quadScore = 0; return; }
+  const full = best.quad.map(p => ({ x: p.x * g.scale, y: p.y * g.scale }));
+  photo.autoQuad = refineQuadEdges(photo, full);
+  photo.quadScore = best.score;
+}
+
+/* ── WebGL: perspective warp + FX ─────────────────────────────────────── */
+const glm = { ok: false, c: null, gl: null, maxTex: 4096 };
+const VS = `attribute vec2 aPos;varying vec2 vUv;void main(){vUv=vec2(aPos.x,1.0-aPos.y);gl_Position=vec4(aPos*2.0-1.0,0.0,1.0);}`;
+const FS_WARP = `precision highp float;varying vec2 vUv;uniform sampler2D uTex;uniform mat3 uM;uniform vec2 uOut,uTexSize;
+void main(){
+  vec3 s=uM*vec3(vUv*uOut,1.0);
+  vec2 st=(s.xy/s.z)/uTexSize;
+  if(st.x<0.0||st.y<0.0||st.x>1.0||st.y>1.0){gl_FragColor=vec4(0.04,0.04,0.04,1.0);return;}
+  gl_FragColor=vec4(texture2D(uTex,st).rgb,1.0);
+}`;
+const FS_FX = `precision highp float;varying vec2 vUv;uniform sampler2D uTex;uniform vec2 uSize;
+uniform float uBright,uContrast,uSat,uInk,uInvert,uChroma,uVhs,uGlitch,uGrain,uSeed;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7))+uSeed*17.123)*43758.5453);}
+void main(){
+  vec2 uv=vUv;
+  if(uGlitch>0.001){
+    float band=floor(uv.y*14.0);
+    float r1=hash(vec2(band,3.7));
+    float gate=step(1.0-uGlitch*0.4,r1);
+    uv.x+=gate*(hash(vec2(band,9.1))-0.5)*0.24*uGlitch;
+    float r3=hash(vec2(band,5.3));
+    uv.y+=gate*step(0.82,r3)*(r3-0.91)*0.07*uGlitch;
+  }
+  if(uVhs>0.001){
+    uv.x+=sin(uv.y*uSize.y*0.7+uSeed*2.3)*0.0016*uVhs;
+    uv.x+=sin(uv.y*13.0+uSeed*1.1)*0.004*uVhs*hash(vec2(floor(uv.y*uSize.y),1.3));
+  }
+  vec2 cdir=(uv-0.5)*0.014*uChroma;
+  vec2 gsplit=vec2(0.007*uGlitch,0.0);
+  float rr=texture2D(uTex,clamp(uv+cdir+gsplit,0.0,1.0)).r;
+  vec4 cc=texture2D(uTex,clamp(uv,0.0,1.0));
+  float bb=texture2D(uTex,clamp(uv-cdir-gsplit,0.0,1.0)).b;
+  vec3 c=vec3(rr,cc.g,bb);
+  if(uVhs>0.001){
+    c*=1.0-0.20*uVhs*(0.5+0.5*sin(uv.y*uSize.y*3.14159));
+    c+=(hash(uv*uSize)-0.5)*0.10*uVhs;
+    c=mix(c,vec3(dot(c,vec3(0.3333))),0.14*uVhs);
+    c=c*0.96+0.02*uVhs;
+  }
+  if(uGrain>0.001)c+=(hash(uv*uSize+7.7)-0.5)*0.14*uGrain;
+  float lo=uInk*0.22,hi=1.0-uInk*0.22;
+  c=clamp((c-lo)/max(1e-4,hi-lo),0.0,1.0);
+  c+=uBright;
+  c=(c-0.5)*(1.0+uContrast)+0.5;
+  float g=dot(c,vec3(0.299,0.587,0.114));
+  c=mix(vec3(g),c,1.0+uSat);
+  c=mix(c,1.0-c,uInvert);
+  gl_FragColor=vec4(clamp(c,0.0,1.0),1.0);
+}`;
+function glCompile(gl, type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || 'shader error');
+  return s;
+}
+function glProgram(gl, fsSrc) {
+  const p = gl.createProgram();
+  gl.attachShader(p, glCompile(gl, gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, glCompile(gl, gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link error');
+  return p;
+}
+function initGL() {
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true })
+            || c.getContext('experimental-webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true });
+    if (!gl) return;
+    glm.c = c; glm.gl = gl;
+    glm.warp = glProgram(gl, FS_WARP);
+    glm.fx = glProgram(gl, FS_FX);
+    glm.maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096;
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
+    glm.ok = true;
+  } catch { glm.ok = false; }
+}
+function glSetup(prog, outW, outH) {
+  const gl = glm.gl;
+  if (glm.c.width !== outW || glm.c.height !== outH) { glm.c.width = outW; glm.c.height = outH; }
+  gl.viewport(0, 0, outW, outH);
+  gl.useProgram(prog);
+  const loc = gl.getAttribLocation(prog, 'aPos');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+}
+function glTexture(source) {
+  const gl = glm.gl;
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  return { tex, w: source.width, h: source.height };
+}
+/** Render tex through homography M (output px → texture px, row-major) into glm.c. */
+function glWarp(texInfo, M, outW, outH) {
+  const gl = glm.gl;
+  glSetup(glm.warp, outW, outH);
+  gl.bindTexture(gl.TEXTURE_2D, texInfo.tex);
+  gl.uniform1i(gl.getUniformLocation(glm.warp, 'uTex'), 0);
+  gl.uniform2f(gl.getUniformLocation(glm.warp, 'uOut'), outW, outH);
+  gl.uniform2f(gl.getUniformLocation(glm.warp, 'uTexSize'), texInfo.w, texInfo.h);
+  gl.uniformMatrix3fv(gl.getUniformLocation(glm.warp, 'uM'), false,
+    [M[0], M[3], M[6], M[1], M[4], M[7], M[2], M[5], M[8]]);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function glCanvasCopy(outW, outH) {
+  const c = canvas2d(outW, outH);
+  c.getContext('2d').drawImage(glm.c, 0, 0);
+  return c;
+}
+function glReadGray(outW, outH) {
+  const gl = glm.gl;
+  const px = new Uint8Array(outW * outH * 4);
+  gl.readPixels(0, 0, outW, outH, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const g = new Float32Array(outW * outH);
+  // readPixels rows are bottom-up; flip to top-down
+  for (let y = 0; y < outH; y++) {
+    const src = (outH - 1 - y) * outW * 4;
+    const dst = y * outW;
+    for (let x = 0; x < outW; x++) {
+      const i = src + x * 4;
+      g[dst + x] = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    }
+  }
+  return g;
+}
+
+/** CPU fallback: approximate the perspective warp with two affine triangles. */
+function cpuWarpToCanvas(source, M, outW, outH) {
+  const c = canvas2d(outW, outH);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, outW, outH);
+  const src = [applyH(M, 0, 0), applyH(M, outW, 0), applyH(M, outW, outH), applyH(M, 0, outH)];
+  const tris = [[0, 1, 2], [0, 2, 3]];
+  const dst = [{ x: 0, y: 0 }, { x: outW, y: 0 }, { x: outW, y: outH }, { x: 0, y: outH }];
+  for (const t of tris) {
+    const s0 = src[t[0]], s1 = src[t[1]], s2 = src[t[2]];
+    const d0 = dst[t[0]], d1 = dst[t[1]], d2 = dst[t[2]];
+    const den = (s1.x - s0.x) * (s2.y - s0.y) - (s2.x - s0.x) * (s1.y - s0.y);
+    if (Math.abs(den) < 1e-6) continue;
+    const a = ((d1.x - d0.x) * (s2.y - s0.y) - (d2.x - d0.x) * (s1.y - s0.y)) / den;
+    const b = ((d2.x - d0.x) * (s1.x - s0.x) - (d1.x - d0.x) * (s2.x - s0.x)) / den;
+    const cc = ((d1.y - d0.y) * (s2.y - s0.y) - (d2.y - d0.y) * (s1.y - s0.y)) / den;
+    const dd = ((d2.y - d0.y) * (s1.x - s0.x) - (d1.y - d0.y) * (s2.x - s0.x)) / den;
+    const e = d0.x - a * s0.x - b * s0.y;
+    const f = d0.y - cc * s0.x - dd * s0.y;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(d0.x, d0.y); ctx.lineTo(d1.x, d1.y); ctx.lineTo(d2.x, d2.y);
+    ctx.closePath();
+    ctx.clip();
+    ctx.setTransform(a, cc, b, dd, e, f);
+    ctx.drawImage(source, 0, 0);
+    ctx.restore();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  return c;
+}
+
+/* ── template helpers, orientation ────────────────────────────────────── */
+function effTemplate() {
+  if (S.template) return S.template;
+  if (S.mode === 'perframe') return S.synthT;
+  return null;
+}
+/** Frame definitions used per sheet (per-frame mode uses only the first). */
+function frameDefs() {
+  const T = effTemplate();
+  if (!T) return [];
+  return S.mode === 'perframe' ? T.frames.slice(0, 1) : T.frames;
+}
+function pageCornersMm(T) {
+  return [{ x: 0, y: 0 }, { x: T.pageW, y: 0 }, { x: T.pageW, y: T.pageH }, { x: 0, y: T.pageH }];
+}
+function rotatedQuad(quad, k) {
+  return [0, 1, 2, 3].map(i => quad[(i + k) % 4]);
+}
+function effQuad(photo) {
+  return photo.manualQuad || photo.autoQuad;
+}
+function inkMaskOf(gray, w, h) {
+  const sorted = Float32Array.from(gray).sort();
+  const med = sorted[sorted.length >> 1];
+  const mask = new Uint8Array(w * h);
+  let count = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (Math.abs(gray[i] - med) > 34) { mask[i] = 1; count++; }
+  }
+  return { mask, count };
+}
+let _tplSmall = null; // cached downscaled template ink mask for orientation checks
+function templateInkSmall() {
+  const T = effTemplate();
+  if (!T || !T.raster) return null;
+  if (_tplSmall && _tplSmall.src === T.raster) return _tplSmall;
+  const w = 200, h = Math.max(1, Math.round(w * T.pageH / T.pageW));
+  const g = grayFrom(T.raster, Math.max(w, h));
+  const { mask } = inkMaskOf(Float32Array.from(g.data), g.w, g.h);
+  _tplSmall = { src: T.raster, mask, w: g.w, h: g.h };
+  return _tplSmall;
+}
+/** Pick the page orientation (corner-order rotation 0–3) whose rectified ink
+    pattern best matches the template raster. */
+function autoOrient(photo) {
+  const T = effTemplate();
+  const quad = effQuad(photo);
+  if (!T || !quad) { photo.rotAuto = 0; return; }
+  const tpl = templateInkSmall();
+  const sideLens = [0, 1, 2, 3].map(i => Math.hypot(quad[(i + 1) % 4].x - quad[i].x, quad[(i + 1) % 4].y - quad[i].y));
+  const quadAspect = ((sideLens[0] + sideLens[2]) / 2) / Math.max(1, (sideLens[1] + sideLens[3]) / 2);
+  const pageAspect = T.pageW / T.pageH;
+  const ks = [0, 1, 2, 3].filter(k => {
+    const a = (k % 2 === 0) ? quadAspect : 1 / quadAspect;
+    return Math.abs(Math.log(a / pageAspect)) < 0.35;
+  });
+  if (!ks.length) { photo.rotAuto = 0; return; }
+  if (!tpl || ks.length === 1) { photo.rotAuto = ks[0]; return; }
+  const g = grayOf(photo);
+  const sc = 1 / g.scale;
+  let bestK = ks[0], bestScore = -1;
+  for (const k of ks) {
+    const H = homographyFrom(pageCornersMm(T), rotatedQuad(quad, k));
+    if (!H) continue;
+    // sample rectified gray at the template-mask resolution straight from the small gray
+    const w = tpl.w, h = tpl.h;
+    const out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p = applyH(H, (x + 0.5) / w * T.pageW, (y + 0.5) / h * T.pageH);
+        const gx = clamp(p.x * sc, 0, g.w - 1.001), gy = clamp(p.y * sc, 0, g.h - 1.001);
+        const xi = gx | 0, yi = gy | 0, fx = gx - xi, fy = gy - yi;
+        const i = yi * g.w + xi;
+        out[y * w + x] = g.data[i] * (1 - fx) * (1 - fy) + g.data[i + 1] * fx * (1 - fy) +
+                         g.data[i + g.w] * (1 - fx) * fy + g.data[i + g.w + 1] * fx * fy;
+      }
+    }
+    const { mask } = inkMaskOf(out, w, h);
+    let inter = 0, nA = 0, nB = 0;
+    for (let i = 0; i < mask.length; i++) {
+      nA += tpl.mask[i]; nB += mask[i];
+      if (tpl.mask[i] && mask[i]) inter++;
+    }
+    const score = inter / Math.max(1, Math.sqrt(nA * nB));
+    if (score > bestScore) { bestScore = score; bestK = k; }
+  }
+  photo.rotAuto = bestK;
+}
+
+/* ── refinement: template-anchored frame corners ──────────────────────── */
+const REF_WIN_MM = 12, REF_SEARCH_MM = 3, REF_STEP_MM = 0.25;
+/** Measure the local offset of the photographed content vs the template at
+    point (mmX, mmY): correlate binary ink masks over a ± search window. */
+function measureAnchor(T, texInfo, texScale, H, mmX, mmY) {
+  const s = T.rasterPpmm;
+  const winPx = Math.round(REF_WIN_MM * s);
+  const searchPx = Math.round(REF_SEARCH_MM * s);
+  const patchPx = winPx + 2 * searchPx;
+  // template window (raster space)
+  const tc = T.raster.getContext('2d', { willReadFrequently: true });
+  const tx = Math.round(mmX * s - winPx / 2), ty = Math.round(mmY * s - winPx / 2);
+  if (tx < 0 || ty < 0 || tx + winPx > T.raster.width || ty + winPx > T.raster.height) return null;
+  const tData = tc.getImageData(tx, ty, winPx, winPx).data;
+  const tGray = new Float32Array(winPx * winPx);
+  for (let i = 0, j = 0; j < tGray.length; i += 4, j++) tGray[j] = 0.299 * tData[i] + 0.587 * tData[i + 1] + 0.114 * tData[i + 2];
+  const tInk = inkMaskOf(tGray, winPx, winPx);
+  if (tInk.count < 24) return null; // nothing printed near this corner to anchor on
+  // photo patch via GL warp: dest px → mm → source px → texture px
+  const mm0x = mmX - patchPx / (2 * s), mm0y = mmY - patchPx / (2 * s);
+  const A = [1 / s, 0, mm0x, 0, 1 / s, mm0y, 0, 0, 1]; // dest px → mm
+  const M = multH([texScale, 0, 0, 0, texScale, 0, 0, 0, 1], multH(H, A));
+  glWarp(texInfo, M, patchPx, patchPx);
+  const pGray = glReadGray(patchPx, patchPx);
+  const pInk = inkMaskOf(pGray, patchPx, patchPx);
+  if (pInk.count < 12) return null;
+  // correlate: offset (in template-raster px), template window vs shifted patch region
+  const stepPx = Math.max(1, Math.round(REF_STEP_MM * s));
+  let best = -1, bestDx = 0, bestDy = 0;
+  const scores = new Map();
+  const scoreAt = (dx, dy) => {
+    const key = dx + ':' + dy;
+    if (scores.has(key)) return scores.get(key);
+    let inter = 0, nP = 0;
+    const ox = searchPx + dx, oy = searchPx + dy;
+    for (let y = 0; y < winPx; y++) {
+      const tRow = y * winPx, pRow = (y + oy) * patchPx + ox;
+      for (let x = 0; x < winPx; x++) {
+        const p = pInk.mask[pRow + x];
+        nP += p;
+        if (p && tInk.mask[tRow + x]) inter++;
+      }
+    }
+    const sc = inter / Math.max(1, Math.sqrt(tInk.count * Math.max(nP, tInk.count * 0.2)));
+    scores.set(key, sc);
+    return sc;
+  };
+  for (let dy = -searchPx; dy <= searchPx; dy += stepPx) {
+    for (let dx = -searchPx; dx <= searchPx; dx += stepPx) {
+      const sc = scoreAt(dx, dy);
+      if (sc > best) { best = sc; bestDx = dx; bestDy = dy; }
+    }
+  }
+  if (best < 0.14) return null;
+  // parabola sub-pixel refine on the score peak, per axis
+  const s0 = scoreAt(bestDx - stepPx, bestDy), s1 = best, s2 = scoreAt(bestDx + stepPx, bestDy);
+  const t0 = scoreAt(bestDx, bestDy - stepPx), t2 = scoreAt(bestDx, bestDy + stepPx);
+  let fx = 0, fy = 0;
+  const denX = s0 - 2 * s1 + s2, denY = t0 - 2 * s1 + t2;
+  if (Math.abs(denX) > 1e-6) fx = clamp(0.5 * (s0 - s2) / denX, -1, 1) * stepPx;
+  if (Math.abs(denY) > 1e-6) fy = clamp(0.5 * (t0 - t2) / denY, -1, 1) * stepPx;
+  return { dx: (bestDx + fx) / s, dy: (bestDy + fy) / s, score: best };
+}
+
+/* ── pipeline ─────────────────────────────────────────────────────────── */
+const framesPerSheet = () => frameDefs().length;
+const globalFrameCount = () => S.photos.length * framesPerSheet();
+const trimmedCount = () => {
+  const n = globalFrameCount();
+  return S.anim.trim > 0 ? Math.min(S.anim.trim, n) : n;
+};
+const framesBuilt = () => {
+  let n = 0;
+  for (const fr of F.base.values()) if (fr && fr.canvas) n++;
+  return n;
+};
+function quadCenter(q) {
+  return { x: (q[0].x + q[1].x + q[2].x + q[3].x) / 4, y: (q[0].y + q[1].y + q[2].y + q[3].y) / 4 };
+}
+function expandQuadMm(q, pad) {
+  const un = (a, b) => { const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l }; };
+  const u = un(q[0], q[1]), v = un(q[0], q[3]);
+  return [
+    { x: q[0].x - u.x * pad - v.x * pad, y: q[0].y - u.y * pad - v.y * pad },
+    { x: q[1].x + u.x * pad - v.x * pad, y: q[1].y + u.y * pad - v.y * pad },
+    { x: q[2].x + u.x * pad + v.x * pad, y: q[2].y + u.y * pad + v.y * pad },
+    { x: q[3].x - u.x * pad + v.x * pad, y: q[3].y - u.y * pad + v.y * pad },
+  ];
+}
+
+async function buildPhotoAll(photo, sheetIdx, gen) {
+  const T = effTemplate();
+  const fdefs = frameDefs();
+  const fpsN = fdefs.length;
+  const quad0 = effQuad(photo);
+  const setPlaceholders = () => { for (let li = 0; li < fpsN; li++) F.base.set(sheetIdx * fpsN + li, null); };
+  if (!quad0) { G.perPhoto.delete(photo.id); setPlaceholders(); return; }
+  const quad = rotatedQuad(quad0, (photo.rotAuto + photo.rotUser) & 3);
+  const H = homographyFrom(pageCornersMm(T), quad);
+  if (!H) { G.perPhoto.delete(photo.id); setPlaceholders(); return; }
+  const geo = {
+    H, quad,
+    quadsMm: fdefs.map(f => f.quad.map(p => ({ x: p.x, y: p.y }))),
+    nominalMm: fdefs.map(f => f.quad.map(p => ({ x: p.x, y: p.y }))),
+    anchors: [], rect: null, rectPpmm: 0,
+  };
+  G.perPhoto.set(photo.id, geo);
+
+  let texInfo = null, texScale = 1;
+  if (glm.ok) {
+    let src = photo.bmp;
+    if (Math.max(photo.w, photo.h) > glm.maxTex) {
+      texScale = glm.maxTex / Math.max(photo.w, photo.h);
+      if (!photo._texBmp || photo._texScale !== texScale) {
+        photo._texBmp = await createImageBitmap(photo.bmp, {
+          resizeWidth: Math.round(photo.w * texScale),
+          resizeHeight: Math.round(photo.h * texScale),
+          resizeQuality: 'high',
+        });
+        photo._texScale = texScale;
+      }
+      src = photo._texBmp;
+    }
+    try { texInfo = glTexture(src); } catch { texInfo = null; }
+  }
+  const texScaleH = [texScale, 0, 0, 0, texScale, 0, 0, 0, 1];
+
+  try {
+    /* anchors: template-guided per-corner refinement */
+    if (S.detect.refine && T.raster && texInfo) {
+      const pts = new Map();
+      geo.quadsMm.forEach((q, fi) => q.forEach((p, ci) => {
+        const key = Math.round(p.x * 4) + ':' + Math.round(p.y * 4);
+        if (!pts.has(key)) pts.set(key, { x: p.x, y: p.y, uses: [], ok: false, dx: 0, dy: 0 });
+        pts.get(key).uses.push([fi, ci]);
+      }));
+      let done = 0;
+      for (const a of pts.values()) {
+        const m = measureAnchor(T, texInfo, texScale, H, a.x, a.y);
+        if (m) {
+          a.ok = true; a.dx = m.dx; a.dy = m.dy; a.score = m.score;
+          for (const [fi, ci] of a.uses) {
+            geo.quadsMm[fi][ci].x += m.dx;
+            geo.quadsMm[fi][ci].y += m.dy;
+          }
+        }
+        geo.anchors.push(a);
+        if ((++done & 7) === 0) {
+          status(`refining sheet ${sheetIdx + 1}/${S.photos.length} — anchor ${done}/${pts.size}`);
+          await nextFramePaint();
+          if (gen !== pipeGen) return;
+        }
+      }
+    }
+
+    /* rectified page preview */
+    {
+      const prevW = Math.min(1400, Math.max(480, Math.round(T.pageW * 4)));
+      const ppmm = prevW / T.pageW;
+      const prevH = Math.max(1, Math.round(T.pageH * ppmm));
+      const A = [1 / ppmm, 0, 0, 0, 1 / ppmm, 0, 0, 0, 1];
+      if (texInfo) {
+        glWarp(texInfo, multH(texScaleH, multH(H, A)), prevW, prevH);
+        geo.rect = glCanvasCopy(prevW, prevH);
+      } else {
+        geo.rect = cpuWarpToCanvas(photo.bmp, multH(H, A), prevW, prevH);
+      }
+      geo.rectPpmm = ppmm;
+    }
+
+    /* frame extraction (padded, so stabilization can shift without gaps) */
+    for (let li = 0; li < fpsN; li++) {
+      const q = geo.quadsMm[li];
+      const wMm = (Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) + Math.hypot(q[2].x - q[3].x, q[2].y - q[3].y)) / 2;
+      const hMm = (Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y) + Math.hypot(q[2].x - q[1].x, q[2].y - q[1].y)) / 2;
+      const wPx = Math.max(8, Math.round(wMm * G.outPpmm));
+      const hPx = Math.max(8, Math.round(hMm * G.outPpmm));
+      const pad = Math.ceil(0.12 * Math.max(wPx, hPx));
+      const padMm = pad / G.outPpmm;
+      const eq = expandQuadMm(q, padMm);
+      const W = wPx + 2 * pad, Hh = hPx + 2 * pad;
+      const A = homographyFrom(
+        [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: Hh }, { x: 0, y: Hh }], eq);
+      if (!A) { F.base.set(sheetIdx * fpsN + li, null); continue; }
+      let canvas;
+      if (texInfo) {
+        glWarp(texInfo, multH(texScaleH, multH(H, A)), W, Hh);
+        canvas = glCanvasCopy(W, Hh);
+      } else {
+        canvas = cpuWarpToCanvas(photo.bmp, multH(H, A), W, Hh);
+      }
+      F.base.set(sheetIdx * fpsN + li, { canvas, pad, w: wPx, h: hPx, final: null, finalKey: '' });
+      if ((li & 3) === 3) {
+        status(`extracting sheet ${sheetIdx + 1}/${S.photos.length} — frame ${li + 1}/${fpsN}`);
+        progress((sheetIdx * fpsN + li + 1) / Math.max(1, globalFrameCount()));
+        await nextFramePaint();
+        if (gen !== pipeGen) return;
+      }
+    }
+  } finally {
+    if (texInfo) glm.gl.deleteTexture(texInfo.tex);
+  }
+}
+
+async function rebuildPipeline() {
+  const gen = ++pipeGen;
+  ST.token++;
+  ST.match.clear(); ST.edges = null; ST.offsets = null; ST.measuring = false;
+  F.base.clear();
+  G.perPhoto.clear();
+  invalidPlaylist = true;
+  updateSourcesUI();
+  updateStepGates();
+  requestRedraw();
+  if (!S.photos.length) { status(S.template ? 'template ✓ — now add sheet photos' : 'ready'); syncBadge(); return; }
+
+  status('detecting pages…');
+  progress(0);
+  for (let i = 0; i < S.photos.length; i++) {
+    detectPage(S.photos[i]);
+    progress((i + 1) / S.photos.length);
+    await nextFramePaint();
+    if (gen !== pipeGen) return;
+  }
+  progress(null);
+
+  if (!S.template && S.mode === 'perframe') {
+    const withQuad = S.photos.filter(p => effQuad(p));
+    if (withQuad.length) {
+      const aspects = withQuad.map(p => {
+        const q = effQuad(p);
+        const w = (Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) + Math.hypot(q[2].x - q[3].x, q[2].y - q[3].y)) / 2;
+        const h = (Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y) + Math.hypot(q[2].x - q[1].x, q[2].y - q[1].y)) / 2;
+        return w / Math.max(1, h);
+      });
+      const a = median(aspects);
+      const pw = 200, ph = 200 / Math.max(0.1, a);
+      S.synthT = {
+        name: 'auto page', pageW: pw, pageH: ph, rasterPpmm: TPL_PPMM, raster: null, warn: [],
+        frames: [{ n: 0, quad: [{ x: 0, y: 0 }, { x: pw, y: 0 }, { x: pw, y: ph }, { x: 0, y: ph }] }],
+      };
+    } else S.synthT = null;
+  }
+  const T = effTemplate();
+  if (!T) {
+    status(S.mode === 'sheets' ? 'add the framesheet template SVG to place the frames' : 'no page detected yet', 'warn');
+    syncBadge(); updateStepGates(); requestRedraw();
+    return;
+  }
+
+  const densities = [];
+  for (const p of S.photos) {
+    if (!effQuad(p)) continue;
+    autoOrient(p);
+    const q = rotatedQuad(effQuad(p), (p.rotAuto + p.rotUser) & 3);
+    const dW = (Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) + Math.hypot(q[2].x - q[3].x, q[2].y - q[3].y)) / (2 * T.pageW);
+    const dH = (Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y) + Math.hypot(q[2].x - q[1].x, q[2].y - q[1].y)) / (2 * T.pageH);
+    densities.push((dW + dH) / 2);
+  }
+  G.outPpmm = clamp(median(densities) || 4, 0.5, 40);
+
+  for (let i = 0; i < S.photos.length; i++) {
+    await buildPhotoAll(S.photos[i], i, gen);
+    if (gen !== pipeGen) return;
+  }
+  progress(null);
+  const missing = S.photos.filter(p => !effQuad(p)).length;
+  status(missing
+    ? `✓ ${framesBuilt()} frames — ${missing} photo${missing > 1 ? 's' : ''} without a detected page (fix in 02 DETECT)`
+    : `✓ ${framesBuilt()} frames extracted at ${G.outPpmm.toFixed(1)} px/mm`, missing ? 'warn' : '');
+  syncBadge();
+  updateSourcesUI();
+  updateStepGates();
+  updateExportInfo();
+  renderPhotoList();
+  invalidPlaylist = true;
+  requestRedraw();
+  if (S.stab.on) ensureStab();
+}
+
+/* ── stabilization (neighbor comparison, ported from plottimation) ────── */
+function getMatchData(g) {
+  if (ST.match.has(g)) return ST.match.get(g);
+  const fr = F.base.get(g);
+  if (!fr || !fr.canvas) { ST.match.set(g, null); return null; }
+  const step = Math.max(1, Math.ceil(Math.sqrt((fr.w * fr.h) / 60000)));
+  const sw = Math.max(1, Math.floor(fr.w / step)), sh = Math.max(1, Math.floor(fr.h / step));
+  const c = canvas2d(sw, sh);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(fr.canvas, fr.pad, fr.pad, fr.w, fr.h, 0, 0, sw, sh);
+  const d = ctx.getImageData(0, 0, sw, sh).data;
+  const luma = new Float32Array(sw * sh);
+  for (let i = 0, j = 0; j < luma.length; i += 4, j++) {
+    luma[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+  }
+  const md = { data: luma, w: sw, h: sh, scaleX: fr.w / sw, scaleY: fr.h / sh };
+  ST.match.set(g, md);
+  return md;
+}
+function shiftScore(A, B, dx, dy) {
+  const w = A.w, h = A.h;
+  const x0 = Math.max(0, -dx), y0 = Math.max(0, -dy);
+  const x1 = Math.min(w, w - dx), y1 = Math.min(h, h - dy);
+  if (x1 <= x0 || y1 <= y0) return Infinity;
+  let sum = 0, n = 0;
+  for (let y = y0; y < y1; y++) {
+    const ra = y * w, rb = (y + dy) * w + dx;
+    for (let x = x0; x < x1; x++) {
+      sum += Math.abs(A.data[ra + x] - B.data[rb + x]);
+      n++;
+    }
+  }
+  return sum / Math.max(1, n);
+}
+/** Integer translation of B relative to A (coarse-to-fine over ±10 samples). */
+function estimatePairShift(A, B) {
+  const maxX = Math.min(10, Math.floor(A.w / 2)), maxY = Math.min(10, Math.floor(A.h / 2));
+  let bestDx = 0, bestDy = 0, bestScore = Infinity;
+  const evalAt = (dx, dy) => {
+    const s = shiftScore(A, B, dx, dy);
+    if (s < bestScore) { bestScore = s; bestDx = dx; bestDy = dy; }
+  };
+  for (let dy = -maxY; dy <= maxY; dy += 2) for (let dx = -maxX; dx <= maxX; dx += 2) evalAt(dx, dy);
+  const cx = bestDx, cy = bestDy;
+  for (let dy = Math.max(-maxY, cy - 1); dy <= Math.min(maxY, cy + 1); dy++) {
+    for (let dx = Math.max(-maxX, cx - 1); dx <= Math.min(maxX, cx + 1); dx++) {
+      if (dx === cx && dy === cy) continue;
+      evalAt(dx, dy);
+    }
+  }
+  return {
+    dx: bestDx * 0.5 * (A.scaleX + B.scaleX), dy: bestDy * 0.5 * (A.scaleY + B.scaleY),
+    dxSample: bestDx, dySample: bestDy,
+  };
+}
+function edgeWeight(kind, dxS, dyS) {
+  let w = kind === 'horizontal' ? 1.0 : kind === 'vertical' ? 0.6 : 0.1;
+  const m = Math.max(Math.abs(dxS), Math.abs(dyS));
+  if (m >= 10) w *= 0.2; else if (m >= 9) w *= 0.35; else if (m >= 8) w *= 0.55;
+  return w;
+}
+/** Physical-neighbor edge topology over all sheets + weak loop seam. */
+function edgeDescriptors() {
+  const fdefs = frameDefs();
+  const fpsN = fdefs.length;
+  const N = trimmedCount();
+  if (N <= 1 || !fpsN) return [];
+  const centers = fdefs.map(f => quadCenter(f.quad));
+  const hMed = median(fdefs.map(f => Math.abs(f.quad[3].y - f.quad[0].y))) || 10;
+  const rows = [];
+  const rowOf = new Array(fpsN).fill(0);
+  const order = fdefs.map((_, i) => i).sort((a, b) => centers[a].y - centers[b].y);
+  for (const i of order) {
+    let placed = false;
+    for (let r = 0; r < rows.length; r++) {
+      if (Math.abs(centers[i].y - rows[r].y) < hMed * 0.5) { rows[r].items.push(i); rowOf[i] = r; placed = true; break; }
+    }
+    if (!placed) { rowOf[i] = rows.length; rows.push({ y: centers[i].y, items: [i] }); }
+  }
+  rows.forEach(r => r.items.sort((a, b) => centers[a].x - centers[b].x));
+  const local = [];
+  rows.forEach((r, ri) => {
+    for (let c = 0; c < r.items.length - 1; c++) local.push({ a: r.items[c], b: r.items[c + 1], kind: 'horizontal' });
+    if (ri < rows.length - 1) {
+      const next = rows[ri + 1];
+      local.push({ a: r.items[r.items.length - 1], b: next.items[0], kind: 'rowBreak' });
+      for (const i of r.items) { // vertical: nearest x in next row
+        let best = -1, bd = Infinity;
+        for (const j of next.items) {
+          const d = Math.abs(centers[j].x - centers[i].x);
+          if (d < bd) { bd = d; best = j; }
+        }
+        if (best >= 0 && bd < hMed) local.push({ a: i, b: best, kind: 'vertical' });
+      }
+    }
+  });
+  const edges = [];
+  const sheets = S.photos.length;
+  for (let s = 0; s < sheets; s++) {
+    for (const e of local) {
+      const from = s * fpsN + e.a, to = s * fpsN + e.b;
+      if (from < N && to < N) edges.push({ from, to, kind: e.kind });
+    }
+    if (s < sheets - 1) {
+      const from = s * fpsN + fpsN - 1, to = (s + 1) * fpsN;
+      if (from < N && to < N) edges.push({ from, to, kind: 'rowBreak' });
+    }
+  }
+  if (N > 2) edges.push({ from: N - 1, to: 0, kind: 'seam' });
+  return edges;
+}
+function solveGraphAxis(edges, count, key) {
+  if (!count || !edges.length) return new Array(count).fill(0);
+  const lambda = Math.max(0, S.stab.lambda);
+  const mat = Array.from({ length: count }, () => new Array(count).fill(0));
+  const rhs = new Array(count).fill(0);
+  for (const e of edges) {
+    const w = e.weight;
+    if (w <= 0) continue;
+    const d = e[key];
+    mat[e.from][e.from] += w; mat[e.to][e.to] += w;
+    mat[e.from][e.to] -= w; mat[e.to][e.from] -= w;
+    rhs[e.from] -= w * d; rhs[e.to] += w * d;
+  }
+  for (let i = 0; i < count; i++) mat[i][i] += lambda;
+  const sol = solveLinear(mat, rhs);
+  if (!sol) return new Array(count).fill(0);
+  const mean = sol.reduce((s, v) => s + v, 0) / count;
+  return sol.map(v => v - mean);
+}
+function solveStabOffsets() {
+  if (!ST.edges || !ST.edges.length) { ST.offsets = null; return; }
+  const N = trimmedCount();
+  const xs = solveGraphAxis(ST.edges, N, 'dx');
+  const ys = solveGraphAxis(ST.edges, N, 'dy');
+  const offsets = xs.map((x, i) => ({ x, y: ys[i] }));
+  const sample = F.base.get(0);
+  const capX = sample ? sample.w * 0.10 : 40, capY = sample ? sample.h * 0.10 : 40;
+  const maxX = Math.max(0, ...offsets.map(o => Math.abs(o.x)));
+  const maxY = Math.max(0, ...offsets.map(o => Math.abs(o.y)));
+  const sx = maxX > capX && maxX > 1e-6 ? capX / maxX : 1;
+  const sy = maxY > capY && maxY > 1e-6 ? capY / maxY : 1;
+  let mx = 0, my = 0;
+  for (const o of offsets) { o.x *= sx; o.y *= sy; mx += o.x; my += o.y; }
+  mx /= offsets.length; my /= offsets.length;
+  for (const o of offsets) { o.x -= mx; o.y -= my; }
+  ST.offsets = offsets;
+}
+async function ensureStab() {
+  if (!S.stab.on || ST.measuring) return;
+  if (ST.offsets) return;
+  if (ST.edges) { solveStabOffsets(); requestRedraw(); return; }
+  const N = trimmedCount();
+  if (N <= 1 || framesBuilt() < N) return;
+  const token = ++ST.token;
+  ST.measuring = true;
+  const desc = edgeDescriptors();
+  const edges = [];
+  updateStabHint(`measuring 0/${desc.length}`);
+  for (let i = 0; i < desc.length; i++) {
+    const A = getMatchData(desc[i].from), B = getMatchData(desc[i].to);
+    if (A && B) {
+      const sh = estimatePairShift(A, B);
+      edges.push({ from: desc[i].from, to: desc[i].to, dx: sh.dx, dy: sh.dy, kind: desc[i].kind,
+                   weight: edgeWeight(desc[i].kind, sh.dxSample, sh.dySample) });
+    }
+    if ((i & 3) === 3) {
+      updateStabHint(`measuring ${i + 1}/${desc.length}`);
+      await nextFramePaint();
+      if (token !== ST.token) { ST.measuring = false; return; }
+    }
+  }
+  ST.measuring = false;
+  if (token !== ST.token) return;
+  ST.edges = edges;
+  solveStabOffsets();
+  updateStabHint();
+  requestRedraw();
+}
+function stabOffsetOf(g) {
+  if (!S.stab.on || !ST.offsets) return { x: 0, y: 0 };
+  const o = ST.offsets[g];
+  if (!o) return { x: 0, y: 0 };
+  const k = S.stab.strength / 100;
+  return { x: o.x * k, y: o.y * k };
+}
+function updateStabHint(text) {
+  const el = $('stabStatusHint');
+  if (text) { el.textContent = 'solving pairwise shifts — ' + text; return; }
+  if (!S.stab.on) { el.textContent = 'off — frames use detected geometry only'; return; }
+  if (ST.offsets) {
+    const m = Math.max(0, ...ST.offsets.map(o => Math.hypot(o.x, o.y)));
+    el.textContent = `✓ solved · largest correction ${m.toFixed(1)} px`;
+  } else el.textContent = ST.measuring ? 'solving…' : 'waiting for frames…';
+}
+
+/* ── final frames + playback ──────────────────────────────────────────── */
+function finalFrame(g) {
+  const fr = F.base.get(g);
+  if (!fr || !fr.canvas) return null;
+  const o = stabOffsetOf(g);
+  const key = o.x.toFixed(2) + ':' + o.y.toFixed(2);
+  if (fr.final && fr.finalKey === key) return fr.final;
+  const c = fr.final && fr.final.width === fr.w && fr.final.height === fr.h ? fr.final : canvas2d(fr.w, fr.h);
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.clearRect(0, 0, fr.w, fr.h);
+  ctx.drawImage(fr.canvas, fr.pad + o.x, fr.pad + o.y, fr.w, fr.h, 0, 0, fr.w, fr.h);
+  fr.final = c;
+  fr.finalKey = key;
+  return c;
+}
+let _playlist = [];
+let invalidPlaylist = true;
+function playlist() {
+  if (!invalidPlaylist) return _playlist;
+  const n = trimmedCount();
+  let base = Array.from({ length: n }, (_, i) => i);
+  if (S.anim.reverse) base.reverse();
+  if (S.anim.pingpong && n > 2) base = base.concat(base.slice(1, -1).reverse());
+  _playlist = base;
+  invalidPlaylist = false;
+  S.ui.pos = clamp(S.ui.pos, 0, Math.max(0, base.length - 1));
+  syncTransport();
+  return _playlist;
+}
+
+/* ── FX ───────────────────────────────────────────────────────────────── */
+function fxActive() {
+  const L = S.look;
+  return !!(L.bright || L.contrast || L.sat || L.ink || L.invert || L.chroma || L.vhs || L.glitch || L.grain);
+}
+let _fxTex = null;
+/** Renders src through the look/FX shader; returns a canvas to consume immediately. */
+function applyFx(src, seed, outW, outH) {
+  outW = outW || src.width; outH = outH || src.height;
+  const L = S.look;
+  if (!fxActive() && outW === src.width && outH === src.height) return src;
+  if (!glm.ok) {
+    // reduced CPU fallback: color filters only
+    const c = canvas2d(outW, outH);
+    const ctx = c.getContext('2d');
+    ctx.filter = `brightness(${1 + L.bright / 100}) contrast(${1 + L.contrast / 100}) saturate(${1 + L.sat / 100}) invert(${L.invert ? 1 : 0})`;
+    ctx.drawImage(src, 0, 0, outW, outH);
+    return c;
+  }
+  const gl = glm.gl;
+  glSetup(glm.fx, outW, outH);
+  if (_fxTex) gl.deleteTexture(_fxTex.tex);
+  _fxTex = glTexture(src);
+  gl.bindTexture(gl.TEXTURE_2D, _fxTex.tex);
+  const u = n => gl.getUniformLocation(glm.fx, n);
+  gl.uniform1i(u('uTex'), 0);
+  gl.uniform2f(u('uSize'), outW, outH);
+  gl.uniform1f(u('uBright'), L.bright / 100 * 0.6);
+  gl.uniform1f(u('uContrast'), L.contrast / 100);
+  gl.uniform1f(u('uSat'), L.sat / 100);
+  gl.uniform1f(u('uInk'), L.ink / 100);
+  gl.uniform1f(u('uInvert'), L.invert ? 1 : 0);
+  gl.uniform1f(u('uChroma'), L.chroma / 100);
+  gl.uniform1f(u('uVhs'), L.vhs / 100);
+  gl.uniform1f(u('uGlitch'), L.glitch / 100);
+  gl.uniform1f(u('uGrain'), L.grain / 100);
+  gl.uniform1f(u('uSeed'), seed);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  return glm.c;
+}
+
+/* ── stage drawing ────────────────────────────────────────────────────── */
+const stage = $('stageCanvas');
+const stageCtx = stage.getContext('2d');
+let needRedraw = true;
+const requestRedraw = () => { needRedraw = true; };
+function setStageSize(w, h) {
+  if (stage.width !== w || stage.height !== h) { stage.width = w; stage.height = h; }
+}
+/** Scale the stage canvas up to fill the view (small frames stay watchable). */
+function fitStageCSS(w, h) {
+  const wrap = $('stageWrap');
+  const availW = Math.max(64, wrap.clientWidth - 30), availH = Math.max(64, wrap.clientHeight - 30);
+  const sc = Math.min(availW / w, availH / h, 6);
+  stage.style.width = Math.round(w * sc) + 'px';
+  stage.style.height = Math.round(h * sc) + 'px';
+}
+function resetStageCSS() { stage.style.width = ''; stage.style.height = ''; }
+function showEmpty(html) {
+  $('stageEmpty').innerHTML = '<span>' + html + '</span>';
+  $('stageEmpty').style.display = 'flex';
+}
+function hideEmpty() { $('stageEmpty').style.display = 'none'; }
+
+let detectViewScale = 1; // photo px → stage canvas px in the detect source view
+
+function drawStage() {
+  if (exporting) return; // exports own the GL canvas while running
+  if (S.ui.step === 'sources') return;
+  if (S.ui.step === 'detect') { drawDetect(); return; }
+  drawPreviewFrame();
+}
+function drawPreviewFrame() {
+  const pl = playlist();
+  if (!pl.length) { setStageSize(16, 16); showEmpty('no frames yet — load sources in <b>01</b> and check <b>02 DETECT</b>'); return; }
+  const g = pl[clamp(S.ui.pos, 0, pl.length - 1)];
+  const base = finalFrame(g);
+  if (!base) { setStageSize(320, 200); stageCtx.fillStyle = '#0a0a0a'; stageCtx.fillRect(0, 0, 320, 200); showEmpty('frame ' + g + ' unavailable — its page was not detected'); return; }
+  hideEmpty();
+  const out = applyFx(base, g);
+  setStageSize(out.width, out.height);
+  fitStageCSS(out.width, out.height);
+  stageCtx.drawImage(out, 0, 0);
+  $('stageInfo').textContent = `frame ${g} · ${base.width}×${base.height} px` + (S.stab.on && ST.offsets ? ' · stabilized' : '');
+}
+function drawDetect() {
+  const p = S.photos[S.ui.photoIdx];
+  syncDetectToolbar();
+  resetStageCSS();
+  if (!p) { setStageSize(16, 16); showEmpty('add photos in <b>01 SOURCES</b> first'); return; }
+  hideEmpty();
+  if (S.ui.detectView === 'rectified') drawDetectRect(p);
+  else drawDetectSource(p);
+}
+function drawDetectSource(p) {
+  const sc = Math.min(1600 / p.w, 1100 / p.h, 1);
+  const w = Math.round(p.w * sc), h = Math.round(p.h * sc);
+  detectViewScale = sc;
+  setStageSize(w, h);
+  stageCtx.drawImage(p.bmp, 0, 0, w, h);
+  const quad = p._previewQuad || effQuad(p);
+  const ctx = stageCtx;
+  if (quad) {
+    ctx.strokeStyle = '#c8f060';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    quad.forEach((pt, i) => { const x = pt.x * sc, y = pt.y * sc; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+    ctx.closePath();
+    ctx.stroke();
+    // corner handles
+    for (const pt of quad) {
+      const x = pt.x * sc, y = pt.y * sc;
+      ctx.fillStyle = '#0e0e0e';
+      ctx.fillRect(x - 6, y - 6, 12, 12);
+      ctx.strokeStyle = p.manualQuad ? '#e0a856' : '#c8f060';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x - 6, y - 6, 12, 12);
+    }
+    // small TL marker so orientation is visible
+    const k = (p.rotAuto + p.rotUser) & 3;
+    const tl = quad[k % 4];
+    ctx.fillStyle = '#c8f060';
+    ctx.font = '11px monospace';
+    ctx.fillText('TL', tl.x * sc + 9, tl.y * sc - 9);
+    $('stageInfo').textContent = (p.manualQuad ? 'manual corners' : 'auto page') +
+      (p.paperLight != null ? ` · ${p.paperLight ? 'light' : 'dark'} paper` : '');
+  } else {
+    ctx.fillStyle = 'rgba(14,14,14,.7)';
+    ctx.fillRect(0, h / 2 - 22, w, 44);
+    ctx.fillStyle = '#e0a856';
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('no page detected — adjust THRESHOLD / PAPER, or click to place corners manually', w / 2, h / 2 + 4);
+    ctx.textAlign = 'left';
+    $('stageInfo').textContent = 'no page';
+  }
+}
+function drawDetectRect(p) {
+  const geo = G.perPhoto.get(p.id);
+  if (!geo || !geo.rect) {
+    setStageSize(640, 420);
+    stageCtx.fillStyle = '#0a0a0a';
+    stageCtx.fillRect(0, 0, 640, 420);
+    showEmpty('no rectified page for this photo yet — detect the page first');
+    return;
+  }
+  const ctx = stageCtx;
+  setStageSize(geo.rect.width, geo.rect.height);
+  ctx.drawImage(geo.rect, 0, 0);
+  const s = geo.rectPpmm;
+  ctx.font = '11px monospace';
+  const fdefs = frameDefs();
+  geo.nominalMm.forEach((q) => {
+    ctx.strokeStyle = 'rgba(160,160,160,.55)';
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    q.forEach((pt, i) => { if (i) ctx.lineTo(pt.x * s, pt.y * s); else ctx.moveTo(pt.x * s, pt.y * s); });
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+  geo.quadsMm.forEach((q, fi) => {
+    ctx.strokeStyle = '#c8f060';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    q.forEach((pt, i) => { if (i) ctx.lineTo(pt.x * s, pt.y * s); else ctx.moveTo(pt.x * s, pt.y * s); });
+    ctx.closePath();
+    ctx.stroke();
+    const c = quadCenter(q);
+    ctx.fillStyle = 'rgba(200,240,96,.85)';
+    ctx.fillText(String(fdefs[fi] ? fdefs[fi].n : fi), c.x * s - 4, c.y * s + 4);
+  });
+  for (const a of geo.anchors) {
+    const x = (a.x + (a.ok ? a.dx : 0)) * s, y = (a.y + (a.ok ? a.dy : 0)) * s;
+    if (a.ok) {
+      ctx.strokeStyle = '#7ad9f2';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y);
+      ctx.moveTo(x, y - 5); ctx.lineTo(x, y + 5);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = 'rgba(224,86,86,.8)';
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  const okA = geo.anchors.filter(a => a.ok).length;
+  $('stageInfo').textContent = geo.anchors.length
+    ? `refinement anchors ${okA}/${geo.anchors.length}` : 'refinement off';
+}
+
+/* ── detect interactions: corner dragging + magnifier ─────────────────── */
+let drag = null;
+const magEl = $('magnifier');
+function stagePos(e) {
+  const r = stage.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * (stage.width / r.width), y: (e.clientY - r.top) * (stage.height / r.height) };
+}
+on(stage, 'pointerdown', e => {
+  if (S.ui.step !== 'detect' || S.ui.detectView !== 'source') return;
+  const p = S.photos[S.ui.photoIdx];
+  if (!p) return;
+  const pos = stagePos(e);
+  let quad = effQuad(p);
+  if (!quad) { // seed a quad so corners can be placed by hand
+    quad = [
+      { x: p.w * 0.15, y: p.h * 0.15 }, { x: p.w * 0.85, y: p.h * 0.15 },
+      { x: p.w * 0.85, y: p.h * 0.85 }, { x: p.w * 0.15, y: p.h * 0.85 },
+    ];
+    p.manualQuad = quad;
+    requestRedraw();
+  }
+  const hitR = Math.max(14, 10 * (stage.getBoundingClientRect().width ? stage.width / stage.getBoundingClientRect().width : 1));
+  let idx = -1, bd = Infinity;
+  quad.forEach((pt, i) => {
+    const d = Math.hypot(pt.x * detectViewScale - pos.x, pt.y * detectViewScale - pos.y);
+    if (d < bd) { bd = d; idx = i; }
+  });
+  if (bd > hitR * 1.6) return;
+  if (!p.manualQuad) p.manualQuad = quad.map(pt => ({ x: pt.x, y: pt.y }));
+  drag = { p, idx };
+  stage.setPointerCapture(e.pointerId);
+  stage.classList.add('grabber');
+  magEl.hidden = false;
+  updateDrag(e);
+});
+on(stage, 'pointermove', e => { if (drag) updateDrag(e); });
+function updateDrag(e) {
+  const pos = stagePos(e);
+  const p = drag.p;
+  p.manualQuad[drag.idx] = {
+    x: clamp(pos.x / detectViewScale, 0, p.w - 1),
+    y: clamp(pos.y / detectViewScale, 0, p.h - 1),
+  };
+  drawDetect();
+  // magnifier: 5× zoom around the corner, placed near the pointer
+  const mctx = magEl.getContext('2d');
+  const cp = p.manualQuad[drag.idx];
+  const r = Math.max(24, p.w * 0.012);
+  mctx.imageSmoothingEnabled = false;
+  mctx.fillStyle = '#000';
+  mctx.fillRect(0, 0, 132, 132);
+  mctx.drawImage(p.bmp, cp.x - r, cp.y - r, 2 * r, 2 * r, 0, 0, 132, 132);
+  const wr = $('stageWrap').getBoundingClientRect();
+  let mx = e.clientX - wr.left + 22, my = e.clientY - wr.top + 22;
+  if (mx + 140 > wr.width) mx = e.clientX - wr.left - 154;
+  if (my + 140 > wr.height) my = e.clientY - wr.top - 154;
+  magEl.style.left = mx + 'px';
+  magEl.style.top = my + 'px';
+}
+on(stage, 'pointerup', e => {
+  if (!drag) return;
+  drag = null;
+  stage.classList.remove('grabber');
+  magEl.hidden = true;
+  try { stage.releasePointerCapture(e.pointerId); } catch { /* released */ }
+  rebuildPipeline();
+});
+
+/* ── steps / toolbar / transport ──────────────────────────────────────── */
+function showStep(step) {
+  S.ui.step = step;
+  document.querySelectorAll('.step-tab').forEach(b => b.classList.toggle('active', b.dataset.step === step));
+  for (const s of ['sources', 'detect', 'animate', 'export']) {
+    $('panel-' + s).hidden = s !== step;
+  }
+  $('sourcesView').style.display = step === 'sources' ? 'flex' : 'none';
+  stage.style.display = step === 'sources' ? 'none' : 'block';
+  $('detectViewSeg').hidden = step !== 'detect';
+  $('photoNav').hidden = step !== 'detect';
+  $('transport').hidden = !(step === 'animate' || step === 'export');
+  $('stageInfo').textContent = '';
+  if (step === 'sources') {
+    if (!S.photos.length && !S.template) showEmpty('drop a <b>template SVG</b> + <b>sheet photos</b> in 01 SOURCES<br>to build an animation');
+    else hideEmpty();
+  } else hideEmpty();
+  requestRedraw();
+}
+function updateStepGates() {
+  const tabs = document.querySelectorAll('.step-tab');
+  const canDetect = S.photos.length > 0;
+  const canAnim = framesBuilt() > 0;
+  tabs.forEach(b => {
+    const s = b.dataset.step;
+    b.disabled = (s === 'detect' && !canDetect) || ((s === 'animate' || s === 'export') && !canAnim);
+    b.classList.toggle('done',
+      (s === 'sources' && S.photos.length > 0 && !!effTemplate()) ||
+      (s === 'detect' && canAnim));
+  });
+}
+function syncDetectToolbar() {
+  const p = S.photos[S.ui.photoIdx];
+  $('photoNavLbl').textContent = S.photos.length ? `${S.ui.photoIdx + 1}/${S.photos.length}` : '–';
+  $('photoNavName').textContent = p ? p.name : '';
+  $('btnPrevPhoto').disabled = S.ui.photoIdx <= 0;
+  $('btnNextPhoto').disabled = S.ui.photoIdx >= S.photos.length - 1;
+  document.querySelectorAll('#detectViewSeg button').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === S.ui.detectView));
+  const hint = $('detectStatusHint');
+  if (p) {
+    hint.textContent = effQuad(p)
+      ? (p.manualQuad ? 'page: manual corners' : 'page: auto ✓') + ` · orientation ${((p.rotAuto + p.rotUser) & 3) * 90}°`
+      : 'page: not found — tune threshold/paper or place corners by hand';
+  } else hint.textContent = '—';
+  const geo = p && G.perPhoto.get(p.id);
+  const okA = geo ? geo.anchors.filter(a => a.ok).length : 0;
+  $('refineStatusHint').textContent = S.detect.refine
+    ? (geo && geo.anchors.length ? `anchors matched ${okA}/${geo.anchors.length} on this sheet · view RECTIFIED to inspect` :
+       (S.template && S.template.raster ? 'anchors appear after extraction · view RECTIFIED to inspect' : 'needs a template SVG that rasterizes — none available'))
+    : 'off — frames sit exactly where the template puts them';
+}
+function syncTransport() {
+  const pl = _playlist || [];
+  $('inScrub').max = Math.max(0, pl.length - 1);
+  $('inScrub').value = S.ui.pos;
+  $('frameLblCur').textContent = pl.length ? 'f' + pl[clamp(S.ui.pos, 0, pl.length - 1)] : '–';
+  $('frameLblTotal').textContent = pl.length ? `${S.ui.pos + 1}/${pl.length}` : '–';
+  $('btnPlay').textContent = S.ui.playing ? '⏸' : '▶';
+}
+function syncBadge() {
+  const n = framesBuilt();
+  const el = $('statBadge');
+  if (!S.photos.length && !S.template) { el.textContent = 'no sources'; el.className = 'badge'; return; }
+  el.textContent = `${S.photos.length} photo${S.photos.length === 1 ? '' : 's'} · ${n} frames`;
+  el.className = 'badge' + (n ? ' ok' : '');
+}
+
+/* ── sources view + lists ─────────────────────────────────────────────── */
+function renderPhotoList() {
+  const list = $('photoList');
+  list.innerHTML = '';
+  S.photos.forEach((p, i) => {
+    const row = mk('div', 'rowitem' + (i === S.ui.photoIdx ? ' active' : ''));
+    row.appendChild(mk('span', 'r-idx', String(i + 1).padStart(2, '0')));
+    const img = mk('img', 'r-thumb');
+    img.src = p.thumbURL;
+    row.appendChild(img);
+    const nm = mk('span', 'r-name', p.name);
+    row.appendChild(nm);
+    const st = mk('span', 'r-sub' + (p._detKey && !effQuad(p) ? ' bad' : ''), p._detKey ? (effQuad(p) ? '✓' : '✕') : '…');
+    row.appendChild(st);
+    const up = mk('button', 'r-btn', '↑');
+    up.disabled = i === 0;
+    up.setAttribute('data-tip', 'Move this photo earlier in the animation order.');
+    on(up, 'click', ev => { ev.stopPropagation(); movePhoto(p.id, -1); });
+    const dn = mk('button', 'r-btn', '↓');
+    dn.disabled = i === S.photos.length - 1;
+    dn.setAttribute('data-tip', 'Move this photo later in the animation order.');
+    on(dn, 'click', ev => { ev.stopPropagation(); movePhoto(p.id, 1); });
+    const del = mk('button', 'r-btn del', '✕');
+    del.setAttribute('data-tip', 'Remove this photo.');
+    on(del, 'click', ev => { ev.stopPropagation(); removePhoto(p.id); });
+    row.append(up, dn, del);
+    on(row, 'click', () => { S.ui.photoIdx = i; renderPhotoList(); requestRedraw(); });
+    list.appendChild(row);
+  });
+}
+function updateSourcesUI() {
+  const T = S.template;
+  const fpsN = framesPerSheet();
+  $('kvPerSheet').textContent = fpsN ? String(fpsN) : '—';
+  $('kvSheets').textContent = String(S.photos.length);
+  $('kvTotal').textContent = String(globalFrameCount());
+  $('inTrim').max = globalFrameCount() || 9999;
+  $('inTrim').placeholder = String(globalFrameCount() || 0);
+  const info = $('templateInfo');
+  if (T) {
+    info.style.display = 'block';
+    info.innerHTML = `<b>${T.name}</b><br>page <b>${fmtMm(T.pageW)} × ${fmtMm(T.pageH)} mm</b> · <b>${T.frames.length}</b> frames` +
+      (T.warn.length ? `<br><span style="color:var(--warn)">⚠ ${T.warn.join(' · ')}</span>` : '');
+  } else {
+    info.style.display = 'none';
+  }
+  $('photosLabel').textContent = S.mode === 'perframe' ? 'Frames (one photo each)' : 'Sheets';
+  renderSourcesView();
+}
+function renderSourcesView() {
+  const view = $('sourcesView');
+  view.innerHTML = '';
+  const T = S.template;
+  if (T) {
+    const block = mk('div', 'sv-block');
+    block.appendChild(mk('div', 'section-label', 'Template — ' + T.name));
+    const wrap = mk('div');
+    wrap.id = 'svTemplateWrap';
+    const cw = 620, ch = Math.round(cw * T.pageH / T.pageW);
+    const c = canvas2d(cw, ch);
+    c.id = 'svTemplateCanvas';
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, cw, ch);
+    if (T.raster) ctx.drawImage(T.raster, 0, 0, cw, ch);
+    const s = cw / T.pageW;
+    ctx.strokeStyle = '#7aa030';
+    ctx.fillStyle = '#7aa030';
+    ctx.font = '10px monospace';
+    ctx.lineWidth = 1;
+    for (const f of T.frames) {
+      ctx.beginPath();
+      f.quad.forEach((pt, i) => { if (i) ctx.lineTo(pt.x * s, pt.y * s); else ctx.moveTo(pt.x * s, pt.y * s); });
+      ctx.closePath();
+      ctx.stroke();
+      ctx.fillText(String(f.n), f.quad[0].x * s + 3, f.quad[0].y * s + 11);
+    }
+    wrap.appendChild(c);
+    wrap.appendChild(mk('div', 'sv-meta',
+      `page <b>${fmtMm(T.pageW)} × ${fmtMm(T.pageH)} mm</b><br>frames <b>${T.frames.length}</b><br>` +
+      `raster ${T.raster ? '<b>ok</b> — refinement available' : '<span style="color:var(--warn)">failed — refinement off</span>'}`));
+    block.appendChild(wrap);
+    view.appendChild(block);
+  }
+  if (S.photos.length) {
+    const block = mk('div', 'sv-block');
+    block.appendChild(mk('div', 'section-label', (S.mode === 'perframe' ? 'Frame photos' : 'Sheets') + ' — animation order'));
+    const strip = mk('div');
+    strip.id = 'svSheets';
+    S.photos.forEach((p, i) => {
+      const card = mk('div', 'sv-sheet');
+      const img = mk('img');
+      img.src = p.thumbURL;
+      card.appendChild(img);
+      card.appendChild(mk('span', 'n', S.mode === 'perframe' ? `frame ${i}` : `sheet ${i + 1}`));
+      card.appendChild(mk('span', 's', p.name));
+      strip.appendChild(card);
+    });
+    block.appendChild(strip);
+    view.appendChild(block);
+  }
+  if (!T && !S.photos.length) {
+    view.appendChild(mk('div', 'hint', 'Nothing loaded yet — use the dropzones on the left.'));
+  }
+}
+function updateExportInfo() {
+  const d = exportDims();
+  $('kvNative').textContent = d.nw ? `${d.nw} × ${d.nh} px` : '—';
+  const pl = playlist();
+  const dur = pl.length && S.anim.fps ? (pl.length * S.out.loops / S.anim.fps) : 0;
+  $('kvDuration').textContent = dur ? dur.toFixed(1) + ' s' : '—';
+  $('exportHint').textContent = typeof VideoEncoder === 'undefined'
+    ? 'WebCodecs unavailable in this browser — MP4 export disabled, GIF/ZIP still work.' : '';
+  $('btnMp4').disabled = typeof VideoEncoder === 'undefined' || !pl.length;
+  $('btnGif').disabled = !pl.length;
+  $('btnZip').disabled = !pl.length;
+}
+function exportDims() {
+  const fr = F.base.get(0);
+  let nw = 0, nh = 0;
+  if (fr && fr.canvas) { nw = fr.w; nh = fr.h; }
+  else {
+    const fd = frameDefs()[0];
+    if (fd && G.outPpmm) {
+      nw = Math.round(Math.hypot(fd.quad[1].x - fd.quad[0].x, fd.quad[1].y - fd.quad[0].y) * G.outPpmm);
+      nh = Math.round(Math.hypot(fd.quad[3].x - fd.quad[0].x, fd.quad[3].y - fd.quad[0].y) * G.outPpmm);
+    }
+  }
+  let w = S.out.width > 0 ? Math.min(S.out.width, 8192) : nw;
+  let h = nw ? Math.round(w * nh / nw) : 0;
+  return { nw, nh, w, h };
+}
+
+/* ── ZIP (stored) ─────────────────────────────────────────────────────── */
+let _crcTable = null;
+function crc32(u8) {
+  if (!_crcTable) {
+    _crcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      _crcTable[n] = c >>> 0;
+    }
+  }
+  let c = 0xffffffff;
+  for (let i = 0; i < u8.length; i++) c = _crcTable[(c ^ u8[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function buildZip(entries) {
+  const enc = new TextEncoder();
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xffff;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xffff;
+  const chunks = [], central = [];
+  let offset = 0;
+  const u16 = v => [v & 255, (v >> 8) & 255];
+  const u32 = v => [v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255];
+  for (const e of entries) {
+    const name = enc.encode(e.name);
+    const crc = crc32(e.data);
+    const head = new Uint8Array([
+      0x50, 0x4b, 0x03, 0x04, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(dosTime), ...u16(dosDate),
+      ...u32(crc), ...u32(e.data.length), ...u32(e.data.length), ...u16(name.length), ...u16(0),
+    ]);
+    chunks.push(head, name, e.data);
+    central.push({ name, crc, size: e.data.length, offset });
+    offset += head.length + name.length + e.data.length;
+  }
+  const cdStart = offset;
+  for (const c of central) {
+    const rec = new Uint8Array([
+      0x50, 0x4b, 0x01, 0x02, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(dosTime), ...u16(dosDate),
+      ...u32(c.crc), ...u32(c.size), ...u32(c.size), ...u16(c.name.length), ...u16(0), ...u16(0),
+      ...u16(0), ...u16(0), ...u32(0), ...u32(c.offset),
+    ]);
+    chunks.push(rec, c.name);
+    offset += rec.length + c.name.length;
+  }
+  chunks.push(new Uint8Array([
+    0x50, 0x4b, 0x05, 0x06, ...u16(0), ...u16(0), ...u16(central.length), ...u16(central.length),
+    ...u32(offset - cdStart), ...u32(cdStart), ...u16(0),
+  ]));
+  return new Blob(chunks, { type: 'application/zip' });
+}
+
+/* ── exports ──────────────────────────────────────────────────────────── */
+let exporting = false;
+function exportBase() {
+  return (S.template ? S.template.name.replace(/\.svg$/i, '') : 'framesheet').replace(/[^\w.-]+/g, '_');
+}
+function setExportBusy(b) {
+  exporting = b;
+  if (b) { S.ui.playing = false; syncTransport(); }
+  for (const id of ['btnMp4', 'btnGif', 'btnZip']) $(id).disabled = b;
+  if (!b) { updateExportInfo(); requestRedraw(); }
+}
+/** Render frame g at export size with FX; returns a canvas to consume immediately. */
+function renderExportFrame(g, w, h) {
+  const base = finalFrame(g);
+  if (!base) { const c = canvas2d(w, h); return c; }
+  let src = base;
+  if (w < base.width * 0.55) { // big downscale: pre-shrink with high-quality 2D scaling
+    const mid = canvas2d(w, h);
+    const mctx = mid.getContext('2d');
+    mctx.imageSmoothingQuality = 'high';
+    mctx.drawImage(base, 0, 0, w, h);
+    src = mid;
+  }
+  return applyFx(src, g, w, h);
+}
+async function exportZip() {
+  if (exporting) return;
+  setExportBusy(true);
+  try {
+    const { w, h } = exportDims();
+    const n = trimmedCount();
+    const entries = [];
+    for (let g = 0; g < n; g++) {
+      status(`zip — frame ${g + 1}/${n}`);
+      progress((g + 1) / n);
+      const out = renderExportFrame(g, w, h);
+      const snap = canvas2d(w, h);
+      snap.getContext('2d').drawImage(out, 0, 0);
+      const blob = await new Promise(r => snap.toBlob(r, 'image/png'));
+      entries.push({ name: `frame-${String(g).padStart(3, '0')}.png`, data: new Uint8Array(await blob.arrayBuffer()) });
+      await nextFramePaint();
+    }
+    entries.push({ name: 'settings.json', data: new TextEncoder().encode(JSON.stringify(settingsSnapshot(), null, 2)) });
+    download(buildZip(entries), `${exportBase()}-frames-${w}x${h}.zip`);
+    status(`✓ zip — ${n} frames at ${w}×${h}`);
+  } catch (err) {
+    status('zip export failed: ' + (err && err.message || err), 'err');
+  } finally {
+    progress(null);
+    setExportBusy(false);
+  }
+}
+async function exportGif() {
+  if (exporting) return;
+  setExportBusy(true);
+  try {
+    status('loading GIF encoder…');
+    let mod;
+    try { mod = await import('https://esm.sh/gifenc@1.0.3'); }
+    catch { status('could not load the GIF encoder (network) — try MP4 or ZIP', 'err'); return; }
+    const GIFEncoder = mod.GIFEncoder || mod.default;
+    const { quantize, applyPalette } = mod;
+    const { w, h } = exportDims();
+    const pl = playlist();
+    const enc = GIFEncoder();
+    const delay = Math.max(20, Math.round(1000 / S.anim.fps));
+    const snap = canvas2d(w, h);
+    const sctx = snap.getContext('2d', { willReadFrequently: true });
+    for (let i = 0; i < pl.length; i++) {
+      status(`gif — frame ${i + 1}/${pl.length}`);
+      progress((i + 1) / pl.length);
+      sctx.drawImage(renderExportFrame(pl[i], w, h), 0, 0);
+      const { data } = sctx.getImageData(0, 0, w, h);
+      const palette = quantize(data, 256);
+      const index = applyPalette(data, palette);
+      enc.writeFrame(index, w, h, { palette, delay, repeat: i === 0 ? 0 : undefined });
+      await nextFramePaint();
+    }
+    enc.finish();
+    download(new Blob([enc.bytes()], { type: 'image/gif' }), `${exportBase()}-${w}x${h}.gif`);
+    status(`✓ gif — ${pl.length} frames · ${w}×${h} · ${S.anim.fps} fps`);
+  } catch (err) {
+    status('gif export failed: ' + (err && err.message || err), 'err');
+  } finally {
+    progress(null);
+    setExportBusy(false);
+  }
+}
+async function pickVideoCodec(w, h, fps, bitrate) {
+  const candidates = ['avc1.640033', 'avc1.64002a', 'avc1.4d002a', 'avc1.42002a', 'vp09.00.40.08', 'vp09.00.10.08'];
+  for (const codec of candidates) {
+    const config = { codec, width: w, height: h, bitrate, framerate: fps };
+    if (codec.startsWith('avc')) config.avc = { format: 'avc' };
+    try {
+      const s = await VideoEncoder.isConfigSupported(config);
+      if (s.supported) return { codec, config };
+    } catch { /* try next */ }
+  }
+  return null;
+}
+async function exportMp4() {
+  if (exporting || typeof VideoEncoder === 'undefined') return;
+  setExportBusy(true);
+  let encoder = null;
+  try {
+    let { w, h } = exportDims();
+    w &= ~1; h &= ~1;
+    const fps = S.anim.fps;
+    const bitrate = clamp(Math.round(w * h * fps * S.out.mp4bpp), 2e6, 120e6);
+    status('mp4 — picking codec…');
+    const picked = await pickVideoCodec(w, h, fps, bitrate);
+    if (!picked) { status('no supported video codec (tried H.264 + VP9)', 'err'); return; }
+    const isAvc = picked.codec.startsWith('avc');
+    const muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: isAvc ? 'avc' : 'vp9', width: w, height: h },
+      fastStart: 'in-memory',
+    });
+    encoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: e => { throw e; },
+    });
+    encoder.configure(picked.config);
+    const pl = playlist();
+    const total = pl.length * S.out.loops;
+    const usPerFrame = 1e6 / fps;
+    for (let i = 0; i < total; i++) {
+      const g = pl[i % pl.length];
+      status(`mp4 — frame ${i + 1}/${total}`);
+      progress((i + 1) / total);
+      const out = renderExportFrame(g, w, h);
+      const vf = new VideoFrame(out, { timestamp: Math.round(i * usPerFrame), duration: Math.round(usPerFrame) });
+      encoder.encode(vf, { keyFrame: i % pl.length === 0 || i % 60 === 0 });
+      vf.close();
+      while (encoder.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 8));
+      if ((i & 3) === 3) await nextFramePaint();
+    }
+    await encoder.flush();
+    muxer.finalize();
+    download(new Blob([muxer.target.buffer], { type: 'video/mp4' }), `${exportBase()}-${w}x${h}.mp4`);
+    status(`✓ mp4 — ${picked.codec} · ${w}×${h} · ${fps} fps · ${(bitrate / 1e6).toFixed(0)} Mbps · ${(total / fps).toFixed(1)} s`);
+  } catch (err) {
+    status('mp4 export failed: ' + (err && err.message || err), 'err');
+  } finally {
+    try { if (encoder && encoder.state !== 'closed') encoder.close(); } catch { /* already closed */ }
+    progress(null);
+    setExportBusy(false);
+  }
+}
+
+/* ── control wiring ───────────────────────────────────────────────────── */
+function bindRange(id, obj, key, labelId, fmt, onCommit, onLive) {
+  const el = $(id);
+  on(el, 'input', () => {
+    obj[key] = parseFloat(el.value);
+    if (labelId) $(labelId).textContent = fmt ? fmt(obj[key]) : String(obj[key]);
+    saveSettings();
+    if (onLive) onLive(); else requestRedraw();
+  });
+  if (onCommit) on(el, 'change', onCommit);
+}
+function bindCheck(id, obj, key, onChange) {
+  const el = $(id);
+  on(el, 'change', () => {
+    obj[key] = el.checked;
+    saveSettings();
+    if (onChange) onChange(); else requestRedraw();
+  });
+}
+function bindNumber(id, obj, key, onChange) {
+  const el = $(id);
+  on(el, 'change', () => {
+    const v = parseFloat(el.value);
+    if (!isNaN(v)) obj[key] = v;
+    saveSettings();
+    if (onChange) onChange(); else requestRedraw();
+  });
+}
+function syncControlsFromState() {
+  document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === S.mode));
+  $('inThreshold').value = S.detect.thresholdOff; $('vThreshold').textContent = String(S.detect.thresholdOff);
+  $('inPolarity').value = S.detect.polarity;
+  $('inRefine').checked = S.detect.refine;
+  $('inTrim').value = S.anim.trim || '';
+  $('inFps').value = S.anim.fps;
+  $('inReverse').checked = S.anim.reverse;
+  $('inPingpong').checked = S.anim.pingpong;
+  $('inStab').checked = S.stab.on;
+  $('inStabStrength').value = S.stab.strength; $('vStabStrength').textContent = S.stab.strength + '%';
+  $('inStabLambda').value = S.stab.lambda;
+  $('inBright').value = S.look.bright; $('vBright').textContent = String(S.look.bright);
+  $('inContrast').value = S.look.contrast; $('vContrast').textContent = String(S.look.contrast);
+  $('inSat').value = S.look.sat; $('vSat').textContent = String(S.look.sat);
+  $('inInk').value = S.look.ink; $('vInk').textContent = String(S.look.ink);
+  $('inInvert').checked = S.look.invert;
+  $('inChroma').value = S.look.chroma; $('vChroma').textContent = String(S.look.chroma);
+  $('inVhs').value = S.look.vhs; $('vVhs').textContent = String(S.look.vhs);
+  $('inGlitch').value = S.look.glitch; $('vGlitch').textContent = String(S.look.glitch);
+  $('inGrain').value = S.look.grain; $('vGrain').textContent = String(S.look.grain);
+  $('inOutWidth').value = S.out.width || '';
+  $('inMp4Quality').value = String(S.out.mp4bpp);
+  $('inLoops').value = S.out.loops;
+  updateStabHint();
+}
+function wireControls() {
+  document.querySelectorAll('.step-tab').forEach(b => on(b, 'click', () => showStep(b.dataset.step)));
+  document.querySelectorAll('#modeSeg button').forEach(b => on(b, 'click', () => {
+    if (S.mode === b.dataset.mode) return;
+    S.mode = b.dataset.mode;
+    saveSettings();
+    syncControlsFromState();
+    updateSourcesUI();
+    rebuildPipeline();
+  }));
+  document.querySelectorAll('#detectViewSeg button').forEach(b => on(b, 'click', () => {
+    S.ui.detectView = b.dataset.view;
+    requestRedraw();
+  }));
+
+  // template + photos loading
+  const dzT = $('dropTemplate'), dzP = $('dropPhotos');
+  on(dzT, 'click', () => $('fileTemplate').click());
+  on(dzP, 'click', () => $('filePhotos').click());
+  for (const [dz, handler] of [[dzT, loadTemplateFiles], [dzP, addPhotos]]) {
+    on(dz, 'dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+    on(dz, 'dragleave', () => dz.classList.remove('over'));
+    on(dz, 'drop', e => {
+      e.preventDefault();
+      dz.classList.remove('over');
+      handler(e.dataTransfer.files);
+    });
+  }
+  on($('fileTemplate'), 'change', e => { loadTemplateFiles(e.target.files); e.target.value = ''; });
+  on($('filePhotos'), 'change', e => { addPhotos(e.target.files); e.target.value = ''; });
+  on($('btnClearTemplate'), 'click', () => {
+    S.template = null; _tplSmall = null;
+    updateSourcesUI();
+    rebuildPipeline();
+  });
+
+  // detect
+  bindRange('inThreshold', S.detect, 'thresholdOff', 'vThreshold', null, () => {
+    const p = S.photos[S.ui.photoIdx];
+    if (p) p._previewQuad = null;
+    S.photos.forEach(ph => { ph._detKey = ''; });
+    rebuildPipeline();
+  }, () => { // live scrub: quick page-boundary preview for the active photo only
+    const p = S.photos[S.ui.photoIdx];
+    if (!p) return;
+    const g = grayOf(p);
+    const th = clamp(otsu(g) + S.detect.thresholdOff, 2, 253);
+    const tries = S.detect.polarity === 'auto' ? [true, false] : S.detect.polarity === 'light' ? [true] : [false];
+    let best = null;
+    for (const light of tries) {
+      const r = findPageQuadIn(g, light, th);
+      if (r && (!best || r.score > best.score)) best = r;
+    }
+    p._previewQuad = best ? best.quad.map(pt => ({ x: pt.x * g.scale, y: pt.y * g.scale })) : null;
+    requestRedraw();
+  });
+  on($('inPolarity'), 'change', () => {
+    S.detect.polarity = $('inPolarity').value;
+    S.photos.forEach(ph => { ph._detKey = ''; ph._previewQuad = null; });
+    saveSettings();
+    rebuildPipeline();
+  });
+  bindCheck('inRefine', S.detect, 'refine', () => rebuildPipeline());
+  on($('btnResetCorners'), 'click', () => {
+    const p = S.photos[S.ui.photoIdx];
+    if (!p) return;
+    p.manualQuad = null;
+    rebuildPipeline();
+  });
+  on($('btnRotatePage'), 'click', () => {
+    const p = S.photos[S.ui.photoIdx];
+    if (!p) return;
+    p.rotUser = (p.rotUser + 1) & 3;
+    rebuildPipeline();
+  });
+  on($('btnPrevPhoto'), 'click', () => { S.ui.photoIdx = Math.max(0, S.ui.photoIdx - 1); renderPhotoList(); requestRedraw(); });
+  on($('btnNextPhoto'), 'click', () => { S.ui.photoIdx = Math.min(S.photos.length - 1, S.ui.photoIdx + 1); renderPhotoList(); requestRedraw(); });
+
+  // animate
+  bindNumber('inTrim', S.anim, 'trim', () => {
+    S.anim.trim = Math.max(0, Math.round(S.anim.trim || 0));
+    invalidPlaylist = true;
+    ST.edges = null; ST.offsets = null; ST.token++;
+    updateExportInfo();
+    if (S.stab.on) ensureStab();
+    requestRedraw();
+  });
+  bindNumber('inFps', S.anim, 'fps', () => {
+    S.anim.fps = clamp(Math.round(S.anim.fps) || 12, 1, 60);
+    $('inFps').value = S.anim.fps;
+    updateExportInfo();
+  });
+  bindCheck('inReverse', S.anim, 'reverse', () => { invalidPlaylist = true; updateExportInfo(); requestRedraw(); });
+  bindCheck('inPingpong', S.anim, 'pingpong', () => { invalidPlaylist = true; updateExportInfo(); requestRedraw(); });
+  bindCheck('inStab', S.stab, 'on', () => {
+    updateStabHint();
+    if (S.stab.on) ensureStab();
+    requestRedraw();
+  });
+  bindRange('inStabStrength', S.stab, 'strength', 'vStabStrength', v => v + '%');
+  bindNumber('inStabLambda', S.stab, 'lambda', () => {
+    S.stab.lambda = clamp(S.stab.lambda || 0, 0, 1);
+    if (ST.edges) { solveStabOffsets(); updateStabHint(); }
+    requestRedraw();
+  });
+
+  // look + fx
+  bindRange('inBright', S.look, 'bright', 'vBright');
+  bindRange('inContrast', S.look, 'contrast', 'vContrast');
+  bindRange('inSat', S.look, 'sat', 'vSat');
+  bindRange('inInk', S.look, 'ink', 'vInk');
+  bindCheck('inInvert', S.look, 'invert');
+  bindRange('inChroma', S.look, 'chroma', 'vChroma');
+  bindRange('inVhs', S.look, 'vhs', 'vVhs');
+  bindRange('inGlitch', S.look, 'glitch', 'vGlitch');
+  bindRange('inGrain', S.look, 'grain', 'vGrain');
+  on($('btnResetLook'), 'click', () => {
+    Object.assign(S.look, { bright: 0, contrast: 0, sat: 0, ink: 0, invert: false });
+    saveSettings(); syncControlsFromState(); requestRedraw();
+  });
+  on($('btnResetFx'), 'click', () => {
+    Object.assign(S.look, { chroma: 0, vhs: 0, glitch: 0, grain: 0 });
+    saveSettings(); syncControlsFromState(); requestRedraw();
+  });
+
+  // output
+  bindNumber('inOutWidth', S.out, 'width', () => { S.out.width = Math.max(0, Math.round(S.out.width || 0)); updateExportInfo(); });
+  on($('inMp4Quality'), 'change', () => { S.out.mp4bpp = parseFloat($('inMp4Quality').value); saveSettings(); });
+  bindNumber('inLoops', S.out, 'loops', () => { S.out.loops = clamp(Math.round(S.out.loops) || 1, 1, 99); updateExportInfo(); });
+  on($('btnMp4'), 'click', exportMp4);
+  on($('btnGif'), 'click', exportGif);
+  on($('btnZip'), 'click', exportZip);
+
+  on($('btnResetSettings'), 'click', () => {
+    localStorage.removeItem(LS_KEY);
+    S.mode = DEFAULTS.mode;
+    for (const k of ['detect', 'anim', 'stab', 'look', 'out']) Object.assign(S[k], DEFAULTS[k]);
+    S.photos.forEach(ph => { ph._detKey = ''; ph.manualQuad = null; ph.rotUser = 0; });
+    syncControlsFromState();
+    updateSourcesUI();
+    rebuildPipeline();
+  });
+
+  // transport
+  const pause = () => { S.ui.playing = false; syncTransport(); };
+  on($('btnPlay'), 'click', () => { S.ui.playing = !S.ui.playing; syncTransport(); });
+  on($('btnFirst'), 'click', () => { pause(); S.ui.pos = 0; requestRedraw(); syncTransport(); });
+  on($('btnStepBack'), 'click', () => { pause(); const n = playlist().length; if (n) S.ui.pos = (S.ui.pos - 1 + n) % n; requestRedraw(); syncTransport(); });
+  on($('btnStepFwd'), 'click', () => { pause(); const n = playlist().length; if (n) S.ui.pos = (S.ui.pos + 1) % n; requestRedraw(); syncTransport(); });
+  on($('inScrub'), 'input', () => { pause(); S.ui.pos = parseInt($('inScrub').value, 10) || 0; requestRedraw(); syncTransport(); });
+  on(window, 'keydown', e => {
+    if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+    if (S.ui.step !== 'animate' && S.ui.step !== 'export') return;
+    if (e.code === 'Space') { e.preventDefault(); S.ui.playing = !S.ui.playing; syncTransport(); }
+    else if (e.code === 'ArrowLeft') { pause(); const n = playlist().length; if (n) { S.ui.pos = (S.ui.pos - 1 + n) % n; requestRedraw(); syncTransport(); } }
+    else if (e.code === 'ArrowRight') { pause(); const n = playlist().length; if (n) { S.ui.pos = (S.ui.pos + 1) % n; requestRedraw(); syncTransport(); } }
+    else if (e.code === 'Home') { pause(); S.ui.pos = 0; requestRedraw(); syncTransport(); }
+  });
+}
+async function loadTemplateFiles(files) {
+  const f = [...files].find(x => /\.svg$/i.test(x.name) || x.type === 'image/svg+xml');
+  if (!f) { status('the template must be an SVG file', 'warn'); return; }
+  status('parsing template…');
+  try {
+    const text = await f.text();
+    S.template = await parseTemplate(text, f.name);
+    _tplSmall = null;
+    status(`template ✓ — ${S.template.frames.length} frames on ${fmtMm(S.template.pageW)}×${fmtMm(S.template.pageH)} mm` +
+      (S.template.warn.length ? ' · ⚠ ' + S.template.warn.join(' · ') : ''), S.template.warn.length ? 'warn' : '');
+  } catch (err) {
+    S.template = null;
+    status('template error: ' + (err && err.message || err), 'err');
+  }
+  updateSourcesUI();
+  rebuildPipeline();
+}
+
+/* ── main loop + init ─────────────────────────────────────────────────── */
+let lastT = 0, acc = 0;
+function tick(t) {
+  requestAnimationFrame(tick);
+  const dt = Math.min(0.25, (t - lastT) / 1000);
+  lastT = t;
+  if ((S.ui.step === 'animate' || S.ui.step === 'export') && S.ui.playing) {
+    const pl = playlist();
+    if (pl.length > 1) {
+      acc += dt * S.anim.fps;
+      if (acc >= 1) {
+        const adv = Math.floor(acc);
+        acc -= adv;
+        S.ui.pos = (S.ui.pos + adv) % pl.length;
+        needRedraw = true;
+        syncTransport();
+      }
+    }
+  }
+  if (needRedraw) { needRedraw = false; drawStage(); }
+}
+loadSettings();
+initGL();
+wireControls();
+syncControlsFromState();
+updateSourcesUI();
+updateStepGates();
+showStep('sources');
+syncBadge();
+status(glm.ok ? 'ready — drop a template SVG and sheet photos' : 'ready (no WebGL — slower, FX limited)', glm.ok ? '' : 'warn');
+// minimal debug handle (drives automated tests; harmless in normal use)
+window.__fs = { S, G, F, ST, glm, playlist, finalFrame, rebuildPipeline, addPhotos, exportDims };
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
