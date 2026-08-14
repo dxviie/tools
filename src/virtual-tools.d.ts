@@ -3,6 +3,7 @@ declare module 'virtual:tools' {
     name: string;
     slug: string;
     description: string;
+    category: string;
     tags: string[];
     filename: string;
   }
