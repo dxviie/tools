@@ -1,0 +1,12 @@
+# Cloudflare Pages header rules (copied to the build root by adapter-static).
+#
+# Content-hashed chunks look like the perfect candidates for `immutable`, and
+# on a host that answers a miss with 404 they are. This project is served as
+# plain static assets, so a hashed file that is not there yet — the seconds
+# around a deploy going live — comes back as the fallback page instead. Cache
+# that under a .js URL and every later load of the site replays 60 kB of HTML
+# where a module should be, until the entry expires. Revalidating costs one
+# conditional request per chunk against the edge, answered with a 304, and it
+# makes a bad entry heal on the very next load.
+/_app/immutable/*
+  Cache-Control: public, max-age=0, must-revalidate
