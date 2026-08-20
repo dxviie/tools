@@ -217,7 +217,7 @@
         drop template SVG here<br>or click to choose
       </div>
       <div id="templateInfo" class="sv-meta" style="margin-top:8px;display:none;"></div>
-      <div class="hint" id="templateHint">One template is shared by all sheets. Label frame shapes <b>frame-0 … frame-N</b>; frame number order = animation order.</div>
+      <div class="hint" id="templateHint">One template is shared by all sheets. Label frame shapes <b>frame-0 … frame-N</b>; frame number order = animation order. <a href="https://rstr.d17e.dev/prep" target="_blank" rel="noopener" style="color:var(--accent-dim)">RSTR plot prep</a> puts a ready-made <b>_frame-template.svg</b> in its multi-page export zip.</div>
     </div>
 
     <div class="section">
@@ -552,7 +552,7 @@ const S = {
   out: { ...DEFAULTS.out },
   ui: { step: 'sources', detectView: 'source', photoIdx: 0, playing: true, pos: 0 },
 };
-const G = { perPhoto: new Map(), outPpmm: 0 };   // geometry: photoId → {H, quadsMm, anchors, rect, rectPpmm, density}
+const G = { perPhoto: new Map(), outPpmm: 0, pending: new Set() }; // geometry: photoId → {H, quadsMm, anchors, rect, rectPpmm}; pending = photo ids awaiting full-quality extraction
 const F = { base: new Map() };                    // frame gIdx → {canvas (padded), pad, w, h}
 const ST = { match: new Map(), edges: null, offsets: null, measuring: false, token: 0 };
 let pipeGen = 0;
@@ -798,7 +798,38 @@ async function parseTemplate(svgText, name) {
   return { name, pageW, pageH, frames, raster, rasterPpmm: TPL_PPMM, warn };
 }
 
-/* ── photo loading ────────────────────────────────────────────────────── */
+/* ── photo loading ────────────────────────────────────────────────────────
+   High-resolution scans (20 MP+) are kept as-is for the extracted frames, but
+   everything interactive — stage drawing, page detection, orientation probing,
+   template anchoring — runs on a downsampled *work* bitmap. WORK_MAX is well
+   above what those stages can resolve (the stage tops out at 1600 px, page
+   detection at 2200, anchor matching at 4 px/mm of page), so the results are
+   unchanged while the per-photo cost stops scaling with scan resolution. */
+const WORK_MAX = 3200;
+async function ensureWork(photo) {
+  if (photo.work) return photo.work;
+  const cap = Math.min(WORK_MAX, glm.ok ? glm.maxTex : WORK_MAX);
+  const big = Math.max(photo.w, photo.h);
+  if (big <= cap) { photo.work = photo.bmp; photo.workScale = 1; return photo.work; }
+  const s = cap / big;
+  try {
+    photo.work = await createImageBitmap(photo.bmp, {
+      resizeWidth: Math.max(1, Math.round(photo.w * s)),
+      resizeHeight: Math.max(1, Math.round(photo.h * s)),
+      resizeQuality: 'high',
+    });
+  } catch {
+    photo.work = photo.bmp; // resize unsupported — full res still works, just slower
+  }
+  photo.workScale = photo.work.width / photo.w;
+  return photo.work;
+}
+function freePhotoCaches(photo) {
+  if (photo.work && photo.work !== photo.bmp) photo.work.close?.();
+  if (photo._texBmp && photo._texBmp !== photo.bmp) photo._texBmp.close?.();
+  photo.work = null; photo._texBmp = null;
+  stageBases.delete(photo.id);
+}
 async function addPhotos(files) {
   const list = [...files].filter(f => /image\//.test(f.type) || /\.(png|jpe?g|webp)$/i.test(f.name));
   if (!list.length) return;
@@ -807,15 +838,18 @@ async function addPhotos(files) {
   for (const f of list) {
     try {
       const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
-      const tw = 150, th = Math.max(1, Math.round(tw * bmp.height / bmp.width));
-      const tc = canvas2d(tw, th);
-      tc.getContext('2d').drawImage(bmp, 0, 0, tw, th);
-      S.photos.push({
+      const photo = {
         id: photoIdSeq++, name: f.name, bmp, w: bmp.width, h: bmp.height,
-        thumbURL: tc.toDataURL('image/jpeg', 0.7),
+        work: null, workScale: 1, thumbURL: '',
         gray: null, autoQuad: null, quadScore: 0, manualQuad: null, frameLayerQuad: null,
         rotAuto: 0, rotUser: 0, _detKey: '',
-      });
+      };
+      await ensureWork(photo);
+      const tw = 150, th = Math.max(1, Math.round(tw * bmp.height / bmp.width));
+      const tc = canvas2d(tw, th);
+      tc.getContext('2d').drawImage(photo.work, 0, 0, tw, th);
+      photo.thumbURL = tc.toDataURL('image/jpeg', 0.7);
+      S.photos.push(photo);
     } catch {
       status(`could not decode ${f.name}`, 'warn');
     }
@@ -827,7 +861,9 @@ async function addPhotos(files) {
 function removePhoto(id) {
   const i = S.photos.findIndex(p => p.id === id);
   if (i < 0) return;
+  freePhotoCaches(S.photos[i]);
   S.photos[i].bmp?.close?.();
+  G.pending.delete(id);
   S.photos.splice(i, 1);
   S.ui.photoIdx = clamp(S.ui.photoIdx, 0, Math.max(0, S.photos.length - 1));
   renderPhotoList();
@@ -857,8 +893,16 @@ function grayFrom(source, maxDim) {
   }
   return { data: g, w, h, scale };
 }
+/** Grayscale of a photo at `maxDim`, taken from its work bitmap. `scale` maps
+    gray px → full-resolution photo px, whatever the work bitmap's size. */
+function grayOfPhoto(photo, maxDim) {
+  const src = photo.work || photo.bmp;
+  const g = grayFrom(src, maxDim);
+  g.scale *= photo.w / src.width;
+  return g;
+}
 function grayOf(photo) {
-  if (!photo.gray) photo.gray = grayFrom(photo.bmp, 1000);
+  if (!photo.gray) photo.gray = grayOfPhoto(photo, 1000);
   return photo.gray;
 }
 function otsu(gray) {
@@ -1002,7 +1046,7 @@ function orderQuadPts(poly) {
     find the paper/background crossing along the normal, PCA-fit lines,
     intersect them into corners. */
 function refineQuadEdges(photo, quadFull) {
-  const g = photo._gray2200 || (photo._gray2200 = grayFrom(photo.bmp, 2200));
+  const g = photo._gray2200 || (photo._gray2200 = grayOfPhoto(photo, 2200));
   const sc = 1 / g.scale;
   const q = quadFull.map(p => ({ x: p.x * sc, y: p.y * sc }));
   const cx = q.reduce((s, p) => s + p.x, 0) / 4, cy = q.reduce((s, p) => s + p.y, 0) / 4;
@@ -1326,7 +1370,7 @@ function aspectValidRotations(T, quad) {
 }
 /** Pick the page orientation (corner-order rotation 0–3) whose rectified ink
     pattern best matches the template raster. Fallback path — when the
-    template rasterizes, the probe-voted orientation choice in buildPhotoAll
+    template rasterizes, the probe-voted orientation choice in buildPhotoGeometry
     is authoritative, since marks alone are 180°-symmetric. */
 function autoOrient(photo) {
   const T = effTemplate();
@@ -1560,6 +1604,9 @@ const framesBuilt = () => {
   for (const fr of F.base.values()) if (fr && fr.canvas) n++;
   return n;
 };
+/** Frames the animation will have — extracted ones plus the sheets whose
+    full-quality extraction is still queued. */
+const framesReady = () => framesBuilt() + G.pending.size * framesPerSheet();
 function quadCenter(q) {
   return { x: (q[0].x + q[1].x + q[2].x + q[3].x) / 4, y: (q[0].y + q[1].y + q[2].y + q[3].y) / 4 };
 }
@@ -1640,30 +1687,45 @@ function evalOrientation(T, texInfo, texScale, texScaleH, quad0, k) {
   };
 }
 
-async function buildPhotoAll(photo, sheetIdx, gen) {
+/** Full-resolution GL texture of a photo — only the exported frames are warped
+    from it, so the big upload happens once per extraction pass and is freed
+    straight after. */
+async function fullResTexture(photo) {
+  if (!glm.ok) return null;
+  let src = photo.bmp, texScale = 1;
+  if (Math.max(photo.w, photo.h) > glm.maxTex) {
+    texScale = glm.maxTex / Math.max(photo.w, photo.h);
+    if (!photo._texBmp || photo._texScale !== texScale) {
+      photo._texBmp = await createImageBitmap(photo.bmp, {
+        resizeWidth: Math.round(photo.w * texScale),
+        resizeHeight: Math.round(photo.h * texScale),
+        resizeQuality: 'high',
+      });
+      photo._texScale = texScale;
+    }
+    src = photo._texBmp;
+  }
+  try { return { info: glTexture(src), texScale }; } catch { return null; }
+}
+
+/** Geometry pass: page orientation, sheet-wide plot offset, per-frame corner
+    anchors and the rectified preview. Runs entirely on the downsampled work
+    bitmap — none of these stages resolve finer than it does. */
+async function buildPhotoGeometry(photo, sheetIdx, gen) {
   const T = effTemplate();
   const fdefs = frameDefs();
   const fpsN = fdefs.length;
   const quad0 = effQuad(photo);
   const setPlaceholders = () => { for (let li = 0; li < fpsN; li++) F.base.set(sheetIdx * fpsN + li, null); };
-  if (!quad0) { G.perPhoto.delete(photo.id); setPlaceholders(); return; }
+  // whatever was extracted for this sheet is stale the moment its geometry moves
+  for (let li = 0; li < fpsN; li++) F.base.delete(sheetIdx * fpsN + li);
+  if (!quad0) { G.perPhoto.delete(photo.id); G.pending.delete(photo.id); setPlaceholders(); return; }
 
-  let texInfo = null, texScale = 1;
+  await ensureWork(photo);
+  let texInfo = null;
+  const texScale = photo.work ? photo.work.width / photo.w : 1;
   if (glm.ok) {
-    let src = photo.bmp;
-    if (Math.max(photo.w, photo.h) > glm.maxTex) {
-      texScale = glm.maxTex / Math.max(photo.w, photo.h);
-      if (!photo._texBmp || photo._texScale !== texScale) {
-        photo._texBmp = await createImageBitmap(photo.bmp, {
-          resizeWidth: Math.round(photo.w * texScale),
-          resizeHeight: Math.round(photo.h * texScale),
-          resizeQuality: 'high',
-        });
-        photo._texScale = texScale;
-      }
-      src = photo._texBmp;
-    }
-    try { texInfo = glTexture(src); } catch { texInfo = null; }
+    try { texInfo = glTexture(photo.work || photo.bmp); } catch { texInfo = null; }
   }
   const texScaleH = [texScale, 0, 0, 0, texScale, 0, 0, 0, 1];
 
@@ -1722,7 +1784,7 @@ async function buildPhotoAll(photo, sheetIdx, gen) {
         glWarp(texInfo, multH(texScaleH, multH(H, A)), prevW, prevH);
         geo.rect = glCanvasCopy(prevW, prevH);
       } else {
-        geo.rect = cpuWarpToCanvas(photo.bmp, multH(H, A), prevW, prevH);
+        geo.rect = cpuWarpToCanvas(photo.work || photo.bmp, multH(texScaleH, multH(H, A)), prevW, prevH);
       }
       geo.rectPpmm = ppmm;
     }
@@ -1793,7 +1855,24 @@ async function buildPhotoAll(photo, sheetIdx, gen) {
       }
     }
 
-    /* frame extraction (padded, so stabilization can shift without gaps) */
+    G.pending.add(photo.id);
+  } finally {
+    if (texInfo) glm.gl.deleteTexture(texInfo.tex);
+  }
+}
+
+/** Extraction pass: warp every frame of one sheet out of the *full-resolution*
+    scan (padded, so stabilization can shift without gaps). This is what feeds
+    playback and every export, so it never reads the work bitmap. */
+async function extractPhotoFrames(photo, sheetIdx, gen) {
+  const fpsN = frameDefs().length;
+  const geo = G.perPhoto.get(photo.id);
+  if (!geo) { for (let li = 0; li < fpsN; li++) F.base.set(sheetIdx * fpsN + li, null); return; }
+  const H = geo.H;
+  const tex = await fullResTexture(photo);
+  if (gen !== pipeGen) { if (tex) glm.gl.deleteTexture(tex.info.tex); return; }
+  const texScaleH = tex ? [tex.texScale, 0, 0, 0, tex.texScale, 0, 0, 0, 1] : null;
+  try {
     for (let li = 0; li < fpsN; li++) {
       const q = geo.quadsMm[li];
       const wMm = (Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) + Math.hypot(q[2].x - q[3].x, q[2].y - q[3].y)) / 2;
@@ -1808,8 +1887,8 @@ async function buildPhotoAll(photo, sheetIdx, gen) {
         [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: Hh }, { x: 0, y: Hh }], eq);
       if (!A) { F.base.set(sheetIdx * fpsN + li, null); continue; }
       let canvas;
-      if (texInfo) {
-        glWarp(texInfo, multH(texScaleH, multH(H, A)), W, Hh);
+      if (tex) {
+        glWarp(tex.info, multH(texScaleH, multH(H, A)), W, Hh);
         canvas = glCanvasCopy(W, Hh);
       } else {
         canvas = cpuWarpToCanvas(photo.bmp, multH(H, A), W, Hh);
@@ -1818,26 +1897,98 @@ async function buildPhotoAll(photo, sheetIdx, gen) {
       if ((li & 3) === 3) {
         status(`extracting sheet ${sheetIdx + 1}/${S.photos.length} — frame ${li + 1}/${fpsN}`);
         progress((sheetIdx * fpsN + li + 1) / Math.max(1, globalFrameCount()));
+        requestRedraw();
         await nextFramePaint();
         if (gen !== pipeGen) return;
       }
     }
   } finally {
-    if (texInfo) glm.gl.deleteTexture(texInfo.tex);
+    if (tex) glm.gl.deleteTexture(tex.info.tex);
   }
 }
 
-async function rebuildPipeline() {
+/** Run the extraction pass for every sheet whose geometry changed. Deferred
+    while the user works in 02 DETECT — that step only needs the geometry, so
+    a corner nudge no longer pays for a full-resolution re-extraction. */
+let framesJob = null;
+function ensureFrames() {
+  // a job started under an older generation abandons its queue — chain onto it
+  // and restart, so the caller's await really does mean "frames are ready"
+  if (framesJob) return framesJob.then(() => (G.pending.size ? ensureFrames() : undefined));
+  if (!G.pending.size) return Promise.resolve();
+  framesJob = (async () => {
+    const gen = pipeGen;
+    try {
+      progress(0);
+      while (G.pending.size) {
+        const id = G.pending.values().next().value;
+        const idx = S.photos.findIndex(p => p.id === id);
+        if (idx >= 0) {
+          await extractPhotoFrames(S.photos[idx], idx, gen);
+          if (gen !== pipeGen) return;
+        }
+        G.pending.delete(id);
+      }
+      ST.match.clear(); ST.edges = null; ST.offsets = null;
+      status(`✓ ${framesBuilt()} frames extracted at ${G.outPpmm.toFixed(1)} px/mm`);
+      syncBadge();
+      updateStepGates();
+      updateExportInfo();
+      invalidPlaylist = true;
+      requestRedraw();
+      if (S.stab.on) ensureStab();
+    } catch (err) {
+      G.pending.clear();
+      status('frame extraction failed: ' + ((err && err.message) || err), 'err');
+    } finally {
+      progress(null);
+      framesJob = null;
+    }
+  })();
+  return framesJob;
+}
+
+/**
+ * Rebuild geometry (and queue extraction) for every photo, or — with
+ * `{only: photoId}` — for the single sheet the user just edited. The partial
+ * path keeps `G.outPpmm` as it is: the output resolution is a property of the
+ * whole set, and letting one nudged corner resize every already-extracted
+ * frame would be both wrong and expensive.
+ */
+async function rebuildPipeline(opts) {
+  const onlyId = opts && opts.only != null ? opts.only : null;
+  const onlyIdx = onlyId != null ? S.photos.findIndex(p => p.id === onlyId) : -1;
+  const partial = onlyIdx >= 0 && G.outPpmm > 0 && !!effTemplate();
   const gen = ++pipeGen;
   ST.token++;
   ST.match.clear(); ST.edges = null; ST.offsets = null; ST.measuring = false;
-  F.base.clear();
-  G.perPhoto.clear();
+  if (partial) {
+    G.perPhoto.delete(onlyId);
+  } else {
+    F.base.clear();
+    G.perPhoto.clear();
+    G.pending.clear();
+  }
   invalidPlaylist = true;
   updateSourcesUI();
   updateStepGates();
   requestRedraw();
   if (!S.photos.length) { status(S.template ? 'template ✓ — now add sheet photos' : 'ready'); syncBadge(); return; }
+
+  if (partial) {
+    const p = S.photos[onlyIdx];
+    status(`re-aligning sheet ${onlyIdx + 1}…`);
+    detectPage(p);
+    await buildPhotoGeometry(p, onlyIdx, gen);
+    if (gen !== pipeGen) return;
+    status(effQuad(p) ? `✓ sheet ${onlyIdx + 1} aligned` : `sheet ${onlyIdx + 1}: no page detected`, effQuad(p) ? '' : 'warn');
+    syncBadge();
+    updateStepGates();
+    renderPhotoList();
+    requestRedraw();
+    if (S.ui.step !== 'detect') await ensureFrames();
+    return;
+  }
 
   status('detecting pages…');
   progress(0);
@@ -1885,14 +2036,14 @@ async function rebuildPipeline() {
   G.outPpmm = clamp(median(densities) || 4, 0.5, 40);
 
   for (let i = 0; i < S.photos.length; i++) {
-    await buildPhotoAll(S.photos[i], i, gen);
+    await buildPhotoGeometry(S.photos[i], i, gen);
     if (gen !== pipeGen) return;
   }
   progress(null);
   const missing = S.photos.filter(p => !effQuad(p)).length;
   status(missing
-    ? `✓ ${framesBuilt()} frames — ${missing} photo${missing > 1 ? 's' : ''} without a detected page (fix in 02 DETECT)`
-    : `✓ ${framesBuilt()} frames extracted at ${G.outPpmm.toFixed(1)} px/mm`, missing ? 'warn' : '');
+    ? `✓ ${framesReady()} frames — ${missing} photo${missing > 1 ? 's' : ''} without a detected page (fix in 02 DETECT)`
+    : `✓ ${framesReady()} frames aligned at ${G.outPpmm.toFixed(1)} px/mm`, missing ? 'warn' : '');
   syncBadge();
   updateSourcesUI();
   updateStepGates();
@@ -1900,6 +2051,7 @@ async function rebuildPipeline() {
   renderPhotoList();
   invalidPlaylist = true;
   requestRedraw();
+  if (S.ui.step !== 'detect') await ensureFrames();
   if (S.stab.on) ensureStab();
 }
 
@@ -2055,6 +2207,8 @@ async function ensureStab() {
   if (!S.stab.on || ST.measuring) return;
   if (ST.offsets) return;
   if (ST.edges) { solveStabOffsets(); requestRedraw(); return; }
+  // stabilization matches the extracted frames — wait for the deferred pass
+  if (G.pending.size) { updateStabHint(); ensureFrames(); return; }
   const N = trimmedCount();
   if (N <= 1 || framesBuilt() < N) return;
   const token = ++ST.token;
@@ -2224,7 +2378,15 @@ function drawPreviewFrame() {
   if (!pl.length) { setStageSize(16, 16); showEmpty('no frames yet — load sources in <b>01</b> and check <b>02 DETECT</b>'); return; }
   const g = pl[clamp(S.ui.pos, 0, pl.length - 1)];
   const base = finalFrame(g);
-  if (!base) { setStageSize(320, 200); stageCtx.fillStyle = '#0a0a0a'; stageCtx.fillRect(0, 0, 320, 200); showEmpty('frame ' + g + ' unavailable — its page was not detected'); return; }
+  if (!base) {
+    setStageSize(320, 200);
+    stageCtx.fillStyle = '#0a0a0a';
+    stageCtx.fillRect(0, 0, 320, 200);
+    showEmpty(G.pending.size || framesJob
+      ? 'extracting frames at full quality…'
+      : 'frame ' + g + ' unavailable — its page was not detected');
+    return;
+  }
   hideEmpty();
   const out = applyFx(base, g);
   setStageSize(out.width, out.height);
@@ -2240,13 +2402,32 @@ function drawDetect() {
   hideEmpty();
   if (S.ui.detectView === 'rectified') drawDetectRect(p);
   else drawDetectSource(p);
+  if (drag) drawMagnifier();
+}
+/** The photo at stage resolution, rendered once and reused for every overlay
+    redraw — a corner drag must not re-scale a 20-megapixel scan per frame.
+    Only the last few sheets are kept; re-rendering one is a single drawImage. */
+const STAGE_BASE_KEEP = 3;
+const stageBases = new Map();
+function detectBaseCanvas(p, w, h) {
+  const hit = stageBases.get(p.id);
+  if (hit && hit.width === w && hit.height === h) return hit;
+  const c = canvas2d(w, h);
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(p.work || p.bmp, 0, 0, w, h);
+  stageBases.delete(p.id);
+  stageBases.set(p.id, c);
+  while (stageBases.size > STAGE_BASE_KEEP) stageBases.delete(stageBases.keys().next().value);
+  return c;
 }
 function drawDetectSource(p) {
   const sc = Math.min(1600 / p.w, 1100 / p.h, 1);
   const w = Math.round(p.w * sc), h = Math.round(p.h * sc);
   detectViewScale = sc;
   setStageSize(w, h);
-  stageCtx.drawImage(p.bmp, 0, 0, w, h);
+  stageCtx.drawImage(detectBaseCanvas(p, w, h), 0, 0);
   const quad = p._previewQuad || effQuad(p);
   const ctx = stageCtx;
   if (quad) {
@@ -2465,24 +2646,34 @@ on(stage, 'pointerdown', e => {
   updateDrag(e);
 });
 on(stage, 'pointermove', e => { if (drag) updateDrag(e); });
+/** A drag only moves model state and asks for a redraw — the actual painting
+    happens once per animation frame, so a burst of pointermove events can
+    never queue up more work than the display can show. */
 function updateDrag(e) {
   const pos = stagePos(e);
   const p = drag.p;
-  let cp; // dragged corner in photo px, for the magnifier
   if (drag.type === 'frame') {
     const mm = applyH(drag.Hinv, pos.x / detectViewScale, pos.y / detectViewScale);
     p.frameLayerQuad[drag.idx] = { x: mm.x, y: mm.y };
     const s = applyH(drag.liveH, mm.x, mm.y);
-    cp = { x: clamp(s.x, 0, p.w - 1), y: clamp(s.y, 0, p.h - 1) };
+    drag.corner = { x: clamp(s.x, 0, p.w - 1), y: clamp(s.y, 0, p.h - 1) };
   } else {
     p.manualQuad[drag.idx] = {
       x: clamp(pos.x / detectViewScale, 0, p.w - 1),
       y: clamp(pos.y / detectViewScale, 0, p.h - 1),
     };
-    cp = p.manualQuad[drag.idx];
+    drag.corner = p.manualQuad[drag.idx];
   }
-  drawDetect();
-  // magnifier: zoom around the corner, placed near the pointer
+  drag.clientX = e.clientX;
+  drag.clientY = e.clientY;
+  requestRedraw();
+}
+/** Magnifier: zoom around the dragged corner, placed near the pointer. Reads
+    the full-resolution scan — magnifying the downsampled work bitmap would
+    defeat the purpose. */
+function drawMagnifier() {
+  const p = drag.p, cp = drag.corner;
+  if (!cp) return;
   const mctx = magEl.getContext('2d');
   const r = Math.max(24, p.w * 0.012);
   mctx.imageSmoothingEnabled = false;
@@ -2490,19 +2681,20 @@ function updateDrag(e) {
   mctx.fillRect(0, 0, 132, 132);
   mctx.drawImage(p.bmp, cp.x - r, cp.y - r, 2 * r, 2 * r, 0, 0, 132, 132);
   const wr = $('stageWrap').getBoundingClientRect();
-  let mx = e.clientX - wr.left + 22, my = e.clientY - wr.top + 22;
-  if (mx + 140 > wr.width) mx = e.clientX - wr.left - 154;
-  if (my + 140 > wr.height) my = e.clientY - wr.top - 154;
+  let mx = drag.clientX - wr.left + 22, my = drag.clientY - wr.top + 22;
+  if (mx + 140 > wr.width) mx = drag.clientX - wr.left - 154;
+  if (my + 140 > wr.height) my = drag.clientY - wr.top - 154;
   magEl.style.left = mx + 'px';
   magEl.style.top = my + 'px';
 }
 on(stage, 'pointerup', e => {
   if (!drag) return;
+  const id = drag.p.id;
   drag = null;
   stage.classList.remove('grabber');
   magEl.hidden = true;
   try { stage.releasePointerCapture(e.pointerId); } catch { /* released */ }
-  rebuildPipeline();
+  rebuildPipeline({ only: id }); // only the dragged sheet moved
 });
 
 /* ── steps / toolbar / transport ──────────────────────────────────────── */
@@ -2522,12 +2714,14 @@ function showStep(step) {
     if (!S.photos.length && !S.template) showEmpty('drop a <b>template SVG</b> + <b>sheet photos</b> in 01 SOURCES<br>to build an animation');
     else hideEmpty();
   } else hideEmpty();
+  // the deferred full-quality extraction lands here, on the way out of 02
+  if (step === 'animate' || step === 'export') void ensureFrames();
   requestRedraw();
 }
 function updateStepGates() {
   const tabs = document.querySelectorAll('.step-tab');
   const canDetect = S.photos.length > 0;
-  const canAnim = framesBuilt() > 0;
+  const canAnim = framesReady() > 0;
   tabs.forEach(b => {
     const s = b.dataset.step;
     b.disabled = (s === 'detect' && !canDetect) || ((s === 'animate' || s === 'export') && !canAnim);
@@ -2570,7 +2764,7 @@ function syncTransport() {
   $('btnPlay').textContent = S.ui.playing ? '⏸' : '▶';
 }
 function syncBadge() {
-  const n = framesBuilt();
+  const n = framesReady();
   const el = $('statBadge');
   if (!S.photos.length && !S.template) { el.textContent = 'no sources'; el.className = 'badge'; return; }
   el.textContent = `${S.photos.length} photo${S.photos.length === 1 ? '' : 's'} · ${n} frames`;
@@ -2789,6 +2983,7 @@ function renderExportFrame(g, w, h) {
 }
 async function exportZip() {
   if (exporting) return;
+  await ensureFrames(); // never export a frame the deferred pass has not built yet
   setExportBusy(true);
   try {
     const { w, h } = exportDims();
@@ -2816,6 +3011,7 @@ async function exportZip() {
 }
 async function exportGif() {
   if (exporting) return;
+  await ensureFrames();
   setExportBusy(true);
   try {
     const { GIFEncoder, quantize, applyPalette } = window.__gifenc || {};
@@ -2863,6 +3059,7 @@ async function pickVideoCodec(w, h, fps, bitrate) {
 }
 async function exportMp4() {
   if (exporting || typeof VideoEncoder === 'undefined') return;
+  await ensureFrames();
   setExportBusy(true);
   let encoder = null;
   try {
@@ -3034,20 +3231,20 @@ function wireControls() {
     const p = S.photos[S.ui.photoIdx];
     if (!p) return;
     p.manualQuad = null;
-    rebuildPipeline();
+    rebuildPipeline({ only: p.id });
   });
   on($('btnRotatePage'), 'click', () => {
     const p = S.photos[S.ui.photoIdx];
     if (!p) return;
     p.rotUser = (p.rotUser + 1) & 3;
     p.frameLayerQuad = null; // alignment was made under the old orientation
-    rebuildPipeline();
+    rebuildPipeline({ only: p.id });
   });
   on($('btnResetFrameLayer'), 'click', () => {
     const p = S.photos[S.ui.photoIdx];
     if (!p) return;
     p.frameLayerQuad = null;
-    rebuildPipeline();
+    rebuildPipeline({ only: p.id });
   });
   on($('btnPrevPhoto'), 'click', () => { S.ui.photoIdx = Math.max(0, S.ui.photoIdx - 1); renderPhotoList(); requestRedraw(); });
   on($('btnNextPhoto'), 'click', () => { S.ui.photoIdx = Math.min(S.photos.length - 1, S.ui.photoIdx + 1); renderPhotoList(); requestRedraw(); });
@@ -3198,7 +3395,7 @@ showStep('sources');
 syncBadge();
 status(glm.ok ? 'ready — drop a template SVG and sheet photos' : 'ready (no WebGL — slower, FX limited)', glm.ok ? '' : 'warn');
 // minimal debug handle (drives automated tests; harmless in normal use)
-window.__fs = { S, G, F, ST, glm, playlist, finalFrame, rebuildPipeline, addPhotos, exportDims, frameLayerBoundsMm };
+window.__fs = { S, G, F, ST, glm, playlist, finalFrame, rebuildPipeline, ensureFrames, addPhotos, exportDims, frameLayerBoundsMm };
 requestAnimationFrame(tick);
 </script>
 </body>
