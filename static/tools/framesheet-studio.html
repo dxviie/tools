@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- tool-meta: {"name":"Framesheet Studio","slug":"framesheet-studio","description":"Turns photos of plotted framesheets into looping animations — SVG-template-guided frame detection, page rectification, neighbor stabilization, post FX (chromatic aberration, VHS, glitch), GIF / MP4 / frame-ZIP export at source quality.","category":"studio","tags":["animation","plotter","template","stabilization","gif","mp4","fx","svg"]} -->
+<!-- tool-meta: {"name":"Framesheet Studio","slug":"framesheet-studio","description":"Turns photos of plotted framesheets into looping animations — SVG-template-guided frame detection, page rectification, mark-locked or neighbour stabilization, post FX (chromatic aberration, VHS, glitch), GIF / MP4 / frame-ZIP export at source quality.","category":"studio","tags":["animation","plotter","template","stabilization","gif","mp4","fx","svg"]} -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Framesheet Studio</title>
@@ -132,10 +132,10 @@
   #stageEmpty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
               color:var(--text-dim);font-size:11px;pointer-events:none;text-align:center;line-height:2;}
   #stageEmpty b{color:var(--text);font-weight:400;}
+  /* the crosshair is drawn into the canvas (see drawMagnifier) so it can carry
+     a dark outline and stay legible over both paper and ink */
   #magnifier{position:absolute;width:132px;height:132px;border:1px solid var(--accent-dim);background:#000;
              pointer-events:none;z-index:30;image-rendering:pixelated;}
-  #magnifier::after{content:'';position:absolute;left:50%;top:50%;width:9px;height:9px;margin:-5px 0 0 -5px;
-                    border:1px solid var(--accent);}
 
   /* sources view (html, not canvas) */
   #sourcesView{position:absolute;inset:0;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:18px;}
@@ -314,20 +314,31 @@
     <div class="section">
       <div class="section-label">Stabilization</div>
       <div class="ctl-row">
-        <label data-tip="Removes residual frame-to-frame jitter. Neighboring frames on the sheet are compared pairwise and a global per-frame translation field is solved from those measurements (translation only — no rotation or scale).">stabilize</label>
-        <input type="checkbox" id="inStab">
+        <label data-tip="How residual frame-to-frame jitter is removed.<br><b>template marks</b> — every frame is registered against the template's own ink in the margin around it (frame boxes, crop marks, registration crosses). Absolute per frame, so nothing drifts: if your sheets carry marks around each frame this is the one that locks the animation still.<br><b>neighbour match</b> — neighboring frames are compared pairwise and a global translation field is solved from those measurements. Content-driven; the right choice when the sheet has no marks, and for one-page-per-frame workflows.">method</label>
+        <select id="inStabMode">
+          <option value="off">off</option>
+          <option value="marks">template marks</option>
+          <option value="neighbors">neighbour match</option>
+        </select>
       </div>
       <div class="ctl">
         <label data-tip="How much of the solved stabilization translation is applied. 100% = full correction; lower it if stabilization overcorrects and introduces drift.">strength<span class="val" id="vStabStrength">100%</span></label>
         <input type="range" id="inStabStrength" min="0" max="100" value="100">
       </div>
-      <div class="ctl-row">
-        <label data-tip="Regularization of the stabilization solve. Higher values keep corrections smaller and stiffer (trust the detected geometry more); lower values follow the image matches more freely. Default 0.01.">rigidity</label>
+      <div class="ctl-row" id="rowStabLambda">
+        <label data-tip="Regularization of the neighbour solve. Higher values keep corrections smaller and stiffer (trust the detected geometry more); lower values follow the image matches more freely. Default 0.01.">rigidity</label>
         <input type="number" id="inStabLambda" min="0" max="1" step="0.005" value="0.01" style="width:74px;">
+      </div>
+      <div class="ctl-row" id="rowStabRing">
+        <label data-tip="How far the mark band reaches inside the frame border, in mm. The band always covers the full extraction margin around the frame — that is where crop marks and frame boxes sit — and the artwork inside the frame is left out, since that is the part that changes from frame to frame. Raise this when your marks are drawn on or just inside the border.">marks inside mm</label>
+        <input type="number" id="inStabRing" min="0" max="20" step="0.5" value="2" style="width:74px;">
       </div>
       <div class="hint" id="stabStatusHint">—</div>
     </div>
+  </div>
 
+  <!-- ═══ 04 EXPORT ═══ -->
+  <div class="panel" id="panel-export" hidden>
     <div class="section">
       <div class="section-label">Frame crop <button class="btn tiny ghost" id="btnResetCrop" data-tip="Reset all four crop offsets to 0 mm.">RESET</button></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;">
@@ -348,12 +359,9 @@
           <input type="number" id="inCropB" step="0.5" value="0" style="width:56px;">
         </div>
       </div>
-      <div class="hint">Applied to every frame at playback/export time — detection and stabilization stay untouched.</div>
+      <div class="hint">Shapes the exported frame only — 03 ANIMATE keeps showing the full extraction so you can judge the alignment.</div>
     </div>
-  </div>
 
-  <!-- ═══ 04 EXPORT ═══ -->
-  <div class="panel" id="panel-export" hidden>
     <div class="section">
       <div class="section-label">Look <button class="btn tiny ghost" id="btnResetLook" data-tip="Reset the four look sliders and invert to neutral.">RESET</button></div>
       <div class="ctl">
@@ -535,7 +543,7 @@ const DEFAULTS = {
   detect: { thresholdOff: 0, polarity: 'auto', refine: true },
   anim: { fps: 12, reverse: false, pingpong: false, trim: 0 },
   crop: { l: 0, r: 0, t: 0, b: 0 },
-  stab: { on: false, strength: 100, lambda: 0.01 },
+  stab: { mode: 'off', strength: 100, lambda: 0.01, ring: 2 },
   look: { bright: 0, contrast: 0, sat: 0, ink: 0, invert: false, chroma: 0, vhs: 0, glitch: 0, grain: 0 },
   out: { width: 0, mp4bpp: 0.12, loops: 1 },
 };
@@ -554,9 +562,12 @@ const S = {
 };
 const G = { perPhoto: new Map(), outPpmm: 0, pending: new Set() }; // geometry: photoId → {H, quadsMm, anchors, rect, rectPpmm}; pending = photo ids awaiting full-quality extraction
 const F = { base: new Map() };                    // frame gIdx → {canvas (padded), pad, w, h}
-const ST = { match: new Map(), edges: null, offsets: null, measuring: false, token: 0 };
+const ST = { match: new Map(), edges: null, marks: null, offsets: null, measuring: false, token: 0, solvedMode: '' };
 let pipeGen = 0;
 let photoIdSeq = 1;
+
+const STAB_MODES = ['off', 'marks', 'neighbors'];
+const stabOn = () => S.stab.mode !== 'off';
 
 /* ── settings persistence ─────────────────────────────────────────────── */
 const LS_KEY = 'framesheet-studio:v1';
@@ -580,6 +591,9 @@ function loadSettings() {
     for (const k of ['detect', 'anim', 'crop', 'stab', 'look', 'out']) {
       if (j[k] && typeof j[k] === 'object') Object.assign(S[k], j[k]);
     }
+    // pre-methods state stored a bare on/off flag; that switch was the neighbour matcher
+    if (!STAB_MODES.includes(S.stab.mode)) S.stab.mode = j.stab && j.stab.on ? 'neighbors' : 'off';
+    delete S.stab.on;
   } catch { /* corrupted state — keep defaults */ }
 }
 function settingsSnapshot() {
@@ -1488,6 +1502,9 @@ function grayAtSize(source, w, h) {
   const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, w, h);
+  // a plain bilinear downscale of a plotted sheet aliases badly: thin lines drop
+  // in and out depending on phase, which reads as a shift where there is none
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(source, 0, 0, w, h);
   const d = ctx.getImageData(0, 0, w, h).data;
   const g = new Float32Array(w * h);
@@ -1875,8 +1892,14 @@ async function extractPhotoFrames(photo, sheetIdx, gen) {
   try {
     for (let li = 0; li < fpsN; li++) {
       const q = geo.quadsMm[li];
-      const wMm = (Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) + Math.hypot(q[2].x - q[3].x, q[2].y - q[3].y)) / 2;
-      const hMm = (Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y) + Math.hypot(q[2].x - q[1].x, q[2].y - q[1].y)) / 2;
+      // The output grid comes from the *template* frame, not the measured one:
+      // the measured quad is where to read from, the nominal size is what every
+      // sheet's copy of this frame must come out as. Sizing each canvas from
+      // its own measurement instead would give frames a slightly different
+      // px/mm each, and that breathing is wobble no translation can take out.
+      const nom = geo.nominalMm[li];
+      const wMm = (Math.hypot(nom[1].x - nom[0].x, nom[1].y - nom[0].y) + Math.hypot(nom[2].x - nom[3].x, nom[2].y - nom[3].y)) / 2;
+      const hMm = (Math.hypot(nom[3].x - nom[0].x, nom[3].y - nom[0].y) + Math.hypot(nom[2].x - nom[1].x, nom[2].y - nom[1].y)) / 2;
       const wPx = Math.max(8, Math.round(wMm * G.outPpmm));
       const hPx = Math.max(8, Math.round(hMm * G.outPpmm));
       const pad = Math.ceil(0.12 * Math.max(wPx, hPx));
@@ -1929,14 +1952,14 @@ function ensureFrames() {
         }
         G.pending.delete(id);
       }
-      ST.match.clear(); ST.edges = null; ST.offsets = null;
+      ST.match.clear(); ST.edges = null; ST.marks = null; ST.offsets = null;
       status(`✓ ${framesBuilt()} frames extracted at ${G.outPpmm.toFixed(1)} px/mm`);
       syncBadge();
       updateStepGates();
       updateExportInfo();
       invalidPlaylist = true;
       requestRedraw();
-      if (S.stab.on) ensureStab();
+      if (stabOn()) ensureStab();
     } catch (err) {
       G.pending.clear();
       status('frame extraction failed: ' + ((err && err.message) || err), 'err');
@@ -1961,7 +1984,7 @@ async function rebuildPipeline(opts) {
   const partial = onlyIdx >= 0 && G.outPpmm > 0 && !!effTemplate();
   const gen = ++pipeGen;
   ST.token++;
-  ST.match.clear(); ST.edges = null; ST.offsets = null; ST.measuring = false;
+  ST.match.clear(); ST.edges = null; ST.marks = null; ST.offsets = null; ST.measuring = false;
   if (partial) {
     G.perPhoto.delete(onlyId);
   } else {
@@ -2052,7 +2075,7 @@ async function rebuildPipeline(opts) {
   invalidPlaylist = true;
   requestRedraw();
   if (S.ui.step !== 'detect') await ensureFrames();
-  if (S.stab.on) ensureStab();
+  if (stabOn()) ensureStab();
 }
 
 /* ── stabilization (neighbor comparison, ported from plottimation) ────── */
@@ -2185,7 +2208,276 @@ function solveGraphAxis(edges, count, key) {
   const mean = sol.reduce((s, v) => s + v, 0) / count;
   return sol.map(v => v - mean);
 }
+/* ── stabilization: registration against the template's marks ─────────────
+   The neighbour matcher is content-driven — it lines up what the frames have
+   in common, which on a framesheet is exactly the thing that differs. When the
+   sheet carries printed marks around each frame (frame boxes, crop marks,
+   registration crosses — anything in the template that is not the artwork),
+   every frame can instead be matched against the template's own ink in the
+   band around it. That measurement is absolute: each frame is pinned to the
+   same reference rather than to its neighbour, so there is no drift to
+   accumulate and the marks land on the same output pixel in every frame.
+
+   No CV library is needed for this. The template raster is already on hand, so
+   the whole method is a two-level zero-mean normalized cross-correlation of the
+   band against it, plus a parabola through the score peak for the sub-pixel
+   part. ZNCC rather than a binary ink overlap on purpose: the marks are long
+   straight edges, and an overlap count is flat along them — it reads the same
+   score for every shift that keeps a line on itself, so the argmax lands
+   wherever the scan order happened to reach the plateau first. Correlating the
+   grey levels keeps the peak sharp in both axes. */
+const MARK_LEVELS = [2, 4]; // px/mm, coarse to fine (4 = the template raster's own)
+
+/** The template's ink for one frame, rendered over the frame's own padded
+    output grid at `ppmm` — the reference an extracted frame should match. */
+function markReferenceCanvas(T, nominalQuad, fr, ppmm) {
+  const padMm = fr.pad / G.outPpmm;
+  const w = Math.max(8, Math.round((fr.w / G.outPpmm + 2 * padMm) * ppmm));
+  const h = Math.max(8, Math.round((fr.h / G.outPpmm + 2 * padMm) * ppmm));
+  const eq = expandQuadMm(nominalQuad, padMm);
+  const s = T.rasterPpmm;
+  // affine dest px → raster px, from the padded quad's first three corners
+  const a = (eq[1].x - eq[0].x) * s / w, b = (eq[1].y - eq[0].y) * s / w;
+  const c = (eq[3].x - eq[0].x) * s / h, d = (eq[3].y - eq[0].y) * s / h;
+  const det = a * d - b * c;
+  if (!isFinite(det) || Math.abs(det) < 1e-9) return null;
+  const e = eq[0].x * s, f = eq[0].y * s;
+  const ai = d / det, bi = -b / det, ci = -c / det, di = a / det;
+  const cv = canvas2d(w, h);
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.setTransform(ai, bi, ci, di, -(ai * e + ci * f), -(bi * e + di * f));
+  ctx.drawImage(T.raster, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  return { canvas: cv, w, h };
+}
+/** Template and frame grey, both normalized over the mark band: the whole
+    extraction margin around the frame, plus `inwardMm` inside the frame border
+    for marks drawn on or just inside it. The artwork is left out — it is the
+    part that changes from frame to frame. The band is also split into its four
+    corner quadrants, each with the centroid of the template ink in it: matched
+    separately, those four give rotation and scale on top of the shift. */
+function markField(T, nominalQuad, fr, ppmm, inwardMm) {
+  const ref = markReferenceCanvas(T, nominalQuad, fr, ppmm);
+  if (!ref) return null;
+  const { w, h } = ref;
+  const inset = (fr.pad / G.outPpmm + inwardMm) * ppmm;
+  const x0 = Math.round(inset), x1 = Math.round(w - inset);
+  const y0 = Math.round(inset), y1 = Math.round(h - inset);
+  if (x1 <= x0 + 2 || y1 <= y0 + 2) return null; // band swallowed the frame
+  const band = [];
+  for (let y = 0; y < h; y++) {
+    const rowBand = y < y0 || y >= y1;
+    for (let x = 0; x < w; x++) {
+      if (!rowBand && x >= x0 && x < x1) continue;
+      band.push(y * w + x);
+    }
+  }
+  if (band.length < 200) return null;
+  const idx = Int32Array.from(band);
+  const R = grayAtSize(ref.canvas, w, h);
+  const P = grayAtSize(fr.canvas, w, h);
+  const normalize = (a) => {
+    let mean = 0;
+    for (let i = 0; i < idx.length; i++) mean += a[idx[i]];
+    mean /= idx.length;
+    let v = 0;
+    for (let i = 0; i < idx.length; i++) { const d = a[idx[i]] - mean; v += d * d; }
+    const sd = Math.sqrt(v / idx.length);
+    for (let i = 0; i < a.length; i++) a[i] = (a[i] - mean) / (sd || 1);
+    return sd;
+  };
+  const sdR = normalize(R);
+  normalize(P);
+  if (sdR < 3.5) return null; // no printed marks in this frame's band
+  // quadrants, split at the frame centre; each keeps the ink centroid of the
+  // template inside it as the point its measured shift applies at
+  const mx = w / 2, my = h / 2;
+  const parts = [[], [], [], []];
+  const sums = [0, 0, 0, 0], cxs = [0, 0, 0, 0], cys = [0, 0, 0, 0];
+  for (let i = 0; i < idx.length; i++) {
+    const p = idx[i], x = p % w, y = (p / w) | 0;
+    const q = (x < mx ? 0 : 1) + (y < my ? 0 : 2);
+    parts[q].push(p);
+    const wgt = Math.abs(R[p]);
+    sums[q] += wgt; cxs[q] += wgt * x; cys[q] += wgt * y;
+  }
+  const quads = parts.map((list, q) => ({
+    idx: Int32Array.from(list),
+    ink: sums[q],
+    cx: sums[q] > 0 ? cxs[q] / sums[q] : mx,
+    cy: sums[q] > 0 ? cys[q] / sums[q] : my,
+  }));
+  return { w, h, R, P, idx, quads, ppmm };
+}
+/** ZNCC of a set of band pixels against the frame shifted by (dx, dy). */
+function markScore(fl, idx, dx, dy) {
+  const { w, h, R, P } = fl;
+  let sum = 0, n = 0;
+  for (let i = 0; i < idx.length; i++) {
+    const p = idx[i];
+    const x = (p % w) + dx, y = ((p / w) | 0) + dy;
+    if (x < 0 || y < 0 || x >= w || y >= h) continue;
+    sum += R[p] * P[y * w + x];
+    n++;
+  }
+  return n > idx.length * 0.5 ? sum / n : -1e9;
+}
+/** Coarse-to-fine ZNCC peak for one pixel set, with a parabola through it.
+    `fields` is the pyramid, `pick` selects the pixel set from each level. */
+function markPeak(fields, pick, searchMm) {
+  let bx = 0, by = 0, best = -1e9, top = null, topIdx = null;
+  for (let li = 0; li < fields.length; li++) {
+    const fl = fields[li];
+    const idx = pick(fl);
+    if (!idx || idx.length < 60) return null;
+    let r, cx, cy;
+    if (li === 0) {
+      r = Math.max(2, Math.round(searchMm * fl.ppmm));
+      cx = 0; cy = 0;
+    } else {
+      const k = fl.ppmm / fields[li - 1].ppmm;
+      r = Math.ceil(k) + 1;
+      cx = Math.round(bx * k); cy = Math.round(by * k);
+    }
+    best = -1e9;
+    let nx = cx, ny = cy;
+    for (let dy = cy - r; dy <= cy + r; dy++) {
+      for (let dx = cx - r; dx <= cx + r; dx++) {
+        const sc = markScore(fl, idx, dx, dy);
+        if (sc > best) { best = sc; nx = dx; ny = dy; }
+      }
+    }
+    bx = nx; by = ny;
+    top = fl; topIdx = idx;
+  }
+  if (best < 0.12) return null; // never correlated — do not invent a shift
+  const sxm = markScore(top, topIdx, bx - 1, by), sxp = markScore(top, topIdx, bx + 1, by);
+  const sym = markScore(top, topIdx, bx, by - 1), syp = markScore(top, topIdx, bx, by + 1);
+  const denX = sxm - 2 * best + sxp, denY = sym - 2 * best + syp;
+  const subX = denX < -1e-9 ? clamp(0.5 * (sxm - sxp) / denX, -1, 1) : 0;
+  const subY = denY < -1e-9 ? clamp(0.5 * (sym - syp) / denY, -1, 1) : 0;
+  const perPx = G.outPpmm / top.ppmm; // level px → output px
+  return { dx: (bx + subX) * perPx, dy: (by + subY) * perPx, score: best, level: top };
+}
+/** Register one extracted frame against the template marks around it.
+    Returns a similarity correction in output px — shift plus the rotation and
+    scale terms `a`/`b` — or null when the band holds no printed ink. Four
+    corners are matched independently: a single whole-band shift cannot undo the
+    slight turn and scale a lens or a lifted corner of paper puts on a frame,
+    and that is the part of the wobble a translation leaves behind. */
+function measureMarkShift(g) {
+  const fr = F.base.get(g);
+  const T = effTemplate();
+  if (!fr || !fr.canvas || !T || !T.raster) return null;
+  const fpsN = frameDefs().length;
+  const photo = S.photos[Math.floor(g / fpsN)];
+  const geo = photo && G.perPhoto.get(photo.id);
+  const nominal = geo && geo.nominalMm[g % fpsN];
+  if (!nominal) return null;
+  const inwardMm = clamp(S.stab.ring, 0, 20);
+  const searchMm = Math.min(4, Math.max(1.5, (fr.pad / G.outPpmm) * 0.9));
+
+  const fields = [];
+  for (const ppmm of MARK_LEVELS) {
+    const fl = markField(T, nominal, fr, ppmm, inwardMm);
+    if (!fl) return null;
+    fields.push(fl);
+  }
+  const whole = markPeak(fields, fl => fl.idx, searchMm);
+  if (!whole) return null;
+
+  // per-corner refinement around the whole-band answer
+  const top = fields[fields.length - 1];
+  const scale = G.outPpmm / top.ppmm;          // level px → output px
+  const minInk = top.quads.reduce((s, q) => s + q.ink, 0) / 16;
+  const obs = [];
+  for (let q = 0; q < 4; q++) {
+    if (top.quads[q].ink < minInk) continue;
+    const peak = markPeak(fields, fl => fl.quads[q].idx, searchMm);
+    if (!peak) continue;
+    // a corner that disagrees wildly with the whole band is a mismatch
+    if (Math.hypot(peak.dx - whole.dx, peak.dy - whole.dy) > 2 * G.outPpmm) continue;
+    obs.push({ x: top.quads[q].cx * scale, y: top.quads[q].cy * scale, dx: peak.dx, dy: peak.dy });
+  }
+  const out = { x: whole.dx, y: whole.dy, a: 0, b: 0, cx: (top.w / 2) * scale, cy: (top.h / 2) * scale,
+                score: whole.score, corners: obs.length };
+  if (obs.length < 3) return out; // not enough evidence for rotation/scale
+  // least squares over dx = tx + a·u − b·v, dy = ty + b·u + a·v  (u,v from centre)
+  const M = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+  const r = [0, 0, 0, 0];
+  for (const o of obs) {
+    const u = o.x - out.cx, v = o.y - out.cy;
+    for (const [row, val] of [[[1, 0, u, -v], o.dx], [[0, 1, v, u], o.dy]]) {
+      for (let i = 0; i < 4; i++) {
+        r[i] += row[i] * val;
+        for (let j = 0; j < 4; j++) M[i][j] += row[i] * row[j];
+      }
+    }
+  }
+  const sol = solveLinear(M, r);
+  if (!sol || sol.some(v => !isFinite(v))) return out;
+  if (Math.abs(sol[2]) > 0.03 || Math.abs(sol[3]) > 0.03) return out; // implausible fit
+  // Only keep the rotation/scale terms when the corners genuinely agree on
+  // them. Four noisy corner matches will always fit *some* turn and scale, and
+  // applying that invented one resamples every frame for nothing — worse than
+  // the whole-band shift it replaces. So compare what the terms move a corner
+  // by against how badly the fit misses the corners it was built from.
+  let sse = 0;
+  for (const o of obs) {
+    const u = o.x - out.cx, v = o.y - out.cy;
+    const ex = sol[0] + sol[2] * u - sol[3] * v - o.dx;
+    const ey = sol[1] + sol[3] * u + sol[2] * v - o.dy;
+    sse += ex * ex + ey * ey;
+  }
+  const resid = Math.sqrt(sse / obs.length);
+  const effect = Math.hypot(sol[2], sol[3]) * Math.hypot(out.cx, out.cy);
+  if (effect < 1.5 * resid) return out; // within the noise — stay with the shift
+  out.x = sol[0]; out.y = sol[1]; out.a = sol[2]; out.b = sol[3];
+  return out;
+}
+/** Turn the per-frame mark measurements into corrections: they are already
+    absolute, so only the part every frame shares is removed (rotating or
+    shifting the whole animation would serve nothing) and the shift is capped
+    like the neighbour solve. */
+function solveMarkOffsets() {
+  const N = trimmedCount();
+  if (!ST.marks || !N) { ST.offsets = null; return; }
+  const measured = ST.marks.filter(Boolean);
+  if (!measured.length) { ST.offsets = null; return; }
+  const mean = k => measured.reduce((s, m) => s + m[k], 0) / measured.length;
+  const mx = mean('x'), my = mean('y'), ma = mean('a'), mb = mean('b');
+  const sample = F.base.get(0);
+  const capX = sample ? sample.w * 0.10 : 40, capY = sample ? sample.h * 0.10 : 40;
+  ST.offsets = Array.from({ length: N }, (_, i) => {
+    const m = ST.marks[i];
+    if (!m) return { x: 0, y: 0, a: 0, b: 0, cx: 0, cy: 0 };
+    return {
+      x: clamp(m.x - mx, -capX, capX), y: clamp(m.y - my, -capY, capY),
+      a: m.a - ma, b: m.b - mb, cx: m.cx, cy: m.cy,
+    };
+  });
+}
+async function measureMarks(token) {
+  const N = trimmedCount();
+  const marks = new Array(N).fill(null);
+  updateStabHint(`matching marks 0/${N}`);
+  for (let g = 0; g < N; g++) {
+    marks[g] = measureMarkShift(g);
+    if ((g & 3) === 3 || g === N - 1) {
+      updateStabHint(`matching marks ${g + 1}/${N}`);
+      await nextFramePaint();
+      if (token !== ST.token) { ST.measuring = false; return false; }
+    }
+  }
+  ST.marks = marks;
+  return true;
+}
+
 function solveStabOffsets() {
+  ST.solvedMode = S.stab.mode;
+  if (S.stab.mode === 'marks') { solveMarkOffsets(); return; }
   if (!ST.edges || !ST.edges.length) { ST.offsets = null; return; }
   const N = trimmedCount();
   const xs = solveGraphAxis(ST.edges, N, 'dx');
@@ -2204,18 +2496,36 @@ function solveStabOffsets() {
   ST.offsets = offsets;
 }
 async function ensureStab() {
-  if (!S.stab.on || ST.measuring) return;
-  if (ST.offsets) return;
-  if (ST.edges) { solveStabOffsets(); requestRedraw(); return; }
+  if (!stabOn() || ST.measuring) return;
+  if (ST.offsets && ST.solvedMode === S.stab.mode) return;
+  const cached = S.stab.mode === 'marks' ? ST.marks : ST.edges;
+  if (cached) { solveStabOffsets(); updateStabHint(); requestRedraw(); return; }
   // stabilization matches the extracted frames — wait for the deferred pass
   if (G.pending.size) { updateStabHint(); ensureFrames(); return; }
   const N = trimmedCount();
   if (N <= 1 || framesBuilt() < N) return;
   const token = ++ST.token;
   ST.measuring = true;
+
+  if (S.stab.mode === 'marks') {
+    const T = effTemplate();
+    if (!T || !T.raster) {
+      ST.measuring = false;
+      updateStabHint();
+      return;
+    }
+    const ok = await measureMarks(token);
+    ST.measuring = false;
+    if (!ok || token !== ST.token) return;
+    solveStabOffsets();
+    updateStabHint();
+    requestRedraw();
+    return;
+  }
+
   const desc = edgeDescriptors();
   const edges = [];
-  updateStabHint(`measuring 0/${desc.length}`);
+  updateStabHint(`matching neighbours 0/${desc.length}`);
   for (let i = 0; i < desc.length; i++) {
     const A = getMatchData(desc[i].from), B = getMatchData(desc[i].to);
     if (A && B) {
@@ -2224,7 +2534,7 @@ async function ensureStab() {
                    weight: edgeWeight(desc[i].kind, sh.dxSample, sh.dySample) });
     }
     if ((i & 3) === 3) {
-      updateStabHint(`measuring ${i + 1}/${desc.length}`);
+      updateStabHint(`matching neighbours ${i + 1}/${desc.length}`);
       await nextFramePaint();
       if (token !== ST.token) { ST.measuring = false; return; }
     }
@@ -2236,20 +2546,62 @@ async function ensureStab() {
   updateStabHint();
   requestRedraw();
 }
+const NO_STAB = { x: 0, y: 0, a: 0, b: 0, cx: 0, cy: 0 };
 function stabOffsetOf(g) {
-  if (!S.stab.on || !ST.offsets) return { x: 0, y: 0 };
+  if (!stabOn() || !ST.offsets) return NO_STAB;
   const o = ST.offsets[g];
-  if (!o) return { x: 0, y: 0 };
+  if (!o) return NO_STAB;
   const k = S.stab.strength / 100;
-  return { x: o.x * k, y: o.y * k };
+  return { x: o.x * k, y: o.y * k, a: (o.a || 0) * k, b: (o.b || 0) * k, cx: o.cx || 0, cy: o.cy || 0 };
+}
+/** Draw the padded extraction into `ctx`, correcting it by `o`.
+    `o` says where the frame's content sits relative to where it should:
+    displacement d(p) = (x + a·u − b·v, y + b·u + a·v) around (cx, cy). Output
+    pixel p must therefore sample the source at p + d(p) — a similarity — so the
+    canvas gets its inverse. With a and b zero this is the plain shifted crop. */
+function drawCorrected(ctx, fr, o, originX, originY, w, h) {
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.clearRect(0, 0, w, h);
+  if (!o.a && !o.b) {
+    ctx.drawImage(fr.canvas, originX + o.x, originY + o.y, w, h, 0, 0, w, h);
+    return;
+  }
+  const u = 1 + o.a, v = o.b;
+  const det = u * u + v * v;
+  if (det < 1e-9) { ctx.drawImage(fr.canvas, originX + o.x, originY + o.y, w, h, 0, 0, w, h); return; }
+  const bx = originX + o.x + o.a * (originX - o.cx) - o.b * (originY - o.cy);
+  const by = originY + o.y + o.b * (originX - o.cx) + o.a * (originY - o.cy);
+  const m11 = u / det, m21 = v / det, m12 = -v / det, m22 = u / det;
+  ctx.save();
+  ctx.setTransform(m11, m12, m21, m22, -(m11 * bx + m21 * by), -(m12 * bx + m22 * by));
+  ctx.drawImage(fr.canvas, 0, 0);
+  ctx.restore();
 }
 function updateStabHint(text) {
   const el = $('stabStatusHint');
-  if (text) { el.textContent = 'solving pairwise shifts — ' + text; return; }
-  if (!S.stab.on) { el.textContent = 'off — frames use detected geometry only'; return; }
-  if (ST.offsets) {
+  el.classList.remove('warn');
+  if (text) { el.textContent = text; return; }
+  if (!stabOn()) { el.textContent = 'off — frames use detected geometry only'; return; }
+  const marks = S.stab.mode === 'marks';
+  if (marks) {
+    const T = effTemplate();
+    if (!T || !T.raster) {
+      el.textContent = 'needs a template SVG that rasterizes — switch to neighbour match';
+      el.classList.add('warn');
+      return;
+    }
+  }
+  if (ST.offsets && ST.solvedMode === S.stab.mode) {
     const m = Math.max(0, ...ST.offsets.map(o => Math.hypot(o.x, o.y)));
-    el.textContent = `✓ solved · largest correction ${m.toFixed(1)} px`;
+    if (marks) {
+      const locked = (ST.marks || []).filter(Boolean).length;
+      const total = ST.marks ? ST.marks.length : 0;
+      el.textContent = `✓ ${locked}/${total} frames locked to their marks · largest correction ${m.toFixed(1)} px`;
+      if (locked < total) el.classList.add('warn');
+    } else {
+      el.textContent = `✓ solved · largest correction ${m.toFixed(1)} px`;
+    }
   } else el.textContent = ST.measuring ? 'solving…' : 'waiting for frames…';
 }
 
@@ -2274,17 +2626,36 @@ function finalFrame(g) {
   if (!fr || !fr.canvas) return null;
   const o = stabOffsetOf(g);
   const cp = cropPx(fr);
-  const key = `${o.x.toFixed(2)}:${o.y.toFixed(2)}:${cp.l.toFixed(1)}:${cp.t.toFixed(1)}:${cp.w}x${cp.h}`;
+  const key = `${o.x.toFixed(2)}:${o.y.toFixed(2)}:${o.a.toFixed(5)}:${o.b.toFixed(5)}:${cp.l.toFixed(1)}:${cp.t.toFixed(1)}:${cp.w}x${cp.h}`;
   if (fr.final && fr.finalKey === key) return fr.final;
   const c = fr.final && fr.final.width === cp.w && fr.final.height === cp.h ? fr.final : canvas2d(cp.w, cp.h);
-  const ctx = c.getContext('2d');
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.clearRect(0, 0, cp.w, cp.h);
-  ctx.drawImage(fr.canvas, fr.pad + cp.l + o.x, fr.pad + cp.t + o.y, cp.w, cp.h, 0, 0, cp.w, cp.h);
+  drawCorrected(c.getContext('2d'), fr, o, fr.pad + cp.l, fr.pad + cp.t, cp.w, cp.h);
   fr.final = c;
   fr.finalKey = key;
   return c;
+}
+/** How far the 03 ANIMATE view pulls back from the frame border, in frame px.
+    Most of the extraction margin, so the printed marks and the frame edge stay
+    in view while the loop plays — that is what you judge alignment on. A sliver
+    is left over so a stabilization shift never drags the padding's edge in. */
+const alignMargin = fr => Math.round(fr.pad * 0.8);
+/** The frame as 03 ANIMATE shows it: zoomed out to the extraction margin, with
+    stabilization applied and the export crop deliberately ignored. */
+let _alignScratch = null, _alignKey = '';
+function alignFrame(g) {
+  const fr = F.base.get(g);
+  if (!fr || !fr.canvas) return null;
+  const o = stabOffsetOf(g);
+  const m = alignMargin(fr);
+  const w = fr.w + 2 * m, h = fr.h + 2 * m;
+  // one scratch canvas for the whole preview — playback moves on every frame,
+  // so a per-frame cache would only pile up copies of the extraction
+  const key = `${g}:${o.x.toFixed(2)}:${o.y.toFixed(2)}:${o.a.toFixed(5)}:${o.b.toFixed(5)}:${w}x${h}`;
+  if (_alignScratch && _alignKey === key) return _alignScratch;
+  if (!_alignScratch || _alignScratch.width !== w || _alignScratch.height !== h) _alignScratch = canvas2d(w, h);
+  drawCorrected(_alignScratch.getContext('2d'), fr, o, fr.pad - m, fr.pad - m, w, h);
+  _alignKey = key;
+  return _alignScratch;
 }
 let _playlist = [];
 let invalidPlaylist = true;
@@ -2377,7 +2748,10 @@ function drawPreviewFrame() {
   const pl = playlist();
   if (!pl.length) { setStageSize(16, 16); showEmpty('no frames yet — load sources in <b>01</b> and check <b>02 DETECT</b>'); return; }
   const g = pl[clamp(S.ui.pos, 0, pl.length - 1)];
-  const base = finalFrame(g);
+  // 03 ANIMATE judges alignment, so it stays pulled back to the extraction
+  // margin; only 04 EXPORT shows the cropped frame the export will write
+  const align = S.ui.step === 'animate';
+  const base = align ? alignFrame(g) : finalFrame(g);
   if (!base) {
     setStageSize(320, 200);
     stageCtx.fillStyle = '#0a0a0a';
@@ -2392,7 +2766,35 @@ function drawPreviewFrame() {
   setStageSize(out.width, out.height);
   fitStageCSS(out.width, out.height);
   stageCtx.drawImage(out, 0, 0);
-  $('stageInfo').textContent = `frame ${g} · ${base.width}×${base.height} px` + (S.stab.on && ST.offsets ? ' · stabilized' : '');
+  const stab = stabOn() && ST.offsets ? ` · ${S.stab.mode === 'marks' ? 'mark-locked' : 'stabilized'}` : '';
+  if (align) {
+    drawAlignGuides(g);
+    $('stageInfo').textContent = `frame ${g} · alignment view, ${(base.width - 2 * alignMargin(F.base.get(g)))}×${(base.height - 2 * alignMargin(F.base.get(g)))} px frame${stab}`;
+  } else {
+    $('stageInfo').textContent = `frame ${g} · ${base.width}×${base.height} px${stab}`;
+  }
+}
+/** Frame border, and the export crop when one is set, over the alignment view. */
+function drawAlignGuides(g) {
+  const fr = F.base.get(g);
+  if (!fr) return;
+  const m = alignMargin(fr);
+  const ctx = stageCtx;
+  const cp = cropPx(fr);
+  const cropped = Math.abs(cp.l) > 0.5 || Math.abs(cp.t) > 0.5 || cp.w !== fr.w || cp.h !== fr.h;
+  // dark under bright, so the guides read over ink and paper alike
+  ctx.save();
+  for (const [color, width, dash] of [['rgba(0,0,0,.55)', 3, []], ['#c8f060', 1, []]]) {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash);
+    ctx.strokeRect(m + 0.5, m + 0.5, fr.w - 1, fr.h - 1);
+  }
+  if (cropped) {
+    for (const [color, width] of [['rgba(0,0,0,.55)', 3], ['#7ad9f2', 1]]) {
+      ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash([5, 4]);
+      ctx.strokeRect(m + cp.l + 0.5, m + cp.t + 0.5, cp.w - 1, cp.h - 1);
+    }
+  }
+  ctx.restore();
 }
 function drawDetect() {
   const p = S.photos[S.ui.photoIdx];
@@ -2680,6 +3082,25 @@ function drawMagnifier() {
   mctx.fillStyle = '#000';
   mctx.fillRect(0, 0, 132, 132);
   mctx.drawImage(p.bmp, cp.x - r, cp.y - r, 2 * r, 2 * r, 0, 0, 132, 132);
+  /* crosshair on the exact drop point (the view is centred on it): full-length
+     hairlines with a gap around the centre so the pixel underneath stays
+     visible, each drawn dark-then-accent so they read over paper and ink. */
+  const c = 66.5, gap = 6;
+  const cross = () => {
+    mctx.beginPath();
+    mctx.moveTo(0, c); mctx.lineTo(c - gap, c);
+    mctx.moveTo(c + gap, c); mctx.lineTo(132, c);
+    mctx.moveTo(c, 0); mctx.lineTo(c, c - gap);
+    mctx.moveTo(c, c + gap); mctx.lineTo(c, 132);
+    mctx.rect(c - gap, c - gap, 2 * gap, 2 * gap);
+    mctx.stroke();
+  };
+  mctx.strokeStyle = 'rgba(0,0,0,.8)';
+  mctx.lineWidth = 3;
+  cross();
+  mctx.strokeStyle = '#c8f060';
+  mctx.lineWidth = 1;
+  cross();
   const wr = $('stageWrap').getBoundingClientRect();
   let mx = drag.clientX - wr.left + 22, my = drag.clientY - wr.top + 22;
   if (mx + 140 > wr.width) mx = drag.clientX - wr.left - 154;
@@ -3136,6 +3557,12 @@ function bindNumber(id, obj, key, onChange) {
     if (onChange) onChange(); else requestRedraw();
   });
 }
+/** Only the knobs the selected stabilization method actually uses. */
+function syncStabRows() {
+  $('rowStabLambda').hidden = S.stab.mode !== 'neighbors';
+  $('rowStabRing').hidden = S.stab.mode !== 'marks';
+  $('inStabStrength').closest('.ctl').hidden = !stabOn();
+}
 function syncControlsFromState() {
   document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === S.mode));
   $('inThreshold').value = S.detect.thresholdOff; $('vThreshold').textContent = String(S.detect.thresholdOff);
@@ -3145,7 +3572,9 @@ function syncControlsFromState() {
   $('inFps').value = S.anim.fps;
   $('inReverse').checked = S.anim.reverse;
   $('inPingpong').checked = S.anim.pingpong;
-  $('inStab').checked = S.stab.on;
+  $('inStabMode').value = S.stab.mode;
+  $('inStabRing').value = S.stab.ring;
+  syncStabRows();
   $('inStabStrength').value = S.stab.strength; $('vStabStrength').textContent = S.stab.strength + '%';
   $('inStabLambda').value = S.stab.lambda;
   $('inCropL').value = S.crop.l; $('inCropR').value = S.crop.r;
@@ -3253,9 +3682,9 @@ function wireControls() {
   bindNumber('inTrim', S.anim, 'trim', () => {
     S.anim.trim = Math.max(0, Math.round(S.anim.trim || 0));
     invalidPlaylist = true;
-    ST.edges = null; ST.offsets = null; ST.token++;
+    ST.edges = null; ST.marks = null; ST.offsets = null; ST.token++;
     updateExportInfo();
-    if (S.stab.on) ensureStab();
+    if (stabOn()) ensureStab();
     requestRedraw();
   });
   bindNumber('inFps', S.anim, 'fps', () => {
@@ -3265,15 +3694,26 @@ function wireControls() {
   });
   bindCheck('inReverse', S.anim, 'reverse', () => { invalidPlaylist = true; updateExportInfo(); requestRedraw(); });
   bindCheck('inPingpong', S.anim, 'pingpong', () => { invalidPlaylist = true; updateExportInfo(); requestRedraw(); });
-  bindCheck('inStab', S.stab, 'on', () => {
+  on($('inStabMode'), 'change', () => {
+    S.stab.mode = STAB_MODES.includes($('inStabMode').value) ? $('inStabMode').value : 'off';
+    saveSettings();
+    syncStabRows();
+    if (!stabOn()) ST.offsets = null;
     updateStabHint();
-    if (S.stab.on) ensureStab();
+    if (stabOn()) ensureStab();
     requestRedraw();
   });
   bindRange('inStabStrength', S.stab, 'strength', 'vStabStrength', v => v + '%');
   bindNumber('inStabLambda', S.stab, 'lambda', () => {
     S.stab.lambda = clamp(S.stab.lambda || 0, 0, 1);
-    if (ST.edges) { solveStabOffsets(); updateStabHint(); }
+    if (ST.edges && S.stab.mode === 'neighbors') { solveStabOffsets(); updateStabHint(); }
+    requestRedraw();
+  });
+  bindNumber('inStabRing', S.stab, 'ring', () => {
+    S.stab.ring = clamp(S.stab.ring || 0, 0, 20);
+    $('inStabRing').value = S.stab.ring;
+    ST.marks = null; // the band moved — every frame has to be re-matched
+    if (S.stab.mode === 'marks') { ST.offsets = null; ST.token++; ensureStab(); }
     requestRedraw();
   });
 
@@ -3395,7 +3835,7 @@ showStep('sources');
 syncBadge();
 status(glm.ok ? 'ready — drop a template SVG and sheet photos' : 'ready (no WebGL — slower, FX limited)', glm.ok ? '' : 'warn');
 // minimal debug handle (drives automated tests; harmless in normal use)
-window.__fs = { S, G, F, ST, glm, playlist, finalFrame, rebuildPipeline, ensureFrames, addPhotos, exportDims, frameLayerBoundsMm };
+window.__fs = { S, G, F, ST, glm, playlist, finalFrame, alignFrame, alignMargin, stabOffsetOf, rebuildPipeline, ensureFrames, ensureStab, addPhotos, exportDims, frameLayerBoundsMm };
 requestAnimationFrame(tick);
 </script>
 </body>
