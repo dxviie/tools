@@ -81,6 +81,18 @@
                  margin-bottom:8px;display:flex;align-items:center;gap:8px;}
   .section-label::after{content:'';flex:1;height:1px;background:var(--border);}
   .section-label .btn{margin-left:auto;}
+  .sub-label{font-size:9px;font-weight:500;letter-spacing:.16em;color:var(--text-dim);text-transform:uppercase;
+             margin:11px 0 8px;display:flex;align-items:center;gap:8px;}
+  .sub-label::after{content:'';flex:1;height:1px;background:var(--border);}
+  .sub-label .btn{margin-left:auto;}
+  .section-label input[type=number],.sub-label input[type=number]{
+    width:50px;padding:2px 4px;font-size:10px;letter-spacing:0;text-transform:none;}
+  .btn.chev{padding:2px 5px;font-size:9px;line-height:1;}
+  .side-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;}
+  /* an overridden side reads as set, one that follows the shared value shows it as a ghost */
+  .side-grid input[type=number]{color:var(--accent);border-color:var(--accent-dim);}
+  .side-grid input.inherit{color:var(--text-dim);border-color:var(--border);}
+  .side-grid input::placeholder{color:var(--text-dim);opacity:1;}
   .hint{font-size:10px;color:var(--text-dim);line-height:1.5;margin-top:6px;}
   .hint.warn{color:var(--warn);}
   .kv{display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim);padding:1px 0;}
@@ -340,26 +352,75 @@
   <!-- ═══ 04 EXPORT ═══ -->
   <div class="panel" id="panel-export" hidden>
     <div class="section">
-      <div class="section-label">Frame crop <button class="btn tiny ghost" id="btnResetCrop" data-tip="Reset all four crop offsets to 0 mm.">RESET</button></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;">
+      <div class="section-label">Frame crop
+        <input type="number" id="inCropAll" step="0.5" value="0" data-tip="One crop offset for all four sides, in mm. Positive trims into the frame, negative grows the frame into the surrounding sheet (limited by the extraction margin, ~12% of the frame). Expand with the arrow to override single sides.">
+        <button class="btn tiny ghost chev" id="btnCropSides" aria-expanded="false" data-tip="Per-side overrides. Each side follows the shared value above until you type into it; clear the field and it follows again.">&#9656;</button>
+        <button class="btn tiny ghost" id="btnResetCrop" data-tip="Reset the crop to 0 mm — shared value, per-side overrides and the animation.">RESET</button>
+      </div>
+      <div class="side-grid" id="cropSides" hidden>
         <div class="ctl-row" style="margin:0;">
-          <label data-tip="Moves the left frame border, in mm. Positive trims into the frame, negative grows the frame into the surrounding sheet (limited by the extraction margin, ~12% of the frame).">left</label>
-          <input type="number" id="inCropL" step="0.5" value="0" style="width:56px;">
+          <label data-tip="Overrides the shared value for the left border, in mm. Empty = follow the shared value.">left</label>
+          <input type="number" id="inCropL" step="0.5" placeholder="0" style="width:56px;">
         </div>
         <div class="ctl-row" style="margin:0;">
-          <label data-tip="Moves the right frame border, in mm. Positive trims into the frame, negative grows it.">right</label>
-          <input type="number" id="inCropR" step="0.5" value="0" style="width:56px;">
+          <label data-tip="Overrides the shared value for the right border, in mm. Empty = follow the shared value.">right</label>
+          <input type="number" id="inCropR" step="0.5" placeholder="0" style="width:56px;">
         </div>
         <div class="ctl-row" style="margin:0;">
-          <label data-tip="Moves the top frame border, in mm. Positive trims into the frame, negative grows it.">top</label>
-          <input type="number" id="inCropT" step="0.5" value="0" style="width:56px;">
+          <label data-tip="Overrides the shared value for the top border, in mm. Empty = follow the shared value.">top</label>
+          <input type="number" id="inCropT" step="0.5" placeholder="0" style="width:56px;">
         </div>
         <div class="ctl-row" style="margin:0;">
-          <label data-tip="Moves the bottom frame border, in mm. Positive trims into the frame, negative grows it.">bottom</label>
-          <input type="number" id="inCropB" step="0.5" value="0" style="width:56px;">
+          <label data-tip="Overrides the shared value for the bottom border, in mm. Empty = follow the shared value.">bottom</label>
+          <input type="number" id="inCropB" step="0.5" placeholder="0" style="width:56px;">
         </div>
       </div>
-      <div class="hint">Shapes the exported frame only — 03 ANIMATE keeps showing the full extraction so you can judge the alignment.</div>
+      <div class="ctl-row" style="margin-top:9px;">
+        <label data-tip="Ramps the crop across the animation: the value above becomes the first frame's crop, the end crop below the last frame's, and every frame in between is interpolated along the curve.">animate crop</label>
+        <input type="checkbox" id="inCropAnim">
+      </div>
+      <div id="cropAnimBlock" hidden>
+        <div class="sub-label">End crop
+          <input type="number" id="inCropEndAll" step="0.5" value="0" data-tip="The crop the last frame lands on — one value for all four sides, in mm. Expand with the arrow to override single sides.">
+          <button class="btn tiny ghost chev" id="btnCropEndSides" aria-expanded="false" data-tip="Per-side overrides for the end crop. Each side follows the shared value above until you type into it.">&#9656;</button>
+        </div>
+        <div class="side-grid" id="cropEndSides" hidden>
+          <div class="ctl-row" style="margin:0;">
+            <label data-tip="Overrides the shared value for the left border, in mm. Empty = follow the shared value.">left</label>
+            <input type="number" id="inCropEndL" step="0.5" placeholder="0" style="width:56px;">
+          </div>
+          <div class="ctl-row" style="margin:0;">
+            <label data-tip="Overrides the shared value for the right border, in mm. Empty = follow the shared value.">right</label>
+            <input type="number" id="inCropEndR" step="0.5" placeholder="0" style="width:56px;">
+          </div>
+          <div class="ctl-row" style="margin:0;">
+            <label data-tip="Overrides the shared value for the top border, in mm. Empty = follow the shared value.">top</label>
+            <input type="number" id="inCropEndT" step="0.5" placeholder="0" style="width:56px;">
+          </div>
+          <div class="ctl-row" style="margin:0;">
+            <label data-tip="Overrides the shared value for the bottom border, in mm. Empty = follow the shared value.">bottom</label>
+            <input type="number" id="inCropEndB" step="0.5" placeholder="0" style="width:56px;">
+          </div>
+        </div>
+        <div class="ctl-row" style="margin-top:9px;">
+          <label data-tip="How the crop travels from start to end over the frames — the same easing curves as CSS/After Effects.">curve</label>
+          <select id="inCropEase">
+            <option value="linear">linear</option>
+            <option value="quad-in">quad in</option>
+            <option value="quad-out">quad out</option>
+            <option value="quad-in-out">quad in-out</option>
+            <option value="cubic-in">cubic in</option>
+            <option value="cubic-out">cubic out</option>
+            <option value="cubic-in-out">cubic in-out</option>
+            <option value="sine-in-out">sine in-out</option>
+            <option value="expo-in">expo in</option>
+            <option value="expo-out">expo out</option>
+            <option value="back-in-out">back in-out</option>
+          </select>
+        </div>
+        <div class="hint">Every frame is written at the <b>start</b> crop's size, so a tightening crop reads as a zoom in rather than a shrinking canvas.</div>
+      </div>
+      <div class="hint">Shapes the exported frame only — 03 ANIMATE keeps showing the full extraction, with the crop drawn as a dashed box so you can judge the alignment.</div>
     </div>
 
     <div class="section">
@@ -538,11 +599,27 @@ function download(blob, name) {
 }
 
 /* ── state ────────────────────────────────────────────────────────────── */
+const CROP_SIDES = ['l', 'r', 't', 'b'];
+const CROP_MAX = 25;                       // mm, per side
+/** A crop spec is one shared `all` offset plus per-side overrides; a side
+    holding null follows `all`. The export crop is two of them — the first
+    frame's and, when the crop is animated, the last frame's. */
+const freshCropSpec = () => ({ all: 0, l: null, r: null, t: null, b: null });
+const freshCrop = () => ({ ...freshCropSpec(), animate: false, ease: 'linear', end: freshCropSpec() });
+/** Copy `src` into `target` in place — the control bindings hold on to the
+    live crop objects, so a reset must never swap them out. */
+function assignCrop(target, src) {
+  target.all = src.all;
+  target.animate = !!src.animate;
+  target.ease = src.ease;
+  target.end.all = src.end.all;
+  for (const k of CROP_SIDES) { target[k] = src[k]; target.end[k] = src.end[k]; }
+}
 const DEFAULTS = {
   mode: 'sheets',
   detect: { thresholdOff: 0, polarity: 'auto', refine: true },
   anim: { fps: 12, reverse: false, pingpong: false, trim: 0 },
-  crop: { l: 0, r: 0, t: 0, b: 0 },
+  crop: freshCrop(),
   stab: { mode: 'off', strength: 100, lambda: 0.01, ring: 2 },
   look: { bright: 0, contrast: 0, sat: 0, ink: 0, invert: false, chroma: 0, vhs: 0, glitch: 0, grain: 0 },
   out: { width: 0, mp4bpp: 0.12, loops: 1 },
@@ -554,11 +631,11 @@ const S = {
   photos: [],              // {id, name, bmp, w, h, thumbURL, gray, autoQuad, quadScore, manualQuad, rotAuto, rotUser, _detKey}
   detect: { ...DEFAULTS.detect },
   anim: { ...DEFAULTS.anim },
-  crop: { ...DEFAULTS.crop },
+  crop: freshCrop(),
   stab: { ...DEFAULTS.stab },
   look: { ...DEFAULTS.look },
   out: { ...DEFAULTS.out },
-  ui: { step: 'sources', detectView: 'source', photoIdx: 0, playing: true, pos: 0 },
+  ui: { step: 'sources', detectView: 'source', photoIdx: 0, playing: true, pos: 0, cropSides: false, cropEndSides: false },
 };
 const G = { perPhoto: new Map(), outPpmm: 0, pending: new Set() }; // geometry: photoId → {H, quadsMm, anchors, rect, rectPpmm}; pending = photo ids awaiting full-quality extraction
 const F = { base: new Map() };                    // frame gIdx → {canvas (padded), pad, w, h}
@@ -588,14 +665,39 @@ function loadSettings() {
     if (!raw) return;
     const j = JSON.parse(raw);
     if (j.mode === 'sheets' || j.mode === 'perframe') S.mode = j.mode;
-    for (const k of ['detect', 'anim', 'crop', 'stab', 'look', 'out']) {
+    for (const k of ['detect', 'anim', 'stab', 'look', 'out']) {
       if (j[k] && typeof j[k] === 'object') Object.assign(S[k], j[k]);
     }
+    adoptCrop(j.crop);
     // pre-methods state stored a bare on/off flag; that switch was the neighbour matcher
     if (!STAB_MODES.includes(S.stab.mode)) S.stab.mode = j.stab && j.stab.on ? 'neighbors' : 'off';
     delete S.stab.on;
   } catch { /* corrupted state — keep defaults */ }
 }
+/** Read a stored crop back into S.crop, tolerating anything in there. Settings
+    from before the shared value stored four plain numbers: four equal sides
+    become the shared value, an uneven set becomes four overrides. */
+function adoptCrop(src) {
+  assignCrop(S.crop, freshCrop());
+  if (!src || typeof src !== 'object') return;
+  const num = v => (typeof v === 'number' && isFinite(v) ? clamp(v, -CROP_MAX, CROP_MAX) : null);
+  const spec = (into, from) => {
+    if (!from || typeof from !== 'object') return;
+    into.all = num(from.all) ?? 0;
+    for (const k of CROP_SIDES) into[k] = num(from[k]);
+  };
+  spec(S.crop, src);
+  spec(S.crop.end, src.end);
+  if (!('all' in src)) { // legacy four-number crop
+    const v = CROP_SIDES.map(k => S.crop[k] ?? 0);
+    if (v.every(x => x === v[0])) { S.crop.all = v[0]; for (const k of CROP_SIDES) S.crop[k] = null; }
+  }
+  S.crop.animate = !!src.animate;
+  if (typeof src.ease === 'string' && CROP_EASES[src.ease]) S.crop.ease = src.ease;
+  S.ui.cropSides = CROP_SIDES.some(k => S.crop[k] != null);
+  S.ui.cropEndSides = CROP_SIDES.some(k => S.crop.end[k] != null);
+}
+
 function settingsSnapshot() {
   return {
     tool: 'framesheet-studio', version: 1,
@@ -2558,13 +2660,17 @@ function stabOffsetOf(g) {
     `o` says where the frame's content sits relative to where it should:
     displacement d(p) = (x + a·u − b·v, y + b·u + a·v) around (cx, cy). Output
     pixel p must therefore sample the source at p + d(p) — a similarity — so the
-    canvas gets its inverse. With a and b zero this is the plain shifted crop. */
-function drawCorrected(ctx, fr, o, originX, originY, w, h) {
+    canvas gets its inverse. With a and b zero this is the plain shifted crop.
+    `dw`/`dh` scale the w×h source window into a differently sized output — an
+    animated crop reads a shrinking window into a fixed-size frame. */
+function drawCorrected(ctx, fr, o, originX, originY, w, h, dw, dh) {
+  dw = dw || w; dh = dh || h;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.clearRect(0, 0, w, h);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, dw, dh);
   if (!o.a && !o.b) {
-    ctx.drawImage(fr.canvas, originX + o.x, originY + o.y, w, h, 0, 0, w, h);
+    ctx.drawImage(fr.canvas, originX + o.x, originY + o.y, w, h, 0, 0, dw, dh);
     return;
   }
   const u = 1 + o.a, v = o.b;
@@ -2574,7 +2680,8 @@ function drawCorrected(ctx, fr, o, originX, originY, w, h) {
   const by = originY + o.y + o.b * (originX - o.cx) + o.a * (originY - o.cy);
   const m11 = u / det, m21 = v / det, m12 = -v / det, m22 = u / det;
   ctx.save();
-  ctx.setTransform(m11, m12, m21, m22, -(m11 * bx + m21 * by), -(m12 * bx + m22 * by));
+  ctx.setTransform(dw / w, 0, 0, dh / h, 0, 0);
+  ctx.transform(m11, m12, m21, m22, -(m11 * bx + m21 * by), -(m12 * bx + m22 * by));
   ctx.drawImage(fr.canvas, 0, 0);
   ctx.restore();
 }
@@ -2606,30 +2713,80 @@ function updateStabHint(text) {
 }
 
 /* ── final frames + playback ──────────────────────────────────────────── */
-/** Effective crop window in frame px: user crop (mm, both directions) clamped
-    so expansion stays inside the extraction margin. */
-function cropPx(fr) {
+/** Interpolation curves for an animated crop, f(t) over [0,1]. */
+const CROP_EASES = {
+  'linear': t => t,
+  'quad-in': t => t * t,
+  'quad-out': t => 1 - (1 - t) * (1 - t),
+  'quad-in-out': t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2),
+  'cubic-in': t => t * t * t,
+  'cubic-out': t => 1 - Math.pow(1 - t, 3),
+  'cubic-in-out': t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+  'sine-in-out': t => -(Math.cos(Math.PI * t) - 1) / 2,
+  'expo-in': t => (t <= 0 ? 0 : Math.pow(2, 10 * t - 10)),
+  'expo-out': t => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * t)),
+  'back-in-out': t => {
+    const c = 1.70158 * 1.525;
+    return t < 0.5
+      ? (Math.pow(2 * t, 2) * ((c + 1) * 2 * t - c)) / 2
+      : (Math.pow(2 * t - 2, 2) * ((c + 1) * (2 * t - 2) + c) + 2) / 2;
+  },
+};
+/** One side of a crop spec in mm: its override, or the spec's shared value. */
+const cropSideMm = (spec, k) => (spec[k] == null ? (spec.all || 0) : spec[k]);
+const cropSpecMm = spec => ({
+  l: cropSideMm(spec, 'l'), r: cropSideMm(spec, 'r'),
+  t: cropSideMm(spec, 't'), b: cropSideMm(spec, 'b'),
+});
+/** The crop of frame `g` in mm. Static unless the crop is animated, in which
+    case it eases from the start spec on frame 0 to the end spec on the last
+    frame — by frame index, so a reversed or ping-ponged playlist replays the
+    same ramp its frames carry. */
+function cropMmAt(g) {
+  const a = cropSpecMm(S.crop);
+  if (!S.crop.animate) return a;
+  const n = trimmedCount();
+  const u = n > 1 ? clamp(g, 0, n - 1) / (n - 1) : 0;
+  const e = (CROP_EASES[S.crop.ease] || CROP_EASES.linear)(u);
+  const b = cropSpecMm(S.crop.end);
+  const out = {};
+  for (const k of CROP_SIDES) out[k] = a[k] + (b[k] - a[k]) * e;
+  return out;
+}
+/** Effective crop window of frame `g` in frame px: its crop (mm, both
+    directions) clamped so expansion stays inside the extraction margin. */
+function cropPx(fr, g) {
   const p = G.outPpmm || 4;
   const maxOut = fr.pad * 0.85;
-  const l = clamp((S.crop.l || 0) * p, -maxOut, fr.w * 0.45);
-  const r = clamp((S.crop.r || 0) * p, -maxOut, fr.w * 0.45);
-  const t = clamp((S.crop.t || 0) * p, -maxOut, fr.h * 0.45);
-  const b = clamp((S.crop.b || 0) * p, -maxOut, fr.h * 0.45);
+  const mm = cropMmAt(g || 0);
+  const l = clamp(mm.l * p, -maxOut, fr.w * 0.45);
+  const r = clamp(mm.r * p, -maxOut, fr.w * 0.45);
+  const t = clamp(mm.t * p, -maxOut, fr.h * 0.45);
+  const b = clamp(mm.b * p, -maxOut, fr.h * 0.45);
   return {
     l, t,
     w: Math.max(8, Math.round(fr.w - l - r)),
     h: Math.max(8, Math.round(fr.h - t - b)),
   };
 }
+/** The size every final frame is written at — the first frame's crop window.
+    An animated crop changes the window per frame, and a video wants one size,
+    so the later windows are scaled into this one: the ramp reads as a zoom. */
+function outCropSize(fr) {
+  const ref = (S.crop.animate && F.base.get(0)) || fr;
+  const c0 = cropPx(ref, 0);
+  return { w: c0.w, h: c0.h };
+}
 function finalFrame(g) {
   const fr = F.base.get(g);
   if (!fr || !fr.canvas) return null;
   const o = stabOffsetOf(g);
-  const cp = cropPx(fr);
-  const key = `${o.x.toFixed(2)}:${o.y.toFixed(2)}:${o.a.toFixed(5)}:${o.b.toFixed(5)}:${cp.l.toFixed(1)}:${cp.t.toFixed(1)}:${cp.w}x${cp.h}`;
+  const cp = cropPx(fr, g);
+  const out = outCropSize(fr);
+  const key = `${o.x.toFixed(2)}:${o.y.toFixed(2)}:${o.a.toFixed(5)}:${o.b.toFixed(5)}:${cp.l.toFixed(1)}:${cp.t.toFixed(1)}:${cp.w}x${cp.h}:${out.w}x${out.h}`;
   if (fr.final && fr.finalKey === key) return fr.final;
-  const c = fr.final && fr.final.width === cp.w && fr.final.height === cp.h ? fr.final : canvas2d(cp.w, cp.h);
-  drawCorrected(c.getContext('2d'), fr, o, fr.pad + cp.l, fr.pad + cp.t, cp.w, cp.h);
+  const c = fr.final && fr.final.width === out.w && fr.final.height === out.h ? fr.final : canvas2d(out.w, out.h);
+  drawCorrected(c.getContext('2d'), fr, o, fr.pad + cp.l, fr.pad + cp.t, cp.w, cp.h, out.w, out.h);
   fr.final = c;
   fr.finalKey = key;
   return c;
@@ -2780,7 +2937,7 @@ function drawAlignGuides(g) {
   if (!fr) return;
   const m = alignMargin(fr);
   const ctx = stageCtx;
-  const cp = cropPx(fr);
+  const cp = cropPx(fr, g);
   const cropped = Math.abs(cp.l) > 0.5 || Math.abs(cp.t) > 0.5 || cp.w !== fr.w || cp.h !== fr.h;
   // dark under bright, so the guides read over ink and paper alike
   ctx.save();
@@ -3312,7 +3469,7 @@ function updateExportInfo() {
 function exportDims() {
   const fr = F.base.get(0);
   let nw = 0, nh = 0;
-  if (fr && fr.canvas) { const cp = cropPx(fr); nw = cp.w; nh = cp.h; }
+  if (fr && fr.canvas) { const cp = cropPx(fr, 0); nw = cp.w; nh = cp.h; }
   else {
     const fd = frameDefs()[0];
     if (fd && G.outPpmm) {
@@ -3557,6 +3714,29 @@ function bindNumber(id, obj, key, onChange) {
     if (onChange) onChange(); else requestRedraw();
   });
 }
+/** The crop controls: shared value in the header, per-side overrides showing
+    what they inherit as their placeholder, and the end crop when animating. */
+function syncCropUI() {
+  for (const [prefix, spec, expanded, btn, grid] of [
+    ['', S.crop, S.ui.cropSides, 'btnCropSides', 'cropSides'],
+    ['End', S.crop.end, S.ui.cropEndSides, 'btnCropEndSides', 'cropEndSides'],
+  ]) {
+    $('inCrop' + prefix + 'All').value = spec.all;
+    for (const k of CROP_SIDES) {
+      const el = $('inCrop' + prefix + k.toUpperCase());
+      el.value = spec[k] == null ? '' : spec[k];
+      el.placeholder = String(spec.all);
+      el.classList.toggle('inherit', spec[k] == null);
+    }
+    $(grid).hidden = !expanded;
+    $(btn).textContent = expanded ? '\u25be' : '\u25b8';
+    $(btn).setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  }
+  $('inCropAnim').checked = S.crop.animate;
+  $('inCropEase').value = S.crop.ease;
+  $('cropAnimBlock').hidden = !S.crop.animate;
+}
+
 /** Only the knobs the selected stabilization method actually uses. */
 function syncStabRows() {
   $('rowStabLambda').hidden = S.stab.mode !== 'neighbors';
@@ -3577,8 +3757,7 @@ function syncControlsFromState() {
   syncStabRows();
   $('inStabStrength').value = S.stab.strength; $('vStabStrength').textContent = S.stab.strength + '%';
   $('inStabLambda').value = S.stab.lambda;
-  $('inCropL').value = S.crop.l; $('inCropR').value = S.crop.r;
-  $('inCropT').value = S.crop.t; $('inCropB').value = S.crop.b;
+  syncCropUI();
   $('inBright').value = S.look.bright; $('vBright').textContent = String(S.look.bright);
   $('inContrast').value = S.look.contrast; $('vContrast').textContent = String(S.look.contrast);
   $('inSat').value = S.look.sat; $('vSat').textContent = String(S.look.sat);
@@ -3719,17 +3898,41 @@ function wireControls() {
 
   // frame crop
   const cropChanged = () => {
-    for (const k of ['l', 'r', 't', 'b']) S.crop[k] = clamp(S.crop[k] || 0, -25, 25);
+    saveSettings();
+    syncCropUI();
     updateExportInfo();
     requestRedraw();
   };
-  bindNumber('inCropL', S.crop, 'l', cropChanged);
-  bindNumber('inCropR', S.crop, 'r', cropChanged);
-  bindNumber('inCropT', S.crop, 't', cropChanged);
-  bindNumber('inCropB', S.crop, 'b', cropChanged);
+  /** The shared value: blank or junk reads as 0. */
+  const bindCropAll = (id, spec) => on($(id), 'change', () => {
+    const v = parseFloat($(id).value);
+    spec().all = isNaN(v) ? 0 : clamp(v, -CROP_MAX, CROP_MAX);
+    cropChanged();
+  });
+  /** A per-side override: blank clears it, so the side follows the shared value. */
+  const bindCropSide = (id, spec, k) => on($(id), 'change', () => {
+    const raw = $(id).value.trim();
+    const v = parseFloat(raw);
+    spec()[k] = raw === '' || isNaN(v) ? null : clamp(v, -CROP_MAX, CROP_MAX);
+    cropChanged();
+  });
+  for (const [prefix, spec] of [['', () => S.crop], ['End', () => S.crop.end]]) {
+    bindCropAll('inCrop' + prefix + 'All', spec);
+    for (const k of CROP_SIDES) bindCropSide('inCrop' + prefix + k.toUpperCase(), spec, k);
+  }
+  for (const [id, key] of [['btnCropSides', 'cropSides'], ['btnCropEndSides', 'cropEndSides']]) {
+    on($(id), 'click', () => { S.ui[key] = !S.ui[key]; syncCropUI(); });
+  }
+  on($('inCropAnim'), 'change', () => { S.crop.animate = $('inCropAnim').checked; cropChanged(); });
+  on($('inCropEase'), 'change', () => {
+    const v = $('inCropEase').value;
+    S.crop.ease = CROP_EASES[v] ? v : 'linear';
+    cropChanged();
+  });
   on($('btnResetCrop'), 'click', () => {
-    Object.assign(S.crop, DEFAULTS.crop);
-    saveSettings(); syncControlsFromState(); updateExportInfo(); requestRedraw();
+    assignCrop(S.crop, freshCrop());
+    S.ui.cropSides = S.ui.cropEndSides = false;
+    cropChanged();
   });
 
   // look + fx
@@ -3762,7 +3965,9 @@ function wireControls() {
   on($('btnResetSettings'), 'click', () => {
     localStorage.removeItem(LS_KEY);
     S.mode = DEFAULTS.mode;
-    for (const k of ['detect', 'anim', 'crop', 'stab', 'look', 'out']) Object.assign(S[k], DEFAULTS[k]);
+    for (const k of ['detect', 'anim', 'stab', 'look', 'out']) Object.assign(S[k], DEFAULTS[k]);
+    assignCrop(S.crop, freshCrop());
+    S.ui.cropSides = S.ui.cropEndSides = false;
     S.photos.forEach(ph => { ph._detKey = ''; ph.manualQuad = null; ph.rotUser = 0; });
     syncControlsFromState();
     updateSourcesUI();
@@ -3835,7 +4040,7 @@ showStep('sources');
 syncBadge();
 status(glm.ok ? 'ready — drop a template SVG and sheet photos' : 'ready (no WebGL — slower, FX limited)', glm.ok ? '' : 'warn');
 // minimal debug handle (drives automated tests; harmless in normal use)
-window.__fs = { S, G, F, ST, glm, playlist, finalFrame, alignFrame, alignMargin, stabOffsetOf, rebuildPipeline, ensureFrames, ensureStab, addPhotos, exportDims, frameLayerBoundsMm };
+window.__fs = { S, G, F, ST, glm, playlist, finalFrame, cropMmAt, cropPx, syncCropUI, alignFrame, alignMargin, stabOffsetOf, rebuildPipeline, ensureFrames, ensureStab, addPhotos, exportDims, frameLayerBoundsMm };
 requestAnimationFrame(tick);
 </script>
 </body>
