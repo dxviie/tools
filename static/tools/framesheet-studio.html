@@ -200,7 +200,7 @@
   <div class="logo">Framesheet Studio</div>
   <nav class="steps">
     <button class="step-tab active" data-step="sources" data-tip="Load your framesheet template SVG and the photos of the plotted sheets."><span class="s-num">01</span>SOURCES</button>
-    <button class="step-tab" data-step="detect" data-tip="Check page detection and frame placement. The view shows the detected page border and every frame border — drag the green page corners to correct them."><span class="s-num">02</span>DETECT</button>
+    <button class="step-tab" data-step="detect" data-tip="Check page detection and frame placement (or skip detection and use the whole photo as the page). The view shows the detected page border and every frame border — drag the green page corners to correct them."><span class="s-num">02</span>DETECT</button>
     <button class="step-tab" data-step="animate" data-tip="Play the animation, set speed and order, and enable stabilization."><span class="s-num">03</span>ANIMATE</button>
     <button class="step-tab" data-step="export" data-tip="Grade the look, add effects, and export MP4 / GIF / frame ZIP."><span class="s-num">04</span>EXPORT</button>
   </nav>
@@ -263,6 +263,11 @@
   <div class="panel" id="panel-detect" hidden>
     <div class="section">
       <div class="section-label">Page detection</div>
+      <div class="ctl-row">
+        <label data-tip="Skip the automatic page detection and treat the entire photo as the page — for inputs that are already cropped or scanned to the page edge. The threshold and paper settings are ignored; corners can still be dragged by hand. Applies to all photos.">skip detection · page = whole photo</label>
+        <input type="checkbox" id="inSkipDetect">
+      </div>
+      <div id="detectAutoCtls">
       <div class="ctl">
         <label data-tip="Nudges the automatic black/white threshold that separates the page from the background. Move it until the green page border hugs the paper edge. 0 = automatic (Otsu). Applies to all photos.">threshold<span class="val" id="vThreshold">0</span></label>
         <input type="range" id="inThreshold" min="-100" max="100" value="0">
@@ -274,6 +279,7 @@
           <option value="light">light paper · dark bg</option>
           <option value="dark">dark paper · light bg</option>
         </select>
+      </div>
       </div>
       <div class="hint" id="detectStatusHint">—</div>
     </div>
@@ -617,7 +623,7 @@ function assignCrop(target, src) {
 }
 const DEFAULTS = {
   mode: 'sheets',
-  detect: { thresholdOff: 0, polarity: 'auto', refine: true },
+  detect: { thresholdOff: 0, polarity: 'auto', refine: true, skip: false },
   anim: { fps: 12, reverse: false, pingpong: false, trim: 0 },
   crop: freshCrop(),
   stab: { mode: 'off', strength: 100, lambda: 0.01, ring: 2 },
@@ -1242,9 +1248,21 @@ function lineIntersect(l1, l2) {
   return { x: l1.px + l1.dx * t, y: l1.py + l1.dy * t };
 }
 
+/** Page quad covering the whole photo (TL, TR, BR, BL) — used when detection is skipped. */
+function wholePhotoQuad(photo) {
+  return [{ x: 0, y: 0 }, { x: photo.w, y: 0 }, { x: photo.w, y: photo.h }, { x: 0, y: photo.h }];
+}
 function detectPage(photo) {
-  const key = `${S.detect.thresholdOff}:${S.detect.polarity}`;
+  const key = S.detect.skip ? 'skip' : `${S.detect.thresholdOff}:${S.detect.polarity}`;
   if (photo._detKey === key && photo.autoQuad) return;
+  if (S.detect.skip) { // no detection: the entire input is the page
+    photo._detKey = key;
+    photo._previewQuad = null;
+    photo.paperLight = null;
+    photo.autoQuad = wholePhotoQuad(photo);
+    photo.quadScore = 1;
+    return;
+  }
   const g = grayOf(photo);
   const base = otsu(g);
   const th = clamp(base + S.detect.thresholdOff, 2, 253);
@@ -3066,7 +3084,7 @@ function drawDetectSource(p) {
     ctx.fillStyle = '#c8f060';
     ctx.font = '11px monospace';
     ctx.fillText('TL', tl.x * sc + 9, tl.y * sc - 9);
-    $('stageInfo').textContent = (p.manualQuad ? 'manual corners' : 'auto page') +
+    $('stageInfo').textContent = (p.manualQuad ? 'manual corners' : S.detect.skip ? 'whole photo' : 'auto page') +
       (p.paperLight != null ? ` · ${p.paperLight ? 'light' : 'dark'} paper` : '');
   } else {
     ctx.fillStyle = 'rgba(14,14,14,.7)';
@@ -3321,7 +3339,7 @@ function syncDetectToolbar() {
     const geoP = G.perPhoto.get(p.id);
     const po = geoP && geoP.plotOffset;
     hint.textContent = effQuad(p)
-      ? (p.manualQuad ? 'page: manual corners' : 'page: auto ✓') + ` · orientation ${((p.rotAuto + p.rotUser) & 3) * 90}°` +
+      ? (p.manualQuad ? 'page: manual corners' : S.detect.skip ? 'page: whole photo' : 'page: auto ✓') + ` · orientation ${((p.rotAuto + p.rotUser) & 3) * 90}°` +
         (p.frameLayerQuad ? ' · frame layer: manual' :
           (po && po.ok ? ` · plot offset ${po.dx >= 0 ? '+' : ''}${po.dx.toFixed(1)}/${po.dy >= 0 ? '+' : ''}${po.dy.toFixed(1)} mm` : ''))
       : 'page: not found — tune threshold/paper or place corners by hand';
@@ -3737,6 +3755,14 @@ function syncCropUI() {
   $('cropAnimBlock').hidden = !S.crop.animate;
 }
 
+/** Threshold / paper only matter while the page is actually detected. */
+function syncDetectRows() {
+  const box = $('detectAutoCtls');
+  box.style.opacity = S.detect.skip ? '.4' : '';
+  box.style.pointerEvents = S.detect.skip ? 'none' : '';
+  $('inThreshold').disabled = !!S.detect.skip;
+  $('inPolarity').disabled = !!S.detect.skip;
+}
 /** Only the knobs the selected stabilization method actually uses. */
 function syncStabRows() {
   $('rowStabLambda').hidden = S.stab.mode !== 'neighbors';
@@ -3748,6 +3774,8 @@ function syncControlsFromState() {
   $('inThreshold').value = S.detect.thresholdOff; $('vThreshold').textContent = String(S.detect.thresholdOff);
   $('inPolarity').value = S.detect.polarity;
   $('inRefine').checked = S.detect.refine;
+  $('inSkipDetect').checked = !!S.detect.skip;
+  syncDetectRows();
   $('inTrim').value = S.anim.trim || '';
   $('inFps').value = S.anim.fps;
   $('inReverse').checked = S.anim.reverse;
@@ -3816,7 +3844,7 @@ function wireControls() {
     rebuildPipeline();
   }, () => { // live scrub: quick page-boundary preview for the active photo only
     const p = S.photos[S.ui.photoIdx];
-    if (!p) return;
+    if (!p || S.detect.skip) return;
     const g = grayOf(p);
     const th = clamp(otsu(g) + S.detect.thresholdOff, 2, 253);
     const tries = S.detect.polarity === 'auto' ? [true, false] : S.detect.polarity === 'light' ? [true] : [false];
@@ -3835,6 +3863,11 @@ function wireControls() {
     rebuildPipeline();
   });
   bindCheck('inRefine', S.detect, 'refine', () => rebuildPipeline());
+  bindCheck('inSkipDetect', S.detect, 'skip', () => {
+    syncDetectRows();
+    S.photos.forEach(ph => { ph._detKey = ''; ph._previewQuad = null; });
+    rebuildPipeline();
+  });
   on($('btnResetCorners'), 'click', () => {
     const p = S.photos[S.ui.photoIdx];
     if (!p) return;
