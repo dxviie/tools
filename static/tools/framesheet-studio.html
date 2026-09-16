@@ -481,11 +481,11 @@
       </div>
       <div class="kv"><span>native size</span><b id="kvNative">—</b></div>
       <div class="ctl-row">
-        <label data-tip="Video bitrate preset, in bits per pixel. <b>high</b> ≈ 0.12 bpp is visually clean; <b>ultra</b> ≈ 0.25 for gradient-heavy footage; <b>max</b> ≈ 0.5 for archival quality.">mp4 quality</label>
+        <label data-tip="Constant-quality encode (fixed quantizer, like a CRF) — file size follows the footage instead of a bitrate target. <b>high</b> is clean for socials; <b>ultra</b> keeps paper grain and pen edges intact; <b>max</b> is near-lossless archival. Browsers whose encoder cannot do constant quality fall back to a generous bitrate for the same preset.">mp4 quality</label>
         <select id="inMp4Quality">
-          <option value="0.12">high</option>
-          <option value="0.25">ultra</option>
-          <option value="0.5">max</option>
+          <option value="high">high</option>
+          <option value="ultra">ultra</option>
+          <option value="max">max</option>
         </select>
       </div>
       <div class="ctl-row">
@@ -628,7 +628,7 @@ const DEFAULTS = {
   crop: freshCrop(),
   stab: { mode: 'off', strength: 100, lambda: 0.01, ring: 2 },
   look: { bright: 0, contrast: 0, sat: 0, ink: 0, invert: false, chroma: 0, vhs: 0, glitch: 0, grain: 0 },
-  out: { width: 0, mp4bpp: 0.12, loops: 1 },
+  out: { width: 0, mp4q: 'high', loops: 1 },
 };
 const S = {
   mode: DEFAULTS.mode,
@@ -678,6 +678,13 @@ function loadSettings() {
     // pre-methods state stored a bare on/off flag; that switch was the neighbour matcher
     if (!STAB_MODES.includes(S.stab.mode)) S.stab.mode = j.stab && j.stab.on ? 'neighbors' : 'off';
     delete S.stab.on;
+    // earlier builds stored the mp4 quality as a bits-per-pixel number (0.12 / 0.25 / 0.5)
+    const jo = j.out && typeof j.out === 'object' ? j.out : {};
+    if (!MP4_QUALITY[jo.mp4q]) {
+      const bpp = typeof jo.mp4bpp === 'number' ? jo.mp4bpp : 0;
+      S.out.mp4q = bpp > 0.3 ? 'max' : bpp > 0.15 ? 'ultra' : 'high';
+    }
+    delete S.out.mp4bpp;
   } catch { /* corrupted state — keep defaults */ }
 }
 /** Read a stored crop back into S.crop, tolerating anything in there. Settings
@@ -3641,15 +3648,41 @@ async function exportGif() {
     setExportBusy(false);
   }
 }
-async function pickVideoCodec(w, h, fps, bitrate) {
-  const candidates = ['avc1.640033', 'avc1.64002a', 'avc1.4d002a', 'avc1.42002a', 'vp09.00.40.08', 'vp09.00.10.08'];
+/** MP4 quality presets. Every frame of a framesheet animation is a different
+    photo — paper grain, pen edges and camera noise change completely from one
+    frame to the next — so the encoder gets almost no temporal redundancy to
+    lean on and a bitrate sized for ordinary video starves it into blocking.
+    Preferred path: WebCodecs "quantizer" mode, a fixed quantizer per frame
+    (constant quality, like x264's CRF) — H.264 QP is 0–51, VP9 q is 0–63.
+    Fallback for encoders without it: a bitrate in bits per pixel *per frame*,
+    generous enough to cover an all-intra stream. */
+const MP4_QUALITY = {
+  high:  { avcQ: 22, vp9Q: 28, bpp: 1.0 },
+  ultra: { avcQ: 17, vp9Q: 18, bpp: 2.0 },
+  max:   { avcQ: 12, vp9Q: 8,  bpp: 4.0 },
+};
+const MP4_BITRATE_MAX = 240e6; // H.264 level 5.2 High profile ceiling
+/** Find an encoder config the browser accepts. Codecs are tried in
+    compatibility order (H.264 first — it plays everywhere the MP4 goes), and
+    for each codec constant-quality mode is tried before plain bitrate mode. */
+async function pickVideoCodec(w, h, fps, preset) {
+  const candidates = ['avc1.640034', 'avc1.640033', 'avc1.64002a', 'avc1.4d002a', 'avc1.42002a', 'vp09.00.40.08', 'vp09.00.10.08'];
+  const bitrate = clamp(Math.round(w * h * fps * preset.bpp), 2e6, MP4_BITRATE_MAX);
   for (const codec of candidates) {
-    const config = { codec, width: w, height: h, bitrate, framerate: fps };
-    if (codec.startsWith('avc')) config.avc = { format: 'avc' };
-    try {
-      const s = await VideoEncoder.isConfigSupported(config);
-      if (s.supported) return { codec, config };
-    } catch { /* try next */ }
+    const isAvc = codec.startsWith('avc');
+    const base = { codec, width: w, height: h, framerate: fps, latencyMode: 'quality' };
+    if (isAvc) base.avc = { format: 'avc' };
+    const quantizer = isAvc ? preset.avcQ : preset.vp9Q;
+    const attempts = [
+      { config: { ...base, bitrateMode: 'quantizer' }, quantizer, encodeOpts: isAvc ? { avc: { quantizer } } : { vp9: { quantizer } } },
+      { config: { ...base, bitrate }, bitrate, encodeOpts: {} },
+    ];
+    for (const a of attempts) {
+      try {
+        const s = await VideoEncoder.isConfigSupported(a.config);
+        if (s.supported) return { codec, ...a };
+      } catch { /* try next */ }
+    }
   }
   return null;
 }
@@ -3662,9 +3695,9 @@ async function exportMp4() {
     let { w, h } = exportDims();
     w &= ~1; h &= ~1;
     const fps = S.anim.fps;
-    const bitrate = clamp(Math.round(w * h * fps * S.out.mp4bpp), 2e6, 120e6);
+    const preset = MP4_QUALITY[S.out.mp4q] || MP4_QUALITY.high;
     status('mp4 — picking codec…');
-    const picked = await pickVideoCodec(w, h, fps, bitrate);
+    const picked = await pickVideoCodec(w, h, fps, preset);
     if (!picked) { status('no supported video codec (tried H.264 + VP9)', 'err'); return; }
     const isAvc = picked.codec.startsWith('avc');
     const muxer = new Mp4Muxer.Muxer({
@@ -3686,7 +3719,7 @@ async function exportMp4() {
       progress((i + 1) / total);
       const out = renderExportFrame(g, w, h);
       const vf = new VideoFrame(out, { timestamp: Math.round(i * usPerFrame), duration: Math.round(usPerFrame) });
-      encoder.encode(vf, { keyFrame: i % pl.length === 0 || i % 60 === 0 });
+      encoder.encode(vf, { keyFrame: i % pl.length === 0 || i % 60 === 0, ...picked.encodeOpts });
       vf.close();
       while (encoder.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 8));
       if ((i & 3) === 3) await nextFramePaint();
@@ -3694,7 +3727,8 @@ async function exportMp4() {
     await encoder.flush();
     muxer.finalize();
     download(new Blob([muxer.target.buffer], { type: 'video/mp4' }), `${exportBase()}-${w}x${h}.mp4`);
-    status(`✓ mp4 — ${picked.codec} · ${w}×${h} · ${fps} fps · ${(bitrate / 1e6).toFixed(0)} Mbps · ${(total / fps).toFixed(1)} s`);
+    const rate = picked.quantizer != null ? `q${picked.quantizer} constant quality` : `${(picked.bitrate / 1e6).toFixed(0)} Mbps`;
+    status(`✓ mp4 — ${picked.codec} · ${w}×${h} · ${fps} fps · ${rate} · ${(total / fps).toFixed(1)} s`);
   } catch (err) {
     status('mp4 export failed: ' + (err && err.message || err), 'err');
   } finally {
@@ -3796,7 +3830,7 @@ function syncControlsFromState() {
   $('inGlitch').value = S.look.glitch; $('vGlitch').textContent = String(S.look.glitch);
   $('inGrain').value = S.look.grain; $('vGrain').textContent = String(S.look.grain);
   $('inOutWidth').value = S.out.width || '';
-  $('inMp4Quality').value = String(S.out.mp4bpp);
+  $('inMp4Quality').value = MP4_QUALITY[S.out.mp4q] ? S.out.mp4q : 'high';
   $('inLoops').value = S.out.loops;
   updateStabHint();
 }
@@ -3989,7 +4023,7 @@ function wireControls() {
 
   // output
   bindNumber('inOutWidth', S.out, 'width', () => { S.out.width = Math.max(0, Math.round(S.out.width || 0)); updateExportInfo(); });
-  on($('inMp4Quality'), 'change', () => { S.out.mp4bpp = parseFloat($('inMp4Quality').value); saveSettings(); });
+  on($('inMp4Quality'), 'change', () => { S.out.mp4q = $('inMp4Quality').value; saveSettings(); });
   bindNumber('inLoops', S.out, 'loops', () => { S.out.loops = clamp(Math.round(S.out.loops) || 1, 1, 99); updateExportInfo(); });
   on($('btnMp4'), 'click', exportMp4);
   on($('btnGif'), 'click', exportGif);
