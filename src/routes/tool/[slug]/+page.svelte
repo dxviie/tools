@@ -43,6 +43,7 @@
   <iframe
     src="/tools/{data.tool.filename}"
     title={data.tool.name}
+    allow="fullscreen"
   ></iframe>
 </div>
 

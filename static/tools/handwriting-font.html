@@ -1,0 +1,3152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- tool-meta: {"name":"Handwriting Font","slug":"handwriting-font","description":"Turns your handwriting into a single-stroke SVG font — guided iPad + Apple Pencil capture of letters and letter pairs with full pen data, version review, detail-controlled Hershey Text-compatible export, live preview, local-first sessions, JSON backup.","category":"plotting","tags":["handwriting","svg-font","hershey","single-stroke","apple-pencil","indexeddb","plotter"]} -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Handwriting Font">
+<meta name="theme-color" content="#0e0e0e">
+<title>Handwriting Font</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg:#0e0e0e; --panel:#161616; --panel2:#131313; --border:#2a2a2a; --border-hi:#404040;
+    --accent:#c8f060; --accent-dim:#8aaa3a; --text:#d4d4d4; --text-dim:#666;
+    --text-muted:#444; --input-bg:#1c1c1c; --danger:#e05656; --warn:#e0a856;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+    --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  [hidden]{display:none !important;}
+  html,body{height:100%;}
+  body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:12px;
+       display:flex;flex-direction:column;overflow:hidden;overscroll-behavior:none;
+       -webkit-text-size-adjust:100%;padding-left:var(--sal);padding-right:var(--sar);}
+  button{font-family:var(--mono);touch-action:manipulation;}
+  a{color:var(--accent-dim);}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:#2e2e2e;}
+
+  /* ── header ─────────────────────────────────────────────────────────── */
+  header.app{display:flex;align-items:center;gap:14px;padding:8px 14px;padding-top:calc(8px + var(--sat));
+             border-bottom:1px solid var(--border);background:var(--panel);flex-shrink:0;flex-wrap:wrap;}
+  .logo{font-size:11px;font-weight:600;letter-spacing:.18em;color:var(--accent);text-transform:uppercase;white-space:nowrap;}
+  .logo .dim{color:var(--text-muted);}
+  .tabs{display:flex;}
+  .tab{background:transparent;border:1px solid var(--border);color:var(--text-dim);font-size:10px;min-height:30px;
+       padding:5px 12px;cursor:pointer;letter-spacing:.12em;margin-left:-1px;display:flex;gap:7px;align-items:center;text-transform:uppercase;}
+  .tab:first-child{margin-left:0;}
+  .tab .t-num{color:var(--text-muted);font-size:9px;}
+  .tab:hover{border-color:var(--border-hi);color:var(--text);z-index:1;position:relative;}
+  .tab.active{background:#232815;border-color:var(--accent-dim);color:var(--accent);z-index:2;position:relative;}
+  .tab.active .t-num{color:var(--accent-dim);}
+  .header-right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .badge{font-size:10px;padding:3px 8px;border:1px solid var(--border-hi);color:var(--text-dim);
+         letter-spacing:.08em;white-space:nowrap;background:transparent;}
+  button.badge{cursor:pointer;}
+  button.badge:hover{color:var(--text);border-color:var(--accent-dim);}
+  .badge.ok{border-color:var(--accent-dim);color:var(--accent);}
+  .save-state{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;}
+  .save-state i{width:7px;height:7px;background:var(--accent-dim);display:block;}
+  .save-state.busy i{background:var(--warn);}
+  .save-state.err{color:var(--danger);} .save-state.err i{background:var(--danger);}
+  body.focus header.app{display:none;}
+
+  /* ── generic controls ───────────────────────────────────────────────── */
+  .btn{background:var(--input-bg);border:1px solid var(--border);color:var(--text);font-size:11px;
+       padding:6px 10px;cursor:pointer;letter-spacing:.04em;white-space:nowrap;min-height:30px;}
+  .btn:hover{border-color:var(--border-hi);background:#222;}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#101400;font-weight:600;}
+  .btn.primary:hover{background:#d6fa74;}
+  .btn.ghost{background:transparent;}
+  .btn.danger{color:var(--danger);}
+  .btn.danger:hover{border-color:var(--danger);}
+  .btn.tiny{padding:2px 7px;font-size:10px;min-height:24px;}
+  .btn.wide{width:100%;margin-bottom:6px;}
+  .btn:disabled{opacity:.4;cursor:default;pointer-events:none;}
+  select,input[type=text],input[type=number],textarea{
+    background:var(--input-bg);border:1px solid var(--border);color:var(--text);
+    font-family:var(--mono);font-size:12px;outline:none;padding:5px 8px;min-height:30px;border-radius:0;}
+  select:focus,input:focus,textarea:focus{border-color:var(--border-hi);}
+  select{cursor:pointer;} select option{background:var(--panel);}
+  textarea{width:100%;resize:vertical;line-height:1.45;}
+  input[type=range]{flex:1;min-width:0;accent-color:var(--accent);height:24px;}
+  input[type=checkbox]{
+    appearance:none;-webkit-appearance:none;width:15px;height:15px;margin:0;flex-shrink:0;cursor:pointer;
+    border:1px solid var(--border-hi);background:var(--input-bg);}
+  input[type=checkbox]:checked{
+    background:var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%230e0e0e' stroke-width='2' stroke-linecap='square' d='M2.5 6l2.5 3 4.5-5.5'/%3E%3C/svg%3E") center/11px 11px no-repeat;
+    border-color:var(--accent);}
+  label.chk{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;color:var(--text);line-height:1.35;margin-bottom:6px;}
+  .chk-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;margin-bottom:6px;}
+  .chk-grid label.chk{margin-bottom:6px;}
+  .chk-grid .cnt{color:var(--text-muted);font-size:10px;}
+  .seg{display:flex;flex:1;min-width:0;}
+  .seg button{flex:1;background:transparent;border:1px solid var(--border);color:var(--text-dim);font-size:10px;
+              padding:5px 6px;cursor:pointer;margin-left:-1px;letter-spacing:.06em;min-height:30px;white-space:nowrap;}
+  .seg button:first-child{margin-left:0;}
+  .seg button.on{background:#232815;border-color:var(--accent-dim);color:var(--accent);position:relative;z-index:1;}
+  .stepper{display:flex;align-items:center;}
+  .stepper button{width:32px;height:30px;background:var(--input-bg);border:1px solid var(--border);color:var(--text);cursor:pointer;font-size:14px;}
+  .stepper span{min-width:36px;text-align:center;font-size:12px;}
+  .section{border-bottom:1px solid var(--border);padding:11px 13px;}
+  .section-label{font-size:10px;letter-spacing:.16em;color:var(--text-dim);text-transform:uppercase;margin-bottom:9px;
+                 display:flex;align-items:center;gap:8px;}
+  .section-label .aside{margin-left:auto;letter-spacing:.04em;text-transform:none;color:var(--text-muted);}
+  .sub-label{font-size:10px;letter-spacing:.1em;color:var(--text-muted);text-transform:uppercase;margin:8px 0 6px;}
+  .field{display:flex;align-items:center;gap:8px;margin-bottom:7px;min-height:30px;}
+  .field > label{flex:0 0 92px;font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;}
+  .field > input[type=text],.field > select{flex:1;min-width:0;}
+  .field .val{flex:0 0 58px;text-align:right;font-size:11px;color:var(--text);white-space:nowrap;}
+  .hint{font-size:10px;color:var(--text-dim);line-height:1.55;margin-top:4px;}
+  .hint b{color:var(--text);font-weight:500;}
+  .hint.warn{color:var(--warn);}
+  .vr{width:1px;height:22px;background:var(--border);flex-shrink:0;}
+  .ibtn{min-width:40px;height:38px;padding:0 9px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+        background:transparent;border:1px solid var(--border);color:var(--text);cursor:pointer;font-size:11px;flex-shrink:0;}
+  .ibtn:hover{border-color:var(--border-hi);}
+  .ibtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:square;stroke-linejoin:miter;}
+  .ibtn.on{border-color:var(--accent-dim);color:var(--accent);background:#1b2010;}
+  .ibtn.primary{background:var(--accent);color:#101400;border-color:var(--accent);}
+  .ibtn:disabled{opacity:.3;cursor:default;}
+  .ibtn.sm{min-width:30px;height:30px;padding:0 6px;}
+  main{flex:1;min-height:0;display:flex;flex-direction:column;}
+  .view{flex:1;min-height:0;display:flex;flex-direction:column;position:relative;}
+  .empty-state{color:var(--text-dim);font-size:11px;line-height:1.8;padding:40px 24px;text-align:center;}
+  .empty-state b{color:var(--text);font-weight:500;}
+  .banner{background:#2a1a10;color:var(--warn);border-bottom:1px solid #4a3218;padding:7px 14px;font-size:11px;flex-shrink:0;}
+
+  /* ── capture ────────────────────────────────────────────────────────── */
+  .cap-bar{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--border);
+           background:var(--panel2);flex-shrink:0;flex-wrap:nowrap;}
+  body.focus .cap-bar{padding-top:calc(5px + var(--sat));}
+  .cap-where{flex:0 1 230px;min-width:120px;}
+  .cap-where select{width:100%;min-height:38px;}
+  .cap-progress{display:flex;align-items:center;gap:8px;flex:1 1 120px;min-width:70px;}
+  .cap-progress .bar{flex:1;height:3px;background:#262626;position:relative;}
+  .cap-progress .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);width:0;transition:width .35s;}
+  .cap-progress span{font-size:11px;color:var(--text-dim);white-space:nowrap;}
+  .cap-tools{display:flex;align-items:center;gap:6px;}
+  .cap-page{font-size:11px;color:var(--text-dim);min-width:52px;text-align:center;white-space:nowrap;}
+  .cap-stage{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none;
+             -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+  .cap-stage canvas{position:absolute;left:0;top:0;display:block;}
+  #capInk{touch-action:none;cursor:crosshair;}
+  .cap-hl{position:absolute;pointer-events:none;border:1px solid rgba(200,240,96,.30);transition:opacity .5s;opacity:0;}
+  .cap-hl.on{opacity:1;transition:opacity .08s;}
+  .cap-cursor{position:absolute;pointer-events:none;border:1px solid var(--warn);border-radius:50%;
+              transform:translate(-50%,-50%);left:0;top:0;}
+  .cap-panel{position:absolute;right:0;top:0;bottom:0;width:360px;max-width:100%;background:var(--panel);
+             border-left:1px solid var(--border);overflow:auto;z-index:10;box-shadow:-12px 0 30px rgba(0,0,0,.45);
+             -webkit-overflow-scrolling:touch;padding-bottom:var(--sab);}
+  .panel-head{display:flex;align-items:center;gap:8px;padding:9px 13px;border-bottom:1px solid var(--border);
+              position:sticky;top:0;background:var(--panel);z-index:1;}
+  .panel-head span{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);}
+  .panel-head .ibtn{margin-left:auto;}
+  .line-toggles{display:flex;flex-wrap:wrap;gap:0 14px;margin:2px 0 6px;}
+
+  /* ── review ─────────────────────────────────────────────────────────── */
+  .rv-bar{display:flex;gap:10px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--border);
+          background:var(--panel2);flex-wrap:wrap;flex-shrink:0;}
+  .chips{display:flex;flex-wrap:wrap;gap:0;}
+  .chip{background:transparent;border:1px solid var(--border);color:var(--text-dim);font-size:10px;padding:5px 10px;
+        cursor:pointer;margin-left:-1px;letter-spacing:.06em;min-height:30px;white-space:nowrap;}
+  .chip:first-child{margin-left:0;}
+  .chip .c{color:var(--text-muted);margin-left:5px;}
+  .chip.on{background:#232815;border-color:var(--accent-dim);color:var(--accent);position:relative;z-index:1;}
+  .chip.on .c{color:var(--accent-dim);}
+  .rv-stats{margin-left:auto;font-size:10px;color:var(--text-dim);letter-spacing:.04em;}
+  .rv-body{flex:1;min-height:0;display:flex;position:relative;}
+  .rv-grid{flex:1;overflow:auto;padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));
+           gap:8px;align-content:start;-webkit-overflow-scrolling:touch;}
+  .rv-group-h{grid-column:1/-1;font-size:10px;letter-spacing:.16em;color:var(--text-dim);text-transform:uppercase;
+              padding:10px 0 0;display:flex;gap:10px;}
+  .rv-group-h:first-child{padding-top:0;}
+  .rv-group-h .c{color:var(--text-muted);letter-spacing:.04em;}
+  .tile{position:relative;background:var(--panel2);border:1px solid var(--border);height:106px;display:flex;
+        flex-direction:column;cursor:pointer;color:var(--text);padding:0;text-align:left;}
+  .tile:hover{border-color:var(--border-hi);}
+  .tile canvas{flex:1;width:100%;min-height:0;display:block;}
+  .tile .t-foot{display:flex;align-items:center;gap:4px;padding:3px 6px;border-top:1px solid var(--border);font-size:10px;}
+  .tile .t-key{color:var(--text);max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tile .t-cnt{margin-left:auto;color:var(--text-dim);}
+  .tile.done .t-cnt{color:var(--accent);}
+  .tile.part .t-cnt{color:var(--warn);}
+  .tile.none{opacity:.5;}
+  .tile.sel{border-color:var(--accent-dim);box-shadow:inset 0 0 0 1px var(--accent-dim);}
+  .tile .t-star{position:absolute;top:3px;right:5px;color:var(--accent);font-size:10px;}
+  .rv-detail{width:min(600px,58%);border-left:1px solid var(--border);display:flex;flex-direction:column;
+             background:var(--panel);min-height:0;}
+  .rv-dhead{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+  .rv-dkey{font-size:22px;color:var(--text);min-width:28px;}
+  .rv-dmeta{font-size:10px;color:var(--text-dim);line-height:1.5;}
+  .rv-dhead .grow{flex:1;}
+  .rv-samples{flex:1;overflow:auto;padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
+              gap:10px;align-content:start;-webkit-overflow-scrolling:touch;}
+  .scard{border:1px solid var(--border);background:var(--panel2);display:flex;flex-direction:column;}
+  .scard.main{border-color:var(--accent-dim);}
+  .scard canvas{width:100%;height:170px;display:block;}
+  .scard .s-foot{display:flex;align-items:center;gap:4px;padding:4px 6px;border-top:1px solid var(--border);}
+  .scard .s-info{font-size:10px;color:var(--text-dim);line-height:1.4;flex:1;min-width:0;}
+  .scard .s-info b{color:var(--text);font-weight:500;}
+  .scard.empty{border-style:dashed;min-height:120px;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;}
+  .star-on{color:var(--accent) !important;border-color:var(--accent-dim) !important;}
+  @media (max-width: 760px){
+    .rv-detail{position:absolute;inset:0;width:auto;z-index:5;border-left:none;}
+  }
+
+  /* ── font ───────────────────────────────────────────────────────────── */
+  .ft-layout{flex:1;min-height:0;display:grid;grid-template-columns:320px 1fr;}
+  .sidebar{border-right:1px solid var(--border);overflow:auto;-webkit-overflow-scrolling:touch;background:var(--panel2);}
+  .ft-main{display:flex;flex-direction:column;min-width:0;min-height:0;}
+  .ft-toolbar{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap;background:var(--panel2);}
+  .ft-toolbar .seg{flex:0 0 auto;}
+  .ft-toolbar label.chk{margin:0;font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;}
+  .ft-toolbar .grp{display:flex;align-items:center;gap:6px;}
+  .ft-toolbar .grp > span{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;}
+  .ft-toolbar input[type=range]{width:90px;flex:0 0 90px;}
+  .ft-toolbar input[type=number]{width:64px;}
+  .ft-toolbar .val{font-size:11px;color:var(--text);min-width:46px;}
+  .ft-textwrap{padding:8px 12px;border-bottom:1px solid var(--border);}
+  .ft-textwrap textarea{height:64px;font-size:13px;}
+  .ft-preview{flex:1;min-height:0;overflow:auto;background:#111;padding:18px;-webkit-overflow-scrolling:touch;}
+  .ft-preview svg.page{display:block;background:#0b0b0b;outline:1px solid #1d1d1d;}
+  .ft-missing{margin-top:10px;font-size:10px;color:var(--warn);}
+  .gtable{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px;}
+  .gcell{background:#0b0b0b;border:1px solid #1f1f1f;display:flex;flex-direction:column;cursor:pointer;}
+  .gcell:hover{border-color:var(--border-hi);}
+  .gcell svg{width:100%;height:96px;display:block;}
+  .gcell .g-foot{display:flex;gap:4px;padding:3px 6px;border-top:1px solid #1f1f1f;font-size:10px;color:var(--text-dim);}
+  .gcell .g-foot b{color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;}
+  .gcell .g-foot span{margin-left:auto;}
+  .gcell.miss{border-style:dashed;opacity:.55;}
+  .status-bar{padding:5px 13px;border-top:1px solid var(--border);font-size:10px;color:var(--text-dim);flex-shrink:0;
+              white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-bottom:calc(5px + var(--sab));}
+  .coverage{font-size:10px;color:var(--text-dim);line-height:1.6;margin-top:6px;}
+  .coverage b{color:var(--text);font-weight:500;}
+  @media (max-width: 820px){
+    .ft-layout{grid-template-columns:1fr;grid-template-rows:minmax(0,42%) 1fr;}
+    .sidebar{border-right:none;border-bottom:1px solid var(--border);}
+  }
+
+  /* ── data ───────────────────────────────────────────────────────────── */
+  .dt-wrap{flex:1;overflow:auto;padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));
+           gap:14px;align-content:start;-webkit-overflow-scrolling:touch;padding-bottom:calc(16px + var(--sab));}
+  .card{border:1px solid var(--border);background:var(--panel2);}
+  .card .section:last-child{border-bottom:none;}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:11px;margin:4px 0 10px;}
+  .kv span:nth-child(odd){color:var(--text-dim);font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding-top:1px;}
+  .btn-row{display:flex;gap:6px;flex-wrap:wrap;}
+  .sess{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #202020;}
+  .sess:last-child{border-bottom:none;}
+  .sess .s-name{flex:1;min-width:0;}
+  .sess .s-name b{display:block;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .sess .s-name small{color:var(--text-dim);font-size:10px;}
+  .sess.cur .s-name b{color:var(--accent);}
+  pre.fmt{font-family:var(--mono);font-size:10.5px;color:var(--text-dim);white-space:pre-wrap;line-height:1.5;
+          background:#0c0c0c;border:1px solid #1e1e1e;padding:8px 10px;margin-top:6px;}
+
+  /* ── toast ──────────────────────────────────────────────────────────── */
+  .toast{position:fixed;left:50%;bottom:calc(18px + var(--sab));transform:translateX(-50%);background:#1d1d1d;
+         border:1px solid var(--border-hi);color:var(--text);font-size:11px;padding:8px 12px;z-index:100;
+         display:flex;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:92vw;}
+  .toast.err{border-color:var(--danger);color:#f0b0b0;}
+  .toast button{background:transparent;border:1px solid var(--accent-dim);color:var(--accent);font-size:10px;
+                padding:3px 8px;cursor:pointer;letter-spacing:.08em;text-transform:uppercase;}
+</style>
+</head>
+<body>
+
+<header class="app">
+  <div class="logo">Handwriting <span class="dim">·</span> Font</div>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-view="capture"><span class="t-num">01</span>Capture</button>
+    <button class="tab" data-view="review"><span class="t-num">02</span>Review</button>
+    <button class="tab" data-view="font"><span class="t-num">03</span>Font</button>
+    <button class="tab" data-view="data"><span class="t-num">04</span>Data</button>
+  </nav>
+  <div class="header-right">
+    <button class="badge" id="hdrSession" title="Sessions">—</button>
+    <span class="badge" id="hdrProgress" title="Overall capture progress">0%</span>
+    <span class="save-state" id="saveState" title="Everything is stored on this device (IndexedDB)"><i></i><span>saved</span></span>
+  </div>
+</header>
+<div class="banner" id="banner" hidden></div>
+
+<main>
+  <!-- ═══ CAPTURE ═══ -->
+  <section class="view" id="view-capture">
+    <div class="cap-bar">
+      <div class="cap-where"><select id="capJump" title="Jump to a glyph"></select></div>
+      <div class="cap-progress" title="Overall progress">
+        <div class="bar"><i id="capBar"></i></div>
+        <span id="capPct">0%</span>
+      </div>
+      <div class="cap-tools">
+        <button class="ibtn" id="capPrev" title="Previous page (←)"><svg viewBox="0 0 20 20"><path d="M12.5 4.5 7 10l5.5 5.5"/></svg></button>
+        <span class="cap-page" id="capPage">1 / 1</span>
+        <button class="ibtn" id="capNext" title="Next page (→)"><svg viewBox="0 0 20 20"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg></button>
+        <span class="vr"></span>
+        <button class="ibtn" id="capUndo" title="Undo (⌘Z · two-finger tap)"><svg viewBox="0 0 20 20"><path d="M7 5 3.5 8.5 7 12"/><path d="M4 8.5h7.5a4 4 0 0 1 0 8H9"/></svg></button>
+        <button class="ibtn" id="capRedo" title="Redo (⇧⌘Z · three-finger tap)"><svg viewBox="0 0 20 20"><path d="M13 5l3.5 3.5L13 12"/><path d="M16 8.5H8.5a4 4 0 0 0 0 8H11"/></svg></button>
+        <button class="ibtn" id="capErase" title="Stroke eraser (E)"><svg viewBox="0 0 20 20"><path d="M8 16.5h9"/><path d="M3.5 12.2 11.2 4.5l4.3 4.3-7.7 7.7H6.3z"/><path d="M7.4 8.3l4.3 4.3"/></svg></button>
+        <span class="vr"></span>
+        <button class="ibtn" id="capSettingsBtn" title="Guides &amp; prompts"><svg viewBox="0 0 20 20"><path d="M3 5.5h8M15 5.5h2M3 10h3M10 10h7M3 14.5h9M16 14.5h1"/><path d="M11 3.5v4M6 8v4M12 12.5v4"/></svg></button>
+        <button class="ibtn" id="capFull" title="Fullscreen / focus (F)"><svg viewBox="0 0 20 20"><path d="M3.5 7.5v-4h4M12.5 3.5h4v4M16.5 12.5v4h-4M7.5 16.5h-4v-4"/></svg></button>
+      </div>
+    </div>
+    <div class="cap-stage" id="capStage">
+      <canvas id="capGuides"></canvas>
+      <canvas id="capInk"></canvas>
+      <div class="cap-hl" id="capHl"></div>
+      <div class="cap-cursor" id="capCursor" hidden></div>
+    </div>
+
+    <aside class="cap-panel" id="capPanel" hidden>
+      <div class="panel-head"><span>Capture settings</span>
+        <button class="ibtn sm" id="capPanelClose" title="Close"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15"/></svg></button></div>
+      <div class="section">
+        <div class="section-label">Writing</div>
+        <div class="field"><label>Size</label><div class="seg" data-bind="capture.size" data-opts="S,M,L,XL"></div></div>
+        <div class="field"><label>Surface</label><div class="seg" data-bind="capture.surface" data-opts="dark:Dark,paper:Paper"></div></div>
+        <div class="field"><label>Ink</label><div class="seg" data-bind="capture.ink" data-opts="fine:Fineliner,pressure:Pressure"></div></div>
+        <div class="field"><label>Input</label><div class="seg" data-bind="capture.input" data-opts="auto:Auto,pen:Pencil,any:Any"></div></div>
+        <div class="hint"><b>Auto</b> ignores fingers on the page once an Apple Pencil is seen (palm rejection). On the page, a two-finger tap undoes, three fingers redo.</div>
+      </div>
+      <div class="section">
+        <div class="section-label">Guides</div>
+        <div class="field"><label>Style</label><div class="seg" data-bind="capture.guideStyle" data-opts="lines:Lines,grid:Grid,dots:Dots,blank:Blank"></div></div>
+        <div class="line-toggles">
+          <label class="chk"><input type="checkbox" data-bind="capture.lines.asc"> ascender</label>
+          <label class="chk"><input type="checkbox" data-bind="capture.lines.cap"> cap</label>
+          <label class="chk"><input type="checkbox" data-bind="capture.lines.x"> x-height</label>
+          <label class="chk"><input type="checkbox" data-bind="capture.lines.base"> baseline</label>
+          <label class="chk"><input type="checkbox" data-bind="capture.lines.desc"> descender</label>
+        </div>
+        <div class="line-toggles">
+          <label class="chk"><input type="checkbox" data-bind="capture.shade"> shade x-height zone</label>
+          <label class="chk"><input type="checkbox" data-bind="capture.dividers"> cell dividers</label>
+        </div>
+        <div class="field"><label>Slant lines</label><input type="range" min="0" max="35" step="1" data-bind="capture.slant"><span class="val" data-val="capture.slant" data-fmt="deg0"></span></div>
+        <div class="field"><label>Proportions</label><select id="capPropPreset">
+          <option value="balanced">Balanced — 1 : 0.8 : 0.8</option>
+          <option value="school">School — 1 : 1 : 1</option>
+          <option value="compact">Compact — tall x-height</option>
+          <option value="italic">Italic — 5 : 3 : 3</option>
+          <option value="custom">Custom</option>
+        </select></div>
+        <div class="field"><label>Ascender</label><input type="range" min="1.2" max="3" step="0.05" data-bind="capture.prop.asc"><span class="val" data-val="capture.prop.asc" data-fmt="xh"></span></div>
+        <div class="field"><label>Cap height</label><input type="range" min="1.1" max="2.8" step="0.05" data-bind="capture.prop.cap"><span class="val" data-val="capture.prop.cap" data-fmt="xh"></span></div>
+        <div class="field"><label>Descender</label><input type="range" min="0.4" max="1.6" step="0.05" data-bind="capture.prop.desc"><span class="val" data-val="capture.prop.desc" data-fmt="xh"></span></div>
+        <div class="hint">Heights are in x-heights above/below the baseline. Every sample stores the guide geometry it was written in, so you can change this at any time.</div>
+      </div>
+      <div class="section">
+        <div class="section-label">Prompts</div>
+        <div class="chk-grid" id="capSets"></div>
+        <div class="sub-label">Letter combinations</div>
+        <div class="chk-grid" id="capPairs"></div>
+        <textarea data-bind="capture.custom" rows="3" placeholder="Custom — separated by spaces: th ing ij sch Amsterdam"></textarea>
+        <div class="sub-label">Versions per prompt</div>
+        <div class="field"><label>Letters</label><div class="stepper" data-bind="capture.variants.glyph" data-min="1" data-max="12"></div></div>
+        <div class="field"><label>Marks</label><div class="stepper" data-bind="capture.variants.mark" data-min="1" data-max="12"></div></div>
+        <div class="field"><label>Combinations</label><div class="stepper" data-bind="capture.variants.combo" data-min="1" data-max="12"></div></div>
+        <div class="hint">Letters = letters, digits &amp; accents. Marks = punctuation &amp; symbols. More versions give the font alternates to pick from.</div>
+      </div>
+    </aside>
+  </section>
+
+  <!-- ═══ REVIEW ═══ -->
+  <section class="view" id="view-review" hidden>
+    <div class="rv-bar">
+      <div class="chips" id="rvChips"></div>
+      <div class="rv-stats" id="rvStats"></div>
+    </div>
+    <div class="rv-body">
+      <div class="rv-grid" id="rvGrid"></div>
+      <aside class="rv-detail" id="rvDetail" hidden>
+        <div class="rv-dhead">
+          <span class="rv-dkey" id="rvKey"></span>
+          <span class="rv-dmeta grow" id="rvMeta"></span>
+          <label class="chk" style="margin:0"><input type="checkbox" id="rvPressure"> pressure</label>
+          <button class="btn" id="rvCapture">✎ Capture</button>
+          <button class="ibtn sm" id="rvClose" title="Close"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15"/></svg></button>
+        </div>
+        <div class="rv-samples" id="rvSamples"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ═══ FONT ═══ -->
+  <section class="view" id="view-font" hidden>
+    <div class="ft-layout">
+      <aside class="sidebar">
+        <div class="section">
+          <div class="section-label">Font</div>
+          <div class="field"><label>Name</label><input type="text" data-bind="font.name" id="ftName" autocomplete="off"></div>
+          <div class="field"><label>Author</label><input type="text" data-bind="font.author" autocomplete="off"></div>
+          <div class="field"><label>License</label><input type="text" data-bind="font.license" autocomplete="off"></div>
+        </div>
+        <div class="section">
+          <div class="section-label">Glyphs</div>
+          <div class="field"><label>Main version</label><select data-bind="font.variant">
+            <option value="auto">Most typical (auto)</option>
+            <option value="first">First written</option>
+            <option value="latest">Latest written</option>
+            <option value="random">Random pick</option>
+          </select></div>
+          <div class="field" data-show="font.variant=random"><label>Seed</label><input type="range" min="1" max="99" step="1" data-bind="font.seed"><span class="val" data-val="font.seed"></span></div>
+          <label class="chk"><input type="checkbox" data-bind="font.alternates"> Other versions as alternates (a.alt1 …)</label>
+          <label class="chk"><input type="checkbox" data-bind="font.ligatures"> Combinations as ligatures (th → t_h)</label>
+          <label class="chk"><input type="checkbox" data-bind="font.kerning"> Kerning pairs from combinations</label>
+          <div class="hint">A ★ on a sample in Review always makes it the main version.</div>
+          <div class="coverage" id="ftCoverage"></div>
+        </div>
+        <div class="section">
+          <div class="section-label">Detail <span class="aside" id="ftTol"></span></div>
+          <div class="field"><label>Output</label><div class="seg" data-bind="font.mode" data-opts="curves:Curves,lines:Lines,raw:Raw"></div></div>
+          <div class="field" data-show="font.mode!=raw"><label>Detail</label><input type="range" min="0" max="100" step="1" data-bind="font.detail"><span class="val" data-val="font.detail"></span></div>
+          <div class="field"><label>Smoothing</label><input type="range" min="0" max="100" step="1" data-bind="font.smooth"><span class="val" data-val="font.smooth"></span></div>
+          <div class="field" data-show="font.mode=lines"><label>Rounding</label><input type="range" min="0" max="4" step="1" data-bind="font.chaikin"><span class="val" data-val="font.chaikin" data-fmt="chaikin"></span></div>
+          <div class="field"><label>Decimals</label><div class="seg" data-bind="font.precision" data-opts="0,1,2"></div></div>
+          <div class="hint" id="ftDetailStats"></div>
+        </div>
+        <div class="section">
+          <div class="section-label">Metrics <span class="aside">units · em = 1000</span></div>
+          <div class="field"><label>Cap height</label><input type="range" min="300" max="900" step="10" data-bind="font.cap"><span class="val" data-val="font.cap"></span></div>
+          <div class="field"><label>Spacing</label><div class="seg" data-bind="font.spacingMode" data-opts="auto:From pairs,manual:Manual"></div></div>
+          <div class="field" data-show="font.spacingMode=manual"><label>Side bearing</label><input type="range" min="0" max="200" step="1" data-bind="font.spacing"><span class="val" data-val="font.spacing"></span></div>
+          <div class="field"><label>Word space</label><input type="range" min="0" max="900" step="10" data-bind="font.space"><span class="val" data-val="font.space" data-fmt="auto0"></span></div>
+          <div class="field"><label>Slant</label><input type="range" min="-20" max="20" step="0.5" data-bind="font.slant"><span class="val" data-val="font.slant" data-fmt="deg1"></span></div>
+          <label class="chk"><input type="checkbox" data-bind="font.snap"> Snap letters without descenders to the baseline</label>
+          <div class="hint" id="ftMetrics"></div>
+        </div>
+        <div class="section">
+          <div class="section-label">Export</div>
+          <button class="btn primary wide" id="ftDlFont">↓ SVG font</button>
+          <button class="btn wide" id="ftDlText">↓ Preview text as plottable SVG</button>
+          <div class="hint">Single-stroke SVG 1.1 font, same format as the Hershey / EMS fonts. In Inkscape use <b>Extensions → Text → Hershey Text</b>, pick <b>Other</b> as font face and give the path to the file.</div>
+        </div>
+      </aside>
+      <div class="ft-main">
+        <div class="ft-toolbar">
+          <div class="seg" data-bind="preview.mode" data-opts="text:Text,table:Glyphs"></div>
+          <span class="vr"></span>
+          <div class="grp" data-show="preview.mode=text"><span>Size</span><input type="range" min="3" max="40" step="0.5" data-bind="preview.size"><span class="val" data-val="preview.size" data-fmt="mm"></span></div>
+          <div class="grp" data-show="preview.mode=text"><span>Line</span><input type="range" min="0.8" max="2.5" step="0.05" data-bind="preview.lineHeight"><span class="val" data-val="preview.lineHeight" data-fmt="x2"></span></div>
+          <div class="grp" data-show="preview.mode=text"><span>Width</span><input type="range" min="0" max="400" step="5" data-bind="preview.wrap"><span class="val" data-val="preview.wrap" data-fmt="wrap"></span></div>
+          <div class="grp" data-show="preview.mode=text"><span>Versions</span><div class="seg" data-bind="preview.variation" data-opts="off:Main,cycle:Cycle,random:Random"></div>
+            <button class="ibtn sm" id="ftReseed" title="New random draw" data-show="preview.variation=random"><svg viewBox="0 0 20 20"><path d="M15.5 8A6 6 0 1 0 16 12"/><path d="M16 3.5V8h-4.5"/></svg></button></div>
+          <div class="grp" data-show="preview.mode=text">
+            <label class="chk"><input type="checkbox" data-bind="preview.guides"> guides</label>
+            <label class="chk"><input type="checkbox" data-bind="preview.boxes"> boxes</label>
+            <label class="chk"><input type="checkbox" data-bind="preview.nodes"> nodes</label>
+            <label class="chk"><input type="checkbox" data-bind="preview.raw"> raw</label>
+          </div>
+          <span class="hint" data-show="preview.mode=table" style="margin:0">Main version of every glyph · advance width below · click to review</span>
+        </div>
+        <div class="ft-textwrap" data-show="preview.mode=text"><textarea id="ftText" data-bind="preview.text" spellcheck="false"></textarea></div>
+        <div class="ft-preview" id="ftPreview"></div>
+        <div class="status-bar" id="ftStatus">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ DATA ═══ -->
+  <section class="view" id="view-data" hidden>
+    <div class="dt-wrap">
+      <div class="card">
+        <div class="section">
+          <div class="section-label">Current session</div>
+          <div class="field"><label>Name</label><input type="text" id="dtName" autocomplete="off"></div>
+          <div class="kv" id="dtStats"></div>
+          <div class="btn-row">
+            <button class="btn primary" id="dtExport">↓ Export session .json</button>
+            <button class="btn" id="dtExportGz">↓ .json.gz</button>
+          </div>
+          <div class="hint" id="dtBackupHint"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section">
+          <div class="section-label">Sessions <span class="aside"><button class="btn tiny" id="dtNew">+ New session</button></span></div>
+          <div id="dtSessions"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section">
+          <div class="section-label">Import</div>
+          <div class="field"><label>Mode</label><div class="seg" id="dtImportMode"><button data-v="new" class="on">As new session</button><button data-v="merge">Merge into current</button></div></div>
+          <button class="btn wide" id="dtImportBtn">↑ Choose .json / .json.gz</button>
+          <input type="file" id="dtImportFile" accept=".json,.gz,application/json,application/gzip" hidden>
+          <div class="hint">Restores a session exported from this tool. Merging appends the samples as extra versions of each prompt.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section">
+          <div class="section-label">Storage on this device</div>
+          <div class="kv" id="dtStorage"></div>
+          <div class="btn-row"><button class="btn" id="dtPersist">Request persistent storage</button></div>
+          <div class="hint">Samples are saved to IndexedDB after every stroke — no server involved. Browsers may still clear site data (Safari after weeks without a visit, unless storage is persistent), and an iPad <b>Home Screen</b> web app keeps its own storage, separate from Safari tabs. Export a backup now and then; import moves it between devices.</div>
+        </div>
+      </div>
+      <div class="card" style="grid-column:1/-1">
+        <div class="section">
+          <div class="section-label">Export format</div>
+          <div class="hint">Raw, lossless pen data: nothing is simplified until font export.</div>
+<pre class="fmt">{ "format": "dxviie.handwriting-font", "version": 1,
+  "session": { "name", "capture": {…guide &amp; prompt settings}, "font": {…}, "preview": {…} },
+  "fields": ["x","y","t","p","tiltX","tiltY","twist","altitude","azimuth"],
+  "samples": [ { "key": "a" | "th" | …, "slot": 0, "created": epoch-ms, "starred": false,
+      "guide": { "xh", "asc", "cap", "desc" (CSS px from the baseline), "slant" (deg) },
+      "origin": { "x", "y" } (cell origin on the page, CSS px), "cellW", "viewport": { "w", "h", "dpr" },
+      "strokes": [ { "type": "pen" | "touch" | "mouse", "t0": epoch-ms, "n": points,
+                     "pts": [x, y, t, p, tiltX, tiltY, twist, altitude, azimuth,  x, y, …] } ] } ] }
+
+x → right, y → down, in CSS px relative to the cell origin on the baseline; t in ms since t0;
+p = pressure 0–1; tilt in degrees; altitude/azimuth in radians (null where the browser has none).
+Font units: X = x · (capUnits / guide.cap), Y = −y · (capUnits / guide.cap).</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+<div id="sabProbe" style="position:fixed;left:0;bottom:0;width:1px;height:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none"></div>
+
+<script>
+'use strict';
+/* ════════════════════════════════════════════════════════════════════════
+   Handwriting Font — capture handwriting on a tablet, build an SVG font.
+
+   Storage: IndexedDB (sessions · samples · kv). One sample = one handwritten
+   version of one prompt ("a", "Q", "th" …), kept as raw pen data:
+   Float32Array per stroke with NF fields per point (see FIELDS), in CSS px
+   relative to the cell origin on the baseline. Nothing is simplified until
+   font export.
+   ════════════════════════════════════════════════════════════════════════ */
+
+// ── constants ──────────────────────────────────────────────────────────────
+const APP_URL = 'https://tools.d17e.dev/tool/handwriting-font';
+const FORMAT = 'dxviie.handwriting-font';
+const FORMAT_VERSION = 1;
+const NF = 9;
+const FIELDS = ['x', 'y', 't', 'p', 'tiltX', 'tiltY', 'twist', 'altitude', 'azimuth'];
+const FIELD_DEC = [3, 3, 3, 4, 2, 2, 1, 4, 4];   // export precision per field
+const MONO = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
+
+const SETS = [
+  { id: 'lower',   label: 'lowercase',   kind: 'glyph', chars: 'abcdefghijklmnopqrstuvwxyz' },
+  { id: 'upper',   label: 'UPPERCASE',   kind: 'glyph', chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' },
+  { id: 'digits',  label: 'digits',      kind: 'glyph', chars: '0123456789' },
+  { id: 'punct',   label: 'punctuation', kind: 'mark',  chars: '.,;:!?\'"-()&/@' },
+  { id: 'symbols', label: 'symbols',     kind: 'mark',  chars: '#$%*+=<>[]\\^_`{|}~€£°§–—‘’“”…•' },
+  { id: 'accents', label: 'accents',     kind: 'glyph', chars: 'àáâäçèéêëìíîïñòóôöùúûüÿßÀÁÂÄÇÈÉÊËÌÍÎÏÑÒÓÔÖÙÚÛÜ' },
+];
+const PAIR_SETS = [
+  { id: 'en',   label: 'English common', list: 'th he in er an re on at en nd ti es or te of ed is it al ar st to nt ng se ha as ou io le ve co me de hi ri ro ic ne ea ra ce li ch ll be ma si om ur' },
+  { id: 'nl',   label: 'Dutch common',   list: 'en de er te in an ee ge et ie aa ij nd oo st ve ch el ar re al on le nt be ng or ui ri ke ze me ne oe is li eu we ht sc' },
+  { id: 'caps', label: 'Capital pairs',  list: 'Th Wh Ta Te To Tr Ty Va Ve Vo Wa We Wo Ya Ye Yo Fa Fe Fo Pa Pe Po LT AV AT AY' },
+  { id: 'all',  label: 'All a–z pairs',  list: null },
+];
+const SET_LABEL = Object.fromEntries(SETS.map(s => [s.id, s.label]));
+SET_LABEL.pairs = 'combinations'; SET_LABEL.custom = 'custom'; SET_LABEL.other = 'other captured';
+
+const PROP_PRESETS = {
+  balanced: { asc: 1.8, cap: 1.6, desc: 0.8 },
+  school:   { asc: 2.0, cap: 2.0, desc: 1.0 },
+  compact:  { asc: 1.5, cap: 1.4, desc: 0.55 },
+  italic:   { asc: 1.6, cap: 1.4, desc: 0.6 },
+};
+
+// Adobe Glyph List names for everything we prompt for (letters map to themselves).
+const AGL = {
+  ' ': 'space', '!': 'exclam', '"': 'quotedbl', '#': 'numbersign', '$': 'dollar', '%': 'percent',
+  '&': 'ampersand', "'": 'quotesingle', '(': 'parenleft', ')': 'parenright', '*': 'asterisk', '+': 'plus',
+  ',': 'comma', '-': 'hyphen', '.': 'period', '/': 'slash', '0': 'zero', '1': 'one', '2': 'two',
+  '3': 'three', '4': 'four', '5': 'five', '6': 'six', '7': 'seven', '8': 'eight', '9': 'nine',
+  ':': 'colon', ';': 'semicolon', '<': 'less', '=': 'equal', '>': 'greater', '?': 'question', '@': 'at',
+  '[': 'bracketleft', '\\': 'backslash', ']': 'bracketright', '^': 'asciicircum', '_': 'underscore',
+  '`': 'grave', '{': 'braceleft', '|': 'bar', '}': 'braceright', '~': 'asciitilde',
+  '€': 'Euro', '£': 'sterling', '°': 'degree', '§': 'section', '–': 'endash', '—': 'emdash',
+  '‘': 'quoteleft', '’': 'quoteright', '“': 'quotedblleft', '”': 'quotedblright', '…': 'ellipsis',
+  '•': 'bullet', 'ß': 'germandbls',
+};
+const ACCENT_NAME = { '̀': 'grave', '́': 'acute', '̂': 'circumflex', '̃': 'tilde', '̈': 'dieresis', '̧': 'cedilla' };
+// Spelled-out hints for prompts that are easy to confuse.
+const CAPTIONS = {
+  'l': 'lower L', 'I': 'capital i', 'i': 'lower i', '1': 'one', '0': 'zero', 'O': 'capital o', 'o': 'lower o',
+  "'": 'apostrophe', '"': 'double quote', '`': 'backtick', '-': 'hyphen', '–': 'en dash', '—': 'em dash',
+  '_': 'underscore', '|': 'bar', '.': 'period', ',': 'comma', ';': 'semicolon', ':': 'colon', '/': 'slash',
+  '\\': 'backslash', '~': 'tilde', '^': 'caret', '‘': 'open quote', '’': 'close quote', '“': 'open quotes',
+  '”': 'close quotes', '…': 'ellipsis', '•': 'bullet', '°': 'degree', '§': 'section', 'x': 'lower x', 'X': 'capital x',
+};
+// Glyphs that sit on the baseline (used by "snap to baseline").
+const SNAPS = new Set(Array.from('abcdehiklmnorstuvwxzABCDEFGHIKLMNOPRSTUVWXYZ0123456789!?.:'));
+
+const DEFAULT_TEXT = 'The quick brown fox jumps over the lazy dog.\nPa\'s wijze lynx bezag vroom het fikse aquaduct.\nSphinx of black quartz, judge my vow! 0123456789';
+
+// ── small utilities ────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const chars = s => Array.from(s);
+const uid = () => (crypto && crypto.randomUUID) ? crypto.randomUUID()
+  : 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+
+function debounce(fn, ms) {
+  let t = 0;
+  const d = (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+  d.cancel = () => clearTimeout(t);
+  return d;
+}
+function median(arr) {
+  if (!arr.length) return NaN;
+  const a = arr.slice().sort((x, y) => x - y), m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+function fmtBytes(n) {
+  if (!Number.isFinite(n)) return '—';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+  return (n / 1073741824).toFixed(2) + ' GB';
+}
+const fmtInt = n => Math.round(n).toLocaleString('en-US');
+function fmtDate(ts) {
+  if (!ts) return 'never';
+  const d = new Date(ts);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' +
+         d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+const escXml = escHtml;
+// unicode="" attribute value: XML-safe, non-ASCII as numeric references (like the Hershey SVG fonts)
+function unicodeAttr(s) {
+  let out = '';
+  for (const ch of s) {
+    const cp = ch.codePointAt(0);
+    if (ch === '&') out += '&amp;';
+    else if (ch === '<') out += '&lt;';
+    else if (ch === '>') out += '&gt;';
+    else if (ch === '"') out += '&#x22;';
+    else if (ch === "'") out += '&apos;';
+    else if (cp < 32 || cp > 126) out += '&#x' + cp.toString(16).toUpperCase() + ';';
+    else out += ch;
+  }
+  return out;
+}
+function glyphName(ch) {
+  if (/^[A-Za-z]$/.test(ch)) return ch;
+  if (AGL[ch]) return AGL[ch];
+  const d = ch.normalize('NFD');
+  if (d.length === 2 && /[A-Za-z]/.test(d[0]) && ACCENT_NAME[d[1]]) return d[0] + ACCENT_NAME[d[1]];
+  const cp = ch.codePointAt(0);
+  return cp > 0xFFFF ? 'u' + cp.toString(16).toUpperCase() : 'uni' + cp.toString(16).toUpperCase().padStart(4, '0');
+}
+const keyName = key => chars(key).map(glyphName).join('_');
+const isMark = k => !/[\p{L}\p{N}]/u.test(k);
+function fontId(name) {
+  const s = String(name || '').normalize('NFD').replace(/[^A-Za-z0-9]+/g, ' ').trim()
+    .split(' ').filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join('');
+  if (!s) return 'Handwriting';
+  return /^[A-Za-z]/.test(s) ? s : 'Hand' + s;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function hashStr(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+function pairList(ps) {
+  if (ps.list) return ps.list.split(/\s+/).filter(Boolean);
+  const az = 'abcdefghijklmnopqrstuvwxyz', out = [];
+  for (const x of az) for (const y of az) out.push(x + y);
+  return out;
+}
+function parseCustom(s) {
+  return String(s || '').split(/[\s,]+/).map(t => t.trim()).filter(Boolean).slice(0, 800);
+}
+
+let toastTimer = 0;
+function toast(msg, opts = {}) {
+  const el = $('toast');
+  el.innerHTML = '';
+  el.className = 'toast' + (opts.err ? ' err' : '');
+  const span = document.createElement('span');
+  span.textContent = msg;
+  el.appendChild(span);
+  if (opts.action) {
+    const b = document.createElement('button');
+    b.textContent = opts.action;
+    b.onclick = () => { el.hidden = true; opts.onAction(); };
+    el.appendChild(b);
+  }
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, opts.ms || (opts.action ? 7000 : 2800));
+}
+function showBanner(msg) { const b = $('banner'); b.textContent = msg; b.hidden = !msg; }
+
+// ── IndexedDB ──────────────────────────────────────────────────────────────
+const DB_NAME = 'dxviie-handwriting-font';
+const DB_VERSION = 1;
+let db = null;
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) { reject(new Error('IndexedDB not supported')); return; }
+    const rq = indexedDB.open(DB_NAME, DB_VERSION);
+    rq.onupgradeneeded = () => {
+      const d = rq.result;
+      if (!d.objectStoreNames.contains('sessions')) d.createObjectStore('sessions', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('samples')) {
+        d.createObjectStore('samples', { keyPath: 'id' }).createIndex('session', 'sessionId', { unique: false });
+      }
+      if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv', { keyPath: 'k' });
+    };
+    rq.onsuccess = () => {
+      const d = rq.result;
+      d.onversionchange = () => { d.close(); showBanner('The tool was updated in another tab — reload this page.'); };
+      resolve(d);
+    };
+    rq.onerror = () => reject(rq.error);
+    rq.onblocked = () => reject(new Error('database blocked by another tab'));
+  });
+}
+const reqP = rq => new Promise((res, rej) => { rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); });
+const txDone = t => new Promise((res, rej) => {
+  t.oncomplete = () => res();
+  t.onerror = () => rej(t.error);
+  t.onabort = () => rej(t.error || new Error('transaction aborted'));
+});
+async function dbGet(store, key) { return db ? reqP(db.transaction(store).objectStore(store).get(key)) : undefined; }
+async function dbAll(store) { return db ? reqP(db.transaction(store).objectStore(store).getAll()) : []; }
+async function dbSessionSamples(sid) {
+  return db ? reqP(db.transaction('samples').objectStore('samples').index('session').getAll(sid)) : [];
+}
+async function dbCountSamples(sid) {
+  return db ? reqP(db.transaction('samples').objectStore('samples').index('session').count(sid)) : 0;
+}
+function dbPut(store, val) {
+  if (!db) return Promise.resolve();
+  const t = db.transaction(store, 'readwrite');
+  t.objectStore(store).put(val);
+  return txDone(t);
+}
+function dbPutMany(store, vals) {
+  if (!db || !vals.length) return Promise.resolve();
+  const t = db.transaction(store, 'readwrite'), os = t.objectStore(store);
+  for (const v of vals) os.put(v);
+  return txDone(t);
+}
+function dbDel(store, key) {
+  if (!db) return Promise.resolve();
+  const t = db.transaction(store, 'readwrite');
+  t.objectStore(store).delete(key);
+  return txDone(t);
+}
+function dbDeleteSession(sid) {
+  if (!db) return Promise.resolve();
+  const t = db.transaction(['sessions', 'samples'], 'readwrite');
+  t.objectStore('sessions').delete(sid);
+  const samples = t.objectStore('samples');
+  const cur = samples.index('session').openKeyCursor(IDBKeyRange.only(sid));
+  cur.onsuccess = () => { const c = cur.result; if (c) { samples.delete(c.primaryKey); c.continue(); } };
+  return txDone(t);
+}
+
+// write tracking → header save indicator
+let pendingWrites = 0, saveError = null;
+function track(p) {
+  pendingWrites++;
+  renderSaveState();
+  return Promise.resolve(p).then(() => { saveError = null; }, err => {
+    saveError = err;
+    console.error(err);
+    toast('Could not save: ' + (err && err.message || err), { err: true });
+  }).finally(() => { pendingWrites--; renderSaveState(); });
+}
+function renderSaveState() {
+  const el = $('saveState'), lab = el.querySelector('span');
+  el.classList.toggle('busy', pendingWrites > 0);
+  el.classList.toggle('err', !db || !!saveError);
+  lab.textContent = !db ? 'not saved' : saveError ? 'save failed' : pendingWrites ? 'saving' : 'saved';
+}
+async function persistState(ask) {
+  const st = navigator.storage;
+  if (!st || !st.persisted) return null;
+  let p = await st.persisted();
+  if (!p && ask && st.persist) { try { p = await st.persist(); } catch (_) { /* ignore */ } }
+  return p;
+}
+
+// ── app state ──────────────────────────────────────────────────────────────
+const S = {
+  session: null,
+  samples: new Map(),    // id → sample
+  byKey: new Map(),      // key → samples sorted by slot
+  queue: [],             // prompts: { key, set, kind, target }
+  queueIndex: new Map(), // key → prompt
+  view: 'capture',
+  rev: 0,                // bumps on every sample change
+};
+
+function indexSample(s) {
+  S.samples.set(s.id, s);
+  let arr = S.byKey.get(s.key);
+  if (!arr) S.byKey.set(s.key, arr = []);
+  const i = arr.findIndex(x => x.id === s.id);
+  if (i >= 0) arr[i] = s; else arr.push(s);
+  arr.sort((a, b) => a.slot - b.slot || a.created - b.created);
+  S.rev++;
+}
+function unindexSample(id) {
+  const s = S.samples.get(id);
+  if (!s) return;
+  S.samples.delete(id);
+  const arr = S.byKey.get(s.key);
+  if (arr) {
+    const i = arr.findIndex(x => x.id === id);
+    if (i >= 0) arr.splice(i, 1);
+    if (!arr.length) S.byKey.delete(s.key);
+  }
+  S.rev++;
+}
+const samplesOf = key => S.byKey.get(key) || [];
+const sampleAt = (key, slot) => samplesOf(key).find(s => s.slot === slot) || null;
+function maxSlot(key) { let m = -1; for (const s of samplesOf(key)) if (s.slot > m) m = s.slot; return m; }
+function putSample(s) { indexSample(s); return track(dbPut('samples', s)); }
+function removeSample(id) { unindexSample(id); return track(dbDel('samples', id)); }
+
+function defaultCapture() {
+  return {
+    size: 'M', surface: 'dark', ink: 'fine', input: 'auto',
+    guideStyle: 'lines', lines: { asc: true, cap: true, x: true, base: true, desc: true },
+    shade: true, dividers: true, slant: 0,
+    propPreset: 'balanced', prop: { ...PROP_PRESETS.balanced },
+    variants: { glyph: 5, mark: 3, combo: 3 },
+    sets: { lower: true, upper: true, digits: true, punct: true, symbols: false, accents: false },
+    pairs: { en: true, nl: false, caps: false, all: false },
+    custom: '',
+  };
+}
+function defaultFont() {
+  return {
+    name: '', author: '', license: 'All rights reserved',
+    variant: 'auto', seed: 1, alternates: true, ligatures: true, kerning: true,
+    mode: 'curves', detail: 45, smooth: 20, chaikin: 2, precision: 1,
+    cap: 660, spacingMode: 'auto', spacing: 50, space: 0, slant: 0, snap: false,
+  };
+}
+function defaultPreview() {
+  return {
+    mode: 'text', text: DEFAULT_TEXT, size: 12, lineHeight: 1.3, wrap: 180,
+    variation: 'cycle', seed: 1, guides: true, boxes: false, nodes: false, raw: false, stroke: 0.35,
+  };
+}
+// Fill in missing / mistyped settings from defaults (older or imported sessions).
+function withDefaults(obj, def) {
+  const out = {};
+  for (const k of Object.keys(def)) {
+    const v = obj ? obj[k] : undefined;
+    if (def[k] && typeof def[k] === 'object' && !Array.isArray(def[k])) out[k] = withDefaults(v, def[k]);
+    else out[k] = (v === undefined || v === null || typeof v !== typeof def[k]) ? def[k] : v;
+  }
+  return out;
+}
+function deviceInfo() {
+  return {
+    ua: navigator.userAgent, platform: navigator.platform || '', dpr: window.devicePixelRatio || 1,
+    screen: [screen.width, screen.height], touchPoints: navigator.maxTouchPoints || 0,
+  };
+}
+function normalizeSession(s) {
+  return {
+    ...s,
+    id: s.id || uid(),
+    name: String(s.name || 'My Hand'),
+    created: +s.created || Date.now(),
+    updated: +s.updated || Date.now(),
+    lastExport: +s.lastExport || 0,
+    capture: withDefaults(s.capture, defaultCapture()),
+    font: withDefaults(s.font, defaultFont()),
+    preview: withDefaults(s.preview, defaultPreview()),
+    pos: s.pos && typeof s.pos === 'object' ? s.pos : { key: null },
+  };
+}
+function newSessionRecord(name, base) {
+  const now = Date.now();
+  return normalizeSession({
+    id: uid(), name: name || 'My Hand', created: now, updated: now, lastExport: 0, v: FORMAT_VERSION,
+    capture: base ? structuredClone(base.capture) : defaultCapture(),
+    font: base ? { ...structuredClone(base.font), name: '' } : defaultFont(),
+    preview: base ? structuredClone(base.preview) : defaultPreview(),
+    pos: { key: null }, device: deviceInfo(),
+  });
+}
+const saveSessionSoon = debounce(() => {
+  if (!S.session) return;
+  S.session.updated = Date.now();
+  track(dbPut('sessions', S.session));
+}, 400);
+
+function rebuildQueue() {
+  const cap = S.session.capture, q = [], seen = new Set();
+  const add = (key, set, kind) => {
+    key = key.normalize('NFC');
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    q.push({ key, set, kind, target: clamp(Math.round(cap.variants[kind]) || 1, 1, 12) });
+  };
+  for (const st of SETS) if (cap.sets[st.id]) for (const ch of chars(st.chars)) add(ch, st.id, st.kind);
+  for (const ps of PAIR_SETS) if (cap.pairs[ps.id]) for (const k of pairList(ps)) add(k, 'pairs', 'combo');
+  for (const k of parseCustom(cap.custom)) add(k, 'custom', chars(k).length > 1 ? 'combo' : isMark(k) ? 'mark' : 'glyph');
+  S.queue = q;
+  S.queueIndex = new Map(q.map(p => [p.key, p]));
+}
+function keyDone(key) { const p = S.queueIndex.get(key); return samplesOf(key).length >= (p ? p.target : 1); }
+function progressStats() {
+  let tgt = 0, got = 0;
+  const perSet = new Map();
+  for (const p of S.queue) {
+    const c = Math.min(samplesOf(p.key).length, p.target);
+    tgt += p.target; got += c;
+    let ps = perSet.get(p.set);
+    if (!ps) perSet.set(p.set, ps = { tgt: 0, got: 0, keys: 0, done: 0 });
+    ps.tgt += p.target; ps.got += c; ps.keys++;
+    if (c >= p.target) ps.done++;
+  }
+  return { tgt, got, pct: tgt ? got / tgt : 0, perSet };
+}
+function sampleStats(list) {
+  let strokes = 0, points = 0;
+  for (const s of list) for (const st of s.strokes) { strokes++; points += st.pts.length / NF; }
+  return { samples: list.length, strokes, points, bytes: points * NF * 4 };
+}
+
+// ── settings ⇄ controls binding (data-bind="capture.size" etc.) ──────────
+function getPath(o, p) { return p.split('.').reduce((a, k) => a == null ? a : a[k], o); }
+function setPath(o, p, v) {
+  const ks = p.split('.');
+  let a = o;
+  for (let i = 0; i < ks.length - 1; i++) {
+    if (a[ks[i]] == null || typeof a[ks[i]] !== 'object') a[ks[i]] = {};
+    a = a[ks[i]];
+  }
+  a[ks[ks.length - 1]] = v;
+}
+const VAL_FMT = {
+  deg0: v => v ? v + '°' : 'off',
+  deg1: v => (v > 0 ? '+' : '') + Number(v).toFixed(1) + '°',
+  xh: v => Number(v).toFixed(2) + '×',
+  mm: v => Number(v).toFixed(1) + 'mm',
+  x2: v => Number(v).toFixed(2) + '×',
+  wrap: v => v ? v + 'mm' : 'off',
+  auto0: v => v ? String(v) : 'auto',
+  chaikin: v => v ? v + '×' : 'off',
+};
+function bindControls() {
+  document.querySelectorAll('[data-bind]').forEach(el => {
+    const path = el.dataset.bind;
+    if (el.classList.contains('seg')) {
+      el.innerHTML = '';
+      for (const o of el.dataset.opts.split(',')) {
+        const [v, l] = o.split(':');
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = l ?? v; b.dataset.v = v;
+        b.addEventListener('click', () => {
+          const cur = getPath(S.session, path);
+          setPath(S.session, path, typeof cur === 'number' ? Number(v) : v);
+          syncControls(); onSetting(path);
+        });
+        el.appendChild(b);
+      }
+    } else if (el.classList.contains('stepper')) {
+      const min = +el.dataset.min, max = +el.dataset.max;
+      el.innerHTML = '<button type="button" aria-label="fewer">−</button><span></span><button type="button" aria-label="more">+</button>';
+      const step = d => {
+        setPath(S.session, path, clamp((getPath(S.session, path) || 0) + d, min, max));
+        syncControls(); onSetting(path);
+      };
+      el.children[0].addEventListener('click', () => step(-1));
+      el.children[2].addEventListener('click', () => step(1));
+    } else if (el.type === 'checkbox') {
+      el.addEventListener('change', () => { setPath(S.session, path, el.checked); syncControls(); onSetting(path); });
+    } else if (el.tagName === 'SELECT') {
+      el.addEventListener('change', () => { setPath(S.session, path, el.value); syncControls(); onSetting(path); });
+    } else if (el.type === 'range' || el.type === 'number') {
+      el.addEventListener('input', () => {
+        const v = parseFloat(el.value);
+        if (!Number.isFinite(v)) return;
+        setPath(S.session, path, v); syncVals(); onSetting(path);
+      });
+    } else {
+      el.addEventListener('input', () => { setPath(S.session, path, el.value); onSetting(path); });
+    }
+  });
+}
+function syncControls() {
+  if (!S.session) return;
+  document.querySelectorAll('[data-bind]').forEach(el => {
+    const v = getPath(S.session, el.dataset.bind);
+    if (el.classList.contains('seg')) el.querySelectorAll('button').forEach(b => b.classList.toggle('on', String(v) === b.dataset.v));
+    else if (el.classList.contains('stepper')) el.children[1].textContent = v;
+    else if (el.type === 'checkbox') el.checked = !!v;
+    else if (document.activeElement !== el) el.value = v ?? '';
+  });
+  $('capPropPreset').value = S.session.capture.propPreset;
+  $('ftName').placeholder = S.session.name;
+  syncVals();
+  document.querySelectorAll('[data-show]').forEach(el => {
+    const m = el.dataset.show.match(/^([\w.]+)(!?=)(.*)$/);
+    const v = String(getPath(S.session, m[1]));
+    el.hidden = m[2] === '=' ? v !== m[3] : v === m[3];
+  });
+}
+function syncVals() {
+  document.querySelectorAll('[data-val]').forEach(el => {
+    const v = getPath(S.session, el.dataset.val), f = VAL_FMT[el.dataset.fmt];
+    el.textContent = f ? f(v) : v;
+  });
+}
+function onSetting(path) {
+  saveSessionSoon();
+  if (path.startsWith('capture.')) Capture.onSetting(path);
+  else if (path.startsWith('font.')) Font.onSetting(path, true);
+  else if (path.startsWith('preview.')) Font.onSetting(path, false);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// CAPTURE — practice-sheet pages: one row per prompt, one cell per version
+// ════════════════════════════════════════════════════════════════════════
+const Capture = (() => {
+  const stage = $('capStage'), gCan = $('capGuides'), iCan = $('capInk');
+  const gctx = gCan.getContext('2d'), ictx = iCan.getContext('2d');
+  const hlEl = $('capHl'), cursorEl = $('capCursor');
+  const SIZE_PX = { S: 32, M: 44, L: 58, XL: 76 };   // x-height in CSS px
+  const THEMES = {
+    dark:  { bg: '#0e0e0e', band: '#121212', zone: '#171717', line: '#2b2b2b', lineX: '#383838', base: '#5c5c5c',
+             capLine: '#333', slant: '#1b1b1b', div: '#2e2e2e', model: '#363636', caption: '#555', count: '#5a5a5a',
+             done: '#8aaa3a', ink: '#ececec', label: '#3a3a3a' },
+    paper: { bg: '#f2efe6', band: '#eeeadf', zone: '#e7e2d4', line: '#c8d2d9', lineX: '#b2c0ca', base: '#7a8e9e',
+             capLine: '#c9d2d8', slant: '#e1dccf', div: '#cdc7ba', model: '#cdc6b5', caption: '#978f7f', count: '#a0998a',
+             done: '#5f7f1a', ink: '#161616', label: '#bbb4a3' },
+  };
+
+  let L = null, pageIdx = 0, cells = [], rows = [];
+  let active = null, eraser = false, penSeen = false;
+  let lastCell = null, lastEnd = 0;
+  let undoStack = [], redoStack = [];
+  let pendingRelayout = false, guidesQueued = false, persistAsked = false, hlTimer = 0;
+  const jumpOpts = new Map();
+  const boxCache = new WeakMap();
+
+  const theme = () => THEMES[S.session.capture.surface] || THEMES.dark;
+  const visible = () => S.view === 'capture' && stage.clientWidth > 0;
+  const safeBottom = () => { const p = $('sabProbe'); return p ? p.offsetHeight : 0; };
+
+  // ── layout & pagination ─────────────────────────────────────────────────
+  function computeLayout() {
+    const W = stage.clientWidth, H = stage.clientHeight - safeBottom();
+    const cap = S.session.capture, P = cap.prop;
+    let xh = SIZE_PX[cap.size] || 44;
+    const fit = (H - 24) / (P.asc + P.desc + 0.3);
+    if (xh > fit) xh = Math.max(12, fit);
+    const above = P.asc * xh, below = P.desc * xh, bandH = above + below;
+    const gap = Math.max(10, 0.3 * xh), pad = Math.max(8, 0.22 * xh);
+    const mL = 10, mR = 12;
+    const gutter = Math.round(clamp(1.9 * xh, 58, 150));
+    const x0 = mL + gutter, availW = Math.max(60, W - x0 - mR);
+    const rowH = bandH + gap;
+    const maxRows = Math.max(1, Math.floor((H - 2 * pad + gap) / rowH));
+    const pages = [];
+    let cur = [], used = 0;
+    for (const p of S.queue) {
+      const len = Math.max(1, chars(p.key).length);
+      const baseW = xh * (1.25 + 1.2 * len);
+      const count = Math.max(p.target, maxSlot(p.key) + 1);
+      let perRow = Math.max(1, Math.floor(availW / baseW));
+      let nRows = Math.ceil(count / perRow);
+      if (nRows > maxRows) { nRows = maxRows; perRow = Math.ceil(count / maxRows); }
+      if (cur.length && used + nRows > maxRows) { pages.push(cur); cur = []; used = 0; }
+      cur.push({ p, count, perRow, nRows, baseW });
+      used += nRows;
+    }
+    if (cur.length) pages.push(cur);
+    return { W, H, xh, above, below, bandH, gap, pad, mL, mR, gutter, x0, availW, rowH, maxRows, pages };
+  }
+
+  function buildPage() {
+    cells = []; rows = [];
+    const page = L.pages[pageIdx];
+    if (!page) return;
+    let r = 0;
+    for (const pr of page) {
+      for (let k = 0; k < pr.nRows; k++) {
+        const top = L.pad + r * L.rowH, baseline = top + L.above;
+        const n = Math.min(pr.perRow, pr.count - k * pr.perRow);
+        const cw = pr.nRows === 1 ? Math.min(L.availW / n, pr.baseW * 2.5) : L.availW / pr.perRow;
+        const row = { key: pr.p.key, p: pr.p, top, baseline, bottom: baseline + L.below, first: k === 0, cells: [] };
+        for (let i = 0; i < n; i++) {
+          const c = { key: pr.p.key, p: pr.p, slot: k * pr.perRow + i, x0: L.x0 + i * cw, x1: L.x0 + (i + 1) * cw,
+                      top, baseline, bottom: row.bottom, xh: L.xh, row };
+          cells.push(c); row.cells.push(c);
+        }
+        rows.push(row);
+        r++;
+      }
+    }
+  }
+
+  function sizeCanvases() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const W = stage.clientWidth, H = stage.clientHeight;
+    for (const c of [gCan, iCan]) {
+      const w = Math.max(1, Math.round(W * dpr)), h = Math.max(1, Math.round(H * dpr));
+      if (c.width !== w) c.width = w;
+      if (c.height !== h) c.height = h;
+      c.style.width = W + 'px'; c.style.height = H + 'px';
+    }
+    gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ictx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    L.fullH = H;
+  }
+
+  function render() {
+    if (!S.session || !visible()) return;
+    if (active) { pendingRelayout = true; return; }
+    L = computeLayout();
+    const anchor = S.session.pos && S.session.pos.key;
+    let idx = anchor != null ? L.pages.findIndex(pg => pg.some(pr => pr.p.key === anchor)) : -1;
+    if (idx < 0) idx = pageIdx;
+    pageIdx = clamp(idx, 0, Math.max(0, L.pages.length - 1));
+    buildPage();
+    sizeCanvases();
+    drawGuides();
+    drawInk();
+    updateBar();
+  }
+
+  // ── drawing ─────────────────────────────────────────────────────────────
+  function queueGuides() {
+    if (guidesQueued) return;
+    guidesQueued = true;
+    requestAnimationFrame(() => { if (L) drawGuides(); guidesQueued = false; });
+  }
+
+  function drawGuides() {
+    guidesQueued = false;
+    const T = theme(), cap = S.session.capture, P = cap.prop, ctx = gctx;
+    ctx.fillStyle = T.bg;
+    ctx.fillRect(0, 0, L.W, L.fullH);
+    if (!rows.length) {
+      ctx.fillStyle = T.caption; ctx.font = `12px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('No prompts selected — open the settings and pick some sets.', L.W / 2, L.fullH / 2);
+      return;
+    }
+    const tan = Math.tan((cap.slant || 0) * Math.PI / 180);
+    for (const row of rows) {
+      const x0 = L.x0, x1 = row.cells[row.cells.length - 1].x1;
+      const yB = row.baseline, yA = yB - P.asc * L.xh, yC = yB - P.cap * L.xh, yX = yB - L.xh, yD = yB + P.desc * L.xh;
+      const hline = (y, color, dash, w) => {
+        ctx.save();
+        ctx.strokeStyle = color; ctx.lineWidth = w || 1; ctx.setLineDash(dash || []);
+        ctx.beginPath(); ctx.moveTo(x0, Math.round(y) + 0.5); ctx.lineTo(x1, Math.round(y) + 0.5); ctx.stroke();
+        ctx.restore();
+      };
+      ctx.fillStyle = T.band; ctx.fillRect(x0, yA, x1 - x0, yD - yA);
+      if (cap.shade) { ctx.fillStyle = T.zone; ctx.fillRect(x0, yX, x1 - x0, yB - yX); }
+      if (cap.slant > 0 && cap.guideStyle !== 'blank') {
+        ctx.save();
+        ctx.beginPath(); ctx.rect(x0, yA, x1 - x0, yD - yA); ctx.clip();
+        ctx.strokeStyle = T.slant; ctx.lineWidth = 1; ctx.beginPath();
+        const h = yD - yA, step = L.xh * 0.85;
+        for (let x = x0 - h * tan; x < x1 + step; x += step) { ctx.moveTo(x, yD); ctx.lineTo(x + h * tan, yA); }
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (cap.guideStyle === 'lines') {
+        if (cap.lines.asc) hline(yA, T.line);
+        if (cap.lines.cap) hline(yC, T.capLine, [4, 5]);
+        if (cap.lines.x) hline(yX, T.lineX);
+        if (cap.lines.desc) hline(yD, T.line);
+        if (cap.lines.base) hline(yB, T.base, null, 1.3);
+      } else if (cap.guideStyle === 'grid' || cap.guideStyle === 'dots') {
+        const pitch = L.xh / 2, yStart = yB - Math.floor((yB - yA) / pitch + 1e-6) * pitch;
+        ctx.save();
+        ctx.beginPath(); ctx.rect(x0, yA, x1 - x0, yD - yA); ctx.clip();
+        if (cap.guideStyle === 'grid') {
+          ctx.strokeStyle = T.line; ctx.lineWidth = 1; ctx.beginPath();
+          for (let y = yStart; y <= yD + 0.1; y += pitch) { ctx.moveTo(x0, Math.round(y) + 0.5); ctx.lineTo(x1, Math.round(y) + 0.5); }
+          for (let x = x0; x <= x1 + 0.1; x += pitch) { ctx.moveTo(Math.round(x) + 0.5, yA); ctx.lineTo(Math.round(x) + 0.5, yD); }
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = T.lineX;
+          for (let y = yStart; y <= yD + 0.1; y += pitch) for (let x = x0; x <= x1 + 0.1; x += pitch) ctx.fillRect(x - 1, y - 1, 2, 2);
+        }
+        ctx.restore();
+        hline(yB, T.base, null, 1.3);
+      }
+      ctx.font = `500 9px ${MONO}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      for (let i = 0; i < row.cells.length; i++) {
+        const c = row.cells[i];
+        if (cap.dividers && i > 0) {
+          ctx.save();
+          ctx.strokeStyle = T.div; ctx.setLineDash([2, 4]);
+          ctx.beginPath(); ctx.moveTo(Math.round(c.x0) + 0.5, yA); ctx.lineTo(Math.round(c.x0) + 0.5, yD); ctx.stroke();
+          ctx.restore();
+        }
+        ctx.fillStyle = sampleAt(c.key, c.slot) ? T.done : T.label;
+        ctx.fillText(String(c.slot + 1), c.x0 + 4, yA + 3);
+      }
+      if (row.first) drawModel(row, T);
+      else {
+        ctx.fillStyle = T.label; ctx.font = `400 13px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText('…', L.mL + (L.gutter - 8) / 2, yB);
+      }
+    }
+    const yHint = rows[rows.length - 1].bottom + 34;
+    if (!S.samples.size && yHint + 36 < L.H) {
+      ctx.fillStyle = T.caption; ctx.font = `400 11px ${MONO}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      [
+        'Write one version of the prompt in every cell — each stroke is saved on this device right away.',
+        'Once the Apple Pencil is seen, fingers stop inking (palm rejection) · two-finger tap = undo · eraser removes whole strokes.',
+        'Tip: open the tool standalone and use Share → Add to Home Screen for a full-screen writing app.',
+      ].forEach((t, i) => ctx.fillText(t, L.x0, yHint + i * 17));
+    }
+  }
+
+  function drawModel(row, T) {
+    const ctx = gctx, key = row.key, len = chars(key).length;
+    const gw = L.gutter - 8, cx = L.mL + gw / 2;
+    // IBM Plex Mono's x-height is ≈0.516 em — match the guide's x-height where the gutter allows
+    let fs = Math.max(9, Math.min(L.xh / 0.516, (gw - 4) / (0.6 * len), (row.bottom - row.top) * 0.95));
+    ctx.font = `400 ${fs}px ${MONO}`;
+    const tw = ctx.measureText(key).width;   // the fallback font (offline) is wider than Plex Mono
+    if (tw > gw - 4) { fs = Math.max(8, fs * (gw - 4) / tw); ctx.font = `400 ${fs}px ${MONO}`; }
+    ctx.fillStyle = T.model; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(key, cx, row.baseline);
+    const cnt = samplesOf(key).length, tgt = row.p.target;
+    ctx.font = `500 10px ${MONO}`; ctx.textBaseline = 'top';
+    ctx.fillStyle = cnt >= tgt ? T.done : T.count;
+    ctx.fillText(`${cnt}/${tgt}`, cx, row.top + 2);
+    const capt = CAPTIONS[key];
+    if (capt) {
+      ctx.fillStyle = T.caption; ctx.font = `400 9.5px ${MONO}`; ctx.textBaseline = 'bottom';
+      ctx.fillText(capt, cx, row.bottom - 1);
+    }
+  }
+
+  const inkWidth = () => clamp(L.xh * 0.045, 1.3, 3.4);
+  const pw = (p0, p1) => { let p = (p0 + p1) / 2; if (!(p > 0)) p = 0.5; return 0.35 + 1.3 * clamp(p, 0, 1); };
+
+  function drawInk() {
+    ictx.clearRect(0, 0, L.W, L.fullH);
+    for (const c of cells) {
+      const s = sampleAt(c.key, c.slot);
+      if (!s) continue;
+      const r = c.xh / s.guide.xh;
+      for (const st of s.strokes) drawStroke(ictx, st.pts, c.x0, c.baseline, r);
+    }
+  }
+  function drawStroke(ctx, a, ox, oy, r) {
+    const T = theme(), n = a.length / NF, w = inkWidth(), pressure = S.session.capture.ink === 'pressure';
+    ctx.strokeStyle = ctx.fillStyle = T.ink; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (n === 1) { ctx.beginPath(); ctx.arc(ox + a[0] * r, oy + a[1] * r, w * 0.6, 0, Math.PI * 2); ctx.fill(); return; }
+    if (!pressure) {
+      ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(ox + a[0] * r, oy + a[1] * r);
+      for (let i = 1; i < n; i++) ctx.lineTo(ox + a[i * NF] * r, oy + a[i * NF + 1] * r);
+      ctx.stroke();
+      return;
+    }
+    for (let i = 1; i < n; i++) {
+      ctx.lineWidth = w * pw(a[(i - 1) * NF + 3], a[i * NF + 3]);
+      ctx.beginPath();
+      ctx.moveTo(ox + a[(i - 1) * NF] * r, oy + a[(i - 1) * NF + 1] * r);
+      ctx.lineTo(ox + a[i * NF] * r, oy + a[i * NF + 1] * r);
+      ctx.stroke();
+    }
+  }
+
+  // ── hit testing ─────────────────────────────────────────────────────────
+  function localBox(s) {
+    let b = boxCache.get(s);
+    if (b) return b;
+    b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    for (const st of s.strokes) {
+      const a = st.pts;
+      for (let i = 0; i < a.length; i += NF) {
+        if (a[i] < b.minX) b.minX = a[i];
+        if (a[i] > b.maxX) b.maxX = a[i];
+        if (a[i + 1] < b.minY) b.minY = a[i + 1];
+        if (a[i + 1] > b.maxY) b.maxY = a[i + 1];
+      }
+    }
+    boxCache.set(s, b);
+    return b;
+  }
+  function sampleBox(s, c) {
+    const b = localBox(s), r = c.xh / s.guide.xh;
+    return { minX: c.x0 + b.minX * r, maxX: c.x0 + b.maxX * r, minY: c.baseline + b.minY * r, maxY: c.baseline + b.maxY * r };
+  }
+  // Pen-down → nearest cell.
+  function pickCell(x, y) {
+    let best = null, bd = Infinity;
+    for (const c of cells) {
+      const dx = x < c.x0 ? c.x0 - x : x > c.x1 ? x - c.x1 : 0;
+      const dy = y < c.top ? c.top - y : y > c.bottom ? y - c.bottom : 0;
+      const d = dx + dy * 1.5;
+      if (d < bd) { bd = d; best = c; }
+    }
+    return best;
+  }
+  // Decided when the stroke ends. Row: the one holding most of the stroke (tall letters often
+  // start above their ascender line, in the gap next to the row above). Cell: the pen-down
+  // one, except a small mark (i-dot, accent, t-bar) landing on the letter just written next door.
+  function assignCell(a) {
+    let A = a.cell;
+    if (a.pts.length > NF) {
+      const count = new Map();
+      for (let i = 1; i < a.pts.length; i += NF) {
+        const y = a.pts[i];
+        for (const row of rows) {
+          if (y >= row.top - L.gap / 2 && y < row.bottom + L.gap / 2) { count.set(row, (count.get(row) || 0) + 1); break; }
+        }
+      }
+      let best = A.row, bc = count.get(A.row) || 0;
+      for (const [row, n] of count) if (n > bc) { best = row; bc = n; }
+      if (best !== A.row) {
+        const x = a.pts[0];
+        let bd = Infinity;
+        for (const c of best.cells) {
+          const d = x < c.x0 ? c.x0 - x : x > c.x1 ? x - c.x1 : 0;
+          if (d < bd) { bd = d; A = c; }
+        }
+      }
+    }
+    if (!lastCell || performance.now() - lastEnd > 3000 || A.p.kind === 'mark') return A;
+    const B = cells.find(c => c.key === lastCell.key && c.slot === lastCell.slot);
+    if (!B || B === A || B.row !== A.row || Math.abs(B.slot - A.slot) !== 1) return A;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < a.pts.length; i += NF) {
+      const x = a.pts[i], y = a.pts[i + 1];
+      if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+    if (Math.hypot(maxX - minX, maxY - minY) > 0.6 * A.xh) return A;
+    const s = sampleAt(B.key, B.slot);
+    if (!s) return A;
+    const b = sampleBox(s, B), m = 0.25 * B.xh, cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    return cx >= b.minX - m && cx <= b.maxX + m && cy >= b.minY - m && cy <= b.maxY + m ? B : A;
+  }
+  function segDist2(px, py, ax, ay, bx, by) {
+    const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy;
+    let t = l2 ? ((px - ax) * vx + (py - ay) * vy) / l2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const dx = ax + t * vx - px, dy = ay + t * vy - py;
+    return dx * dx + dy * dy;
+  }
+  function strokeHit(a, ox, oy, r, x, y, R2) {
+    const n = a.length / NF;
+    let px = ox + a[0] * r, py = oy + a[1] * r;
+    if ((px - x) ** 2 + (py - y) ** 2 <= R2) return true;
+    for (let i = 1; i < n; i++) {
+      const qx = ox + a[i * NF] * r, qy = oy + a[i * NF + 1] * r;
+      if (segDist2(x, y, px, py, qx, qy) <= R2) return true;
+      px = qx; py = qy;
+    }
+    return false;
+  }
+
+  // ── pointer input ───────────────────────────────────────────────────────
+  const touchIgnored = () => { const m = S.session.capture.input; return m === 'pen' || (m === 'auto' && penSeen); };
+  const ownsPointer = e => active && active.id === e.pointerId;
+
+  function onDown(e) {
+    if (e.pointerType === 'touch' && touchIgnored()) { gestureDown(e); return; }
+    if (active || !L || !cells.length) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    if (e.pointerType === 'pen') penSeen = true;
+    try { iCan.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    const rect = iCan.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    if (eraser) {
+      active = { id: e.pointerId, erase: true, rect, before: new Map() };
+      moveCursor(x, y);
+      eraseAt(x, y);
+      return;
+    }
+    const c = pickCell(x, y);
+    if (!c) return;
+    active = {
+      id: e.pointerId, type: e.pointerType, cell: c, rect, pts: [],
+      tBase: e.timeStamp, t0: e.timeStamp > 1e12 ? e.timeStamp : performance.timeOrigin + e.timeStamp,
+      lastX: null, lastY: null, lastP: 0,
+    };
+    addPoint(e);
+    showHl(c);
+  }
+  // points are kept in page coordinates until the stroke ends and its cell is final
+  function addPoint(ev) {
+    const a = active;
+    const x = ev.clientX - a.rect.left, y = ev.clientY - a.rect.top;
+    const n = a.pts.length / NF;
+    if (n && a.pts[(n - 1) * NF] === x && a.pts[(n - 1) * NF + 1] === y) return;
+    const num = v => (typeof v === 'number' ? v : NaN);
+    a.pts.push(x, y, ev.timeStamp - a.tBase, num(ev.pressure), num(ev.tiltX), num(ev.tiltY),
+               num(ev.twist), num(ev.altitudeAngle), num(ev.azimuthAngle));
+    const T = theme(), w = inkWidth();
+    ictx.strokeStyle = ictx.fillStyle = T.ink; ictx.lineCap = 'round'; ictx.lineJoin = 'round';
+    if (a.lastX == null) {
+      ictx.beginPath(); ictx.arc(x, y, w * 0.5, 0, Math.PI * 2); ictx.fill();
+    } else {
+      ictx.lineWidth = S.session.capture.ink === 'pressure' ? w * pw(a.lastP, ev.pressure) : w;
+      ictx.beginPath(); ictx.moveTo(a.lastX, a.lastY); ictx.lineTo(x, y); ictx.stroke();
+    }
+    a.lastX = x; a.lastY = y; a.lastP = ev.pressure;
+  }
+  function onMove(e) {
+    if (e.pointerType === 'touch' && touchIgnored() && !ownsPointer(e)) { gestureMove(e); return; }
+    if (!active) {
+      if (eraser && e.pointerType !== 'touch') {
+        const rect = iCan.getBoundingClientRect();
+        moveCursor(e.clientX - rect.left, e.clientY - rect.top);
+      }
+      return;
+    }
+    if (e.pointerId !== active.id) return;
+    e.preventDefault();
+    let evs = null;
+    try { evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null; } catch (_) { evs = null; }
+    if (!evs || !evs.length) evs = [e];
+    if (active.erase) {
+      for (const ev of evs) eraseAt(ev.clientX - active.rect.left, ev.clientY - active.rect.top);
+      moveCursor(e.clientX - active.rect.left, e.clientY - active.rect.top);
+      return;
+    }
+    for (const ev of evs) addPoint(ev);
+  }
+  function onUp(e) {
+    if (e.pointerType === 'touch' && touchIgnored() && !ownsPointer(e)) { gestureUp(e); return; }
+    if (!active || e.pointerId !== active.id) return;
+    e.preventDefault();
+    const a = active;
+    active = null;
+    if (a.erase) finishErase(a); else commitStroke(a, e.type === 'pointercancel');
+    if (pendingRelayout) { pendingRelayout = false; render(); }
+  }
+
+  function newSample(c, stroke) {
+    const P = S.session.capture.prop, now = Date.now();
+    return {
+      id: uid(), sessionId: S.session.id, key: c.key, slot: c.slot, created: now, updated: now, starred: false,
+      guide: { xh: c.xh, asc: P.asc * c.xh, cap: P.cap * c.xh, desc: P.desc * c.xh, slant: S.session.capture.slant || 0 },
+      origin: { x: c.x0, y: c.baseline }, cellW: c.x1 - c.x0,
+      viewport: { w: L.W, h: L.H, dpr: window.devicePixelRatio || 1 },
+      strokes: [stroke],
+    };
+  }
+  function commitStroke(a, cancelled) {
+    if (!a.pts.length) return;
+    const c = assignCell(a), prev = sampleAt(c.key, c.slot);
+    if (c !== a.cell) showHl(c);
+    // → cell-local coordinates, in the scale of the sample it joins (it may be from another screen size)
+    const r = prev ? c.xh / prev.guide.xh : 1, pts = new Float32Array(a.pts.length);
+    for (let i = 0; i < a.pts.length; i += NF) {
+      pts[i] = (a.pts[i] - c.x0) / r;
+      pts[i + 1] = (a.pts[i + 1] - c.baseline) / r;
+      for (let f = 2; f < NF; f++) pts[i + f] = a.pts[i + f];
+    }
+    const stroke = { type: a.type, t0: a.t0, pts };
+    if (cancelled) stroke.cancel = true;
+    const next = prev ? { ...prev, strokes: prev.strokes.concat([stroke]), updated: Date.now() } : newSample(c, stroke);
+    putSample(next);
+    pushUndo([{ id: next.id, before: prev, after: next }]);
+    lastCell = c; lastEnd = performance.now();
+    afterChange(c.key);
+    if (!persistAsked) { persistAsked = true; persistState(true).then(() => Data.refreshStorage()); }
+  }
+
+  // ── eraser ──────────────────────────────────────────────────────────────
+  function eraseAt(x, y) {
+    const R = Math.max(9, L.xh * 0.2), R2 = R * R;
+    let changed = false;
+    for (const c of cells) {
+      const s = sampleAt(c.key, c.slot);
+      if (!s) continue;
+      const b = sampleBox(s, c);
+      if (x < b.minX - R || x > b.maxX + R || y < b.minY - R || y > b.maxY + R) continue;
+      const r = c.xh / s.guide.xh;
+      const keep = s.strokes.filter(st => !strokeHit(st.pts, c.x0, c.baseline, r, x, y, R2));
+      if (keep.length === s.strokes.length) continue;
+      if (!active.before.has(s.id)) active.before.set(s.id, s);
+      if (keep.length) indexSample({ ...s, strokes: keep, updated: Date.now() });
+      else unindexSample(s.id);
+      changed = true;
+    }
+    if (changed) { drawInk(); queueGuides(); }
+  }
+  function finishErase(a) {
+    if (!eraser) cursorEl.hidden = true;
+    if (!a.before.size) return;
+    const ch = [];
+    for (const [id, before] of a.before) {
+      const after = S.samples.get(id) || null;
+      ch.push({ id, before, after });
+      track(after ? dbPut('samples', after) : dbDel('samples', id));
+    }
+    pushUndo(ch);
+    afterChange(null);
+  }
+  function moveCursor(x, y) {
+    const R = Math.max(9, (L ? L.xh : 44) * 0.2);
+    cursorEl.style.width = cursorEl.style.height = 2 * R + 'px';
+    cursorEl.style.left = x + 'px'; cursorEl.style.top = y + 'px';
+    cursorEl.hidden = false;
+  }
+  function toggleEraser(on) {
+    eraser = on === undefined ? !eraser : on;
+    if (!eraser) cursorEl.hidden = true;
+    updateBar();
+  }
+
+  // ── finger gestures while the pencil owns the page ──────────────────────
+  const gest = { ids: new Map(), t: 0, max: 0, moved: false };
+  function gestureDown(e) {
+    if (!gest.ids.size) { gest.t = e.timeStamp; gest.max = 0; gest.moved = false; }
+    if (active || performance.now() - lastEnd < 350) gest.moved = true;   // palm while writing
+    gest.ids.set(e.pointerId, [e.clientX, e.clientY]);
+    gest.max = Math.max(gest.max, gest.ids.size);
+  }
+  function gestureMove(e) {
+    const p = gest.ids.get(e.pointerId);
+    if (p && Math.hypot(e.clientX - p[0], e.clientY - p[1]) > 24) gest.moved = true;
+  }
+  function gestureUp(e) {
+    if (!gest.ids.has(e.pointerId)) return;
+    gest.ids.delete(e.pointerId);
+    if (e.type === 'pointercancel') gest.moved = true;
+    if (!gest.ids.size && !gest.moved && e.timeStamp - gest.t < 450) {
+      if (gest.max === 2) undo(); else if (gest.max === 3) redo();
+    }
+  }
+
+  // ── undo / redo (sample snapshots; samples are immutable) ───────────────
+  function pushUndo(ch) {
+    undoStack.push(ch);
+    if (undoStack.length > 400) undoStack.shift();
+    redoStack.length = 0;
+    updateBar();
+  }
+  function applyChanges(ch, dir) { for (const x of ch) { if (x[dir]) putSample(x[dir]); else removeSample(x.id); } }
+  function undo() { const ch = undoStack.pop(); if (!ch) return; applyChanges(ch, 'before'); redoStack.push(ch); afterUndo(ch); }
+  function redo() { const ch = redoStack.pop(); if (!ch) return; applyChanges(ch, 'after'); undoStack.push(ch); afterUndo(ch); }
+  function afterUndo(ch) {
+    const s = ch[0].after || ch[0].before;
+    if (s && !rows.some(r => r.key === s.key)) { gotoKey(s.key); afterChange(s.key); return; }
+    if (L) drawInk();
+    afterChange(s && s.key);
+  }
+  function clearHistory() { undoStack = []; redoStack = []; if (L) updateBar(); }
+
+  function afterChange(key) {
+    if (L) queueGuides();
+    updateBar();
+    if (key != null) updateJumpOption(key); else S.queue.forEach(p => updateJumpOption(p.key));
+    updateProgressUI();
+  }
+
+  // ── navigation & toolbar ────────────────────────────────────────────────
+  function gotoPage(i) {
+    if (!L || !L.pages.length) return;
+    pageIdx = clamp(i, 0, L.pages.length - 1);
+    const pg = L.pages[pageIdx];
+    S.session.pos = { key: pg[0].p.key };
+    saveSessionSoon();
+    buildPage(); drawGuides(); drawInk(); updateBar();
+  }
+  function gotoKey(key) {
+    S.session.pos = { key };
+    saveSessionSoon();
+    if (visible()) render();
+  }
+  const pageComplete = () => cells.length > 0 && cells.every(c => sampleAt(c.key, c.slot));
+  function updateBar() {
+    const n = L ? L.pages.length : 0;
+    $('capPage').textContent = n ? `${pageIdx + 1} / ${n}` : '0 / 0';
+    $('capPrev').disabled = pageIdx <= 0;
+    $('capNext').disabled = pageIdx >= n - 1;
+    $('capNext').classList.toggle('primary', n > 0 && pageIdx < n - 1 && pageComplete());
+    $('capUndo').disabled = !undoStack.length;
+    $('capRedo').disabled = !redoStack.length;
+    $('capErase').classList.toggle('on', eraser);
+    const k = rows[0] && rows[0].key, sel = $('capJump');
+    if (k != null && sel.value !== k) sel.value = k;
+  }
+  function jumpLabel(p) {
+    const cnt = Math.min(samplesOf(p.key).length, p.target);
+    return `${p.key}  ·  ${cnt}/${p.target}${cnt >= p.target ? '  ✓' : ''}`;
+  }
+  function buildJump() {
+    const sel = $('capJump');
+    sel.innerHTML = '';
+    jumpOpts.clear();
+    const groups = new Map();
+    for (const p of S.queue) { if (!groups.has(p.set)) groups.set(p.set, []); groups.get(p.set).push(p); }
+    for (const [set, ps] of groups) {
+      const og = document.createElement('optgroup');
+      og.label = SET_LABEL[set] || set;
+      for (const p of ps) {
+        const o = document.createElement('option');
+        o.value = p.key; o.textContent = jumpLabel(p);
+        og.appendChild(o); jumpOpts.set(p.key, o);
+      }
+      sel.appendChild(og);
+    }
+    if (rows[0]) sel.value = rows[0].key;
+  }
+  function updateJumpOption(key) {
+    const o = jumpOpts.get(key), p = S.queueIndex.get(key);
+    if (o && p) o.textContent = jumpLabel(p);
+  }
+  function showHl(c) {
+    hlEl.style.left = c.x0 + 'px'; hlEl.style.top = c.top + 'px';
+    hlEl.style.width = (c.x1 - c.x0) + 'px'; hlEl.style.height = (c.bottom - c.top) + 'px';
+    hlEl.classList.add('on');
+    clearTimeout(hlTimer);
+    hlTimer = setTimeout(() => hlEl.classList.remove('on'), 900);
+  }
+
+  // ── fullscreen / focus mode ─────────────────────────────────────────────
+  const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  function setFocus(on) {
+    document.body.classList.toggle('focus', on);
+    $('capFull').classList.toggle('on', on);
+    requestAnimationFrame(() => render());
+  }
+  function toggleFull() {
+    if (isFs()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+    if (document.body.classList.contains('focus')) { setFocus(false); return; }
+    setFocus(true);   // focus mode works everywhere; real fullscreen where the browser allows it
+    const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (req) {
+      try { const p = req.call(el); if (p && p.catch) p.catch(() => {}); } catch (_) { /* ignore */ }
+    }
+  }
+  function exitFocus() {
+    if (isFs()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    if (document.body.classList.contains('focus')) setFocus(false);
+  }
+  function togglePanel(open) {
+    const p = $('capPanel');
+    p.hidden = open === undefined ? !p.hidden : !open;
+    $('capSettingsBtn').classList.toggle('on', !p.hidden);
+  }
+
+  // ── settings ────────────────────────────────────────────────────────────
+  const customChanged = debounce(() => { rebuildQueue(); buildJump(); render(); updateProgressUI(); }, 350);
+  function onSetting(path) {
+    if (path.startsWith('capture.prop.')) { S.session.capture.propPreset = 'custom'; $('capPropPreset').value = 'custom'; }
+    if (path === 'capture.custom') { customChanged(); return; }
+    if (/^capture\.(sets|pairs|variants)\./.test(path)) { rebuildQueue(); buildJump(); updateProgressUI(); }
+    render();
+  }
+
+  function init() {
+    iCan.addEventListener('pointerdown', onDown, { passive: false });
+    iCan.addEventListener('pointermove', onMove, { passive: false });
+    iCan.addEventListener('pointerup', onUp, { passive: false });
+    iCan.addEventListener('pointercancel', onUp, { passive: false });
+    iCan.addEventListener('pointerleave', e => { if (!active && e.pointerType !== 'touch') cursorEl.hidden = true; });
+    iCan.addEventListener('contextmenu', e => e.preventDefault());
+    // iOS: no magnifier, selection, callout or scroll from touches on the page
+    iCan.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+    iCan.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+    stage.addEventListener('gesturestart', e => e.preventDefault());
+
+    $('capPrev').onclick = () => gotoPage(pageIdx - 1);
+    $('capNext').onclick = () => gotoPage(pageIdx + 1);
+    $('capUndo').onclick = undo;
+    $('capRedo').onclick = redo;
+    $('capErase').onclick = () => toggleEraser();
+    $('capFull').onclick = toggleFull;
+    $('capSettingsBtn').onclick = () => togglePanel();
+    $('capPanelClose').onclick = () => togglePanel(false);
+    $('capJump').onchange = e => gotoKey(e.target.value);
+    $('capPropPreset').onchange = e => {
+      const v = e.target.value;
+      S.session.capture.propPreset = v;
+      if (PROP_PRESETS[v]) S.session.capture.prop = { ...PROP_PRESETS[v] };
+      syncControls(); saveSessionSoon(); render();
+    };
+    const onFs = () => setFocus(isFs());   // leaving fullscreen (e.g. Safari's ✕) also leaves focus mode
+    document.addEventListener('fullscreenchange', onFs);
+    document.addEventListener('webkitfullscreenchange', onFs);
+    document.addEventListener('keydown', e => {
+      if (S.view !== 'capture') return;
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
+      const k = e.key.toLowerCase(), mod = e.metaKey || e.ctrlKey;
+      if (mod && k === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+      else if (mod && k === 'y') { e.preventDefault(); redo(); }
+      else if (mod || e.altKey) return;
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); gotoPage(pageIdx - 1); }
+      else if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); gotoPage(pageIdx + 1); }
+      else if (k === 'e') toggleEraser();
+      else if (k === 'f') toggleFull();
+      else if (e.key === 'Escape') { if (!$('capPanel').hidden) togglePanel(false); else exitFocus(); }
+    });
+    new ResizeObserver(debounce(() => render(), 60)).observe(stage);
+  }
+
+  function reset() {
+    undoStack = []; redoStack = []; lastCell = null; pageIdx = 0; eraser = false;
+    cursorEl.hidden = true;
+    buildJump();
+  }
+
+  return { init, render, show: render, onSetting, gotoKey, clearHistory, reset, exitFocus, buildJump,
+           cells: () => cells.map(c => ({ key: c.key, slot: c.slot, x0: c.x0, x1: c.x1, top: c.top, baseline: c.baseline, bottom: c.bottom, xh: c.xh })) };
+})();
+
+// ════════════════════════════════════════════════════════════════════════
+// REVIEW — every prompt as a tile; per-prompt detail with replay
+// ════════════════════════════════════════════════════════════════════════
+const Review = (() => {
+  let filter = 'all', selKey = null, replayRaf = 0, drawJobs = [];
+  const grid = $('rvGrid');
+
+  function groups() {
+    const out = [], bySet = new Map();
+    for (const p of S.queue) { if (!bySet.has(p.set)) bySet.set(p.set, []); bySet.get(p.set).push(p.key); }
+    for (const [set, keys] of bySet) out.push({ id: set, label: SET_LABEL[set] || set, keys });
+    const other = [...S.byKey.keys()].filter(k => !S.queueIndex.has(k)).sort();
+    if (other.length) out.push({ id: 'other', label: SET_LABEL.other, keys: other });
+    return out;
+  }
+
+  // Draw one sample into a canvas, fitted between its own ascender and descender guides.
+  function drawSampleIn(cv, s, opts = {}) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = cv.clientWidth || 80, h = cv.clientHeight || 80;
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    if (!s) return;
+    const g = s.guide;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const st of s.strokes) for (let i = 0; i < st.pts.length; i += NF) {
+      const x = st.pts[i], y = st.pts[i + 1];
+      if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+    const y0 = Math.min(-g.asc, minY), y1 = Math.max(g.desc, maxY);
+    const pad = opts.pad ?? 6, inkW = Math.max(maxX - minX, g.xh * 0.6);
+    const sc = Math.min((h - 2 * pad) / (y1 - y0), (w - 2 * pad) / inkW);
+    const ox = w / 2 - (minX + maxX) / 2 * sc;
+    const oy = pad - y0 * sc + ((h - 2 * pad) - (y1 - y0) * sc) / 2;
+    if (opts.guides !== false) {
+      const line = (y, c, dash) => {
+        ctx.save(); ctx.strokeStyle = c; ctx.setLineDash(dash || []); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(0, Math.round(oy + y * sc) + 0.5); ctx.lineTo(w, Math.round(oy + y * sc) + 0.5); ctx.stroke();
+        ctx.restore();
+      };
+      if (opts.full) { line(-g.asc, '#222'); line(-g.cap, '#262626', [3, 4]); line(g.desc, '#222'); }
+      line(-g.xh, '#262626');
+      line(0, '#3d4a24');
+    }
+    const t0 = s.strokes[0].t0, upTo = opts.upTo ?? Infinity;
+    const lw = opts.lw || 1.3, pressure = !!opts.pressure;
+    ctx.strokeStyle = ctx.fillStyle = '#e8e8e8'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const st of s.strokes) {
+      const a = st.pts, n = a.length / NF, off = st.t0 - t0;
+      if (off > upTo) break;
+      const X = i => ox + a[i * NF] * sc, Y = i => oy + a[i * NF + 1] * sc;
+      if (n === 1) { ctx.beginPath(); ctx.arc(X(0), Y(0), lw * 0.7, 0, Math.PI * 2); ctx.fill(); continue; }
+      if (!pressure) {
+        ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(X(0), Y(0));
+        for (let i = 1; i < n && off + a[i * NF + 2] <= upTo; i++) ctx.lineTo(X(i), Y(i));
+        ctx.stroke();
+      } else {
+        for (let i = 1; i < n && off + a[i * NF + 2] <= upTo; i++) {
+          let p = (a[(i - 1) * NF + 3] + a[i * NF + 3]) / 2;
+          if (!(p > 0)) p = 0.5;
+          ctx.lineWidth = lw * (0.25 + 2.2 * clamp(p, 0, 1));
+          ctx.beginPath(); ctx.moveTo(X(i - 1), Y(i - 1)); ctx.lineTo(X(i), Y(i)); ctx.stroke();
+        }
+      }
+    }
+  }
+
+  function render() {
+    if (!S.session) return;
+    const gs = groups();
+    if (filter !== 'all' && !gs.some(g => g.id === filter)) filter = 'all';
+    const chips = $('rvChips');
+    chips.innerHTML = '';
+    const chip = (id, label, count) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip' + (filter === id ? ' on' : '');
+      b.innerHTML = `${escHtml(label)}<span class="c">${count}</span>`;
+      b.onclick = () => { filter = id; render(); };
+      chips.appendChild(b);
+    };
+    chip('all', 'All', gs.reduce((t, g) => t + g.keys.length, 0));
+    for (const g of gs) chip(g.id, g.label, `${g.keys.filter(keyDone).length}/${g.keys.length}`);
+
+    const st = sampleStats([...S.samples.values()]);
+    $('rvStats').textContent = `${fmtInt(st.samples)} samples · ${fmtInt(st.strokes)} strokes · ${fmtInt(st.points)} points · ≈${fmtBytes(st.bytes)}`;
+
+    grid.innerHTML = '';
+    drawJobs = [];
+    let shown = 0;
+    for (const g of gs) {
+      if (filter !== 'all' && filter !== g.id) continue;
+      const h = document.createElement('div');
+      h.className = 'rv-group-h';
+      h.innerHTML = `${escHtml(g.label)}<span class="c">${g.keys.filter(keyDone).length}/${g.keys.length} complete</span>`;
+      grid.appendChild(h);
+      for (const k of g.keys) { grid.appendChild(tile(k)); shown++; }
+    }
+    if (!shown) grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">No prompts yet — choose some sets in the <b>Capture</b> settings.</div>';
+    requestAnimationFrame(drawTiles);
+    if (selKey) renderDetail();
+  }
+  function tile(key) {
+    const arr = samplesOf(key), p = S.queueIndex.get(key), tgt = p ? p.target : arr.length;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tile ' + (!arr.length ? 'none' : arr.length >= tgt ? 'done' : 'part') + (key === selKey ? ' sel' : '');
+    b.dataset.key = key;
+    const cv = document.createElement('canvas');
+    b.appendChild(cv);
+    const foot = document.createElement('div');
+    foot.className = 't-foot';
+    foot.innerHTML = `<span class="t-key"></span><span class="t-cnt">${arr.length}/${tgt}</span>`;
+    foot.firstChild.textContent = key;
+    b.appendChild(foot);
+    if (arr.some(s => s.starred)) { const st = document.createElement('span'); st.className = 't-star'; st.textContent = '★'; b.appendChild(st); }
+    b.onclick = () => open(key);
+    if (arr.length) drawJobs.push([cv, key]);
+    return b;
+  }
+  function drawTiles() {
+    // draw in slices so a large set (676 pairs) doesn't block the UI
+    const t = performance.now();
+    while (drawJobs.length && performance.now() - t < 12) {
+      const [cv, key] = drawJobs.shift();
+      if (!cv.isConnected) continue;
+      drawSampleIn(cv, Geo.orderedVariants(key, 'auto')[0], { pad: 7 });
+    }
+    if (drawJobs.length) requestAnimationFrame(drawTiles);
+  }
+
+  function open(key) {
+    selKey = key;
+    $('rvDetail').hidden = false;
+    grid.querySelectorAll('.tile').forEach(t => t.classList.toggle('sel', t.dataset.key === key));
+    renderDetail();
+  }
+  function close() {
+    selKey = null;
+    cancelAnimationFrame(replayRaf);
+    $('rvDetail').hidden = true;
+    grid.querySelectorAll('.tile.sel').forEach(t => t.classList.remove('sel'));
+  }
+  function renderDetail() {
+    const key = selKey, arr = samplesOf(key), p = S.queueIndex.get(key), tgt = p ? p.target : arr.length;
+    cancelAnimationFrame(replayRaf);
+    $('rvKey').textContent = key;
+    const single = chars(key).length === 1;
+    const meta = [
+      single ? `${glyphName(key)} · U+${key.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}` : `combination · ${keyName(key)}`,
+      `${arr.length}/${tgt} versions`,
+      p ? SET_LABEL[p.set] : SET_LABEL.other,
+    ];
+    $('rvMeta').textContent = meta.join(' · ');
+    const main = Geo.orderedVariants(key, 'auto')[0];
+    const box = $('rvSamples');
+    box.innerHTML = '';
+    const top = Math.max(tgt - 1, maxSlot(key));
+    for (let slot = 0; slot <= top; slot++) {
+      const s = arr.find(x => x.slot === slot);
+      if (!s) {
+        const e = document.createElement('div');
+        e.className = 'scard empty';
+        e.textContent = `#${slot + 1} · not written yet`;
+        box.appendChild(e);
+        continue;
+      }
+      box.appendChild(card(s, s === main));
+    }
+    requestAnimationFrame(() => box.querySelectorAll('canvas').forEach(cv => {
+      const s = S.samples.get(cv.dataset.id);
+      drawSampleIn(cv, s, { full: true, lw: 1.8, pressure: $('rvPressure').checked, pad: 12 });
+    }));
+  }
+  function card(s, isMain) {
+    const d = document.createElement('div');
+    d.className = 'scard' + (isMain ? ' main' : '');
+    const cv = document.createElement('canvas');
+    cv.dataset.id = s.id;
+    d.appendChild(cv);
+    let pts = 0, psum = 0, pn = 0, dur = 0;
+    const types = new Set();
+    for (const st of s.strokes) {
+      const a = st.pts, n = a.length / NF;
+      pts += n; types.add(st.type);
+      for (let i = 0; i < n; i++) { const p = a[i * NF + 3]; if (p > 0) { psum += p; pn++; } }
+      dur = Math.max(dur, st.t0 - s.strokes[0].t0 + (a[(n - 1) * NF + 2] || 0));
+    }
+    const foot = document.createElement('div');
+    foot.className = 's-foot';
+    const info = document.createElement('div');
+    info.className = 's-info';
+    info.innerHTML = `<b>#${s.slot + 1}</b>${isMain ? ' · main' : ''} · ${s.strokes.length} stroke${s.strokes.length > 1 ? 's' : ''} · ${fmtInt(pts)} pts<br>` +
+      `${Math.round(dur)} ms · ${[...types].join('/')}${pn ? ' · p̄ ' + (psum / pn).toFixed(2) : ''}`;
+    foot.appendChild(info);
+    const btn = (label, title, fn, cls) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'ibtn sm ' + (cls || ''); b.title = title; b.innerHTML = label; b.onclick = fn;
+      foot.appendChild(b);
+      return b;
+    };
+    btn('★', s.starred ? 'Preferred version (click to unstar)' : 'Make this the main version', () => toggleStar(s), s.starred ? 'star-on' : '');
+    btn('<svg viewBox="0 0 20 20"><path d="M6 4.5v11l9-5.5z"/></svg>', 'Replay the writing', () => replay(cv, s));
+    btn('<svg viewBox="0 0 20 20"><path d="M4.5 6h11M8 6V4h4v2M6 6l.8 10h6.4L14 6"/></svg>', 'Delete this version', () => del(s));
+    d.appendChild(foot);
+    return d;
+  }
+  function replay(cv, s) {
+    cancelAnimationFrame(replayRaf);
+    const t0 = s.strokes[0].t0;
+    let total = 0;
+    for (const st of s.strokes) total = Math.max(total, st.t0 - t0 + (st.pts[st.pts.length - NF + 2] || 0));
+    const start = performance.now(), pressure = $('rvPressure').checked;
+    const frame = () => {
+      const el = performance.now() - start;
+      drawSampleIn(cv, s, { full: true, lw: 1.8, pressure, pad: 12, upTo: el });
+      if (el < total + 150) replayRaf = requestAnimationFrame(frame);
+    };
+    frame();
+  }
+  function toggleStar(s) {
+    const on = !s.starred;
+    for (const x of samplesOf(s.key).slice()) {
+      const want = x.id === s.id ? on : false;
+      if (!!x.starred !== want) putSample({ ...x, starred: want });
+    }
+    Capture.clearHistory();
+    afterSamplesChanged();
+  }
+  function del(s) {
+    removeSample(s.id);
+    Capture.clearHistory();
+    afterSamplesChanged();
+    toast(`Deleted “${s.key}” #${s.slot + 1}`, {
+      action: 'Undo',
+      onAction: () => { if (!sampleAt(s.key, s.slot)) { putSample(s); afterSamplesChanged(); } },
+    });
+  }
+
+  function init() {
+    $('rvClose').onclick = close;
+    $('rvCapture').onclick = () => { if (selKey != null) { const k = selKey; showView('capture'); Capture.gotoKey(k); } };
+    $('rvPressure').onchange = () => { if (selKey) renderDetail(); };
+  }
+  function reset() { close(); filter = 'all'; }
+
+  return { init, render, show: render, open: key => { render(); open(key); }, reset, drawSampleIn };
+})();
+
+// ════════════════════════════════════════════════════════════════════════
+// GEOMETRY — version ranking, stroke processing, curve fitting, font model
+// Font units: y up, baseline 0, units-per-em 1000 (same as the Hershey fonts).
+// ════════════════════════════════════════════════════════════════════════
+const Geo = (() => {
+  const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const lerpPt = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  function pathLen(p) { let l = 0; for (let i = 1; i < p.length; i++) l += dist(p[i - 1], p[i]); return l; }
+
+  // ── polyline tools ──────────────────────────────────────────────────────
+  function dedupe(pts) {
+    const out = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      const p = pts[i], q = out[out.length - 1];
+      if ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 > 1e-8) out.push(p);
+    }
+    return out;
+  }
+  // points every `step` along the path; always keeps both ends
+  function resample(pts, step) {
+    if (pts.length < 2) return pts.slice();
+    const out = [pts[0]];
+    let prev = pts[0], acc = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const cur = pts[i];
+      let d = dist(prev, cur);
+      while (acc + d >= step && d > 0) {
+        const q = lerpPt(prev, cur, (step - acc) / d);
+        out.push(q);
+        prev = q; acc = 0; d = dist(prev, cur);
+      }
+      acc += d; prev = cur;
+    }
+    const last = pts[pts.length - 1];
+    if (out.length === 1 || dist(out[out.length - 1], last) > step * 0.25) out.push(last);
+    else out[out.length - 1] = last;
+    return out;
+  }
+  // Gaussian smoothing over arc length (pen samples are uneven: dense when slow, sparse when
+  // fast). Keeps the original points; the window shrinks at the ends so they stay put.
+  function smoothArc(pts, sigma) {
+    const n = pts.length;
+    if (n < 3 || sigma < 0.05) return pts;
+    const s = new Float64Array(n);
+    for (let i = 1; i < n; i++) s[i] = s[i - 1] + dist(pts[i - 1], pts[i]);
+    const S = s[n - 1], out = new Array(n), r = 3 * sigma, k = -1 / (2 * sigma * sigma);
+    out[0] = pts[0]; out[n - 1] = pts[n - 1];
+    let lo = 0, hi = 0;
+    for (let i = 1; i < n - 1; i++) {
+      const w = Math.min(r, s[i], S - s[i]);
+      while (s[lo] < s[i] - w) lo++;
+      while (hi < n - 1 && s[hi + 1] <= s[i] + w) hi++;
+      let sx = 0, sy = 0, sw = 0;
+      for (let j = lo; j <= hi; j++) {
+        const d = s[j] - s[i], ww = Math.exp(d * d * k);
+        sx += pts[j][0] * ww; sy += pts[j][1] * ww; sw += ww;
+      }
+      out[i] = [sx / sw, sy / sw];
+    }
+    return out;
+  }
+  // x-extent and length of the part of a polyline inside the band lo ≤ y ≤ hi
+  function bandExtent(poly, lo, hi, acc) {
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], q = poly[i + 1] || p;
+      const y0 = p[1], y1 = q[1];
+      let t0 = 0, t1 = 1;
+      if (y0 === y1) { if (y0 < lo || y0 > hi) continue; }
+      else {
+        let ta = (lo - y0) / (y1 - y0), tb = (hi - y0) / (y1 - y0);
+        if (ta > tb) [ta, tb] = [tb, ta];
+        t0 = Math.max(0, ta); t1 = Math.min(1, tb);
+        if (t0 > t1) continue;
+      }
+      const xa = p[0] + (q[0] - p[0]) * t0, xb = p[0] + (q[0] - p[0]) * t1;
+      acc.minX = Math.min(acc.minX, xa, xb);
+      acc.maxX = Math.max(acc.maxX, xa, xb);
+      acc.len += dist(p, q) * (t1 - t0);
+    }
+    return acc;
+  }
+  function segDist(p, a, b) {
+    const vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy;
+    let t = l2 ? ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    return Math.hypot(a[0] + t * vx - p[0], a[1] + t * vy - p[1]);
+  }
+  function rdp(pts, eps) {
+    const n = pts.length;
+    if (n < 3 || eps <= 0) return pts.slice();
+    const keep = new Uint8Array(n);
+    keep[0] = keep[n - 1] = 1;
+    const stack = [[0, n - 1]];
+    while (stack.length) {
+      const [a, b] = stack.pop();
+      let dm = -1, idx = -1;
+      for (let i = a + 1; i < b; i++) { const d = segDist(pts[i], pts[a], pts[b]); if (d > dm) { dm = d; idx = i; } }
+      if (dm > eps) { keep[idx] = 1; stack.push([a, idx], [idx, b]); }
+    }
+    return pts.filter((_, i) => keep[i]);
+  }
+  // Chaikin corner cutting (open curve, ends fixed) — Amy Goodchild's smoothing
+  function chaikin(pts, iters) {
+    let p = pts;
+    for (let k = 0; k < iters && p.length > 2; k++) {
+      const out = [p[0]];
+      for (let i = 0; i < p.length - 1; i++) { out.push(lerpPt(p[i], p[i + 1], 0.25), lerpPt(p[i], p[i + 1], 0.75)); }
+      out.push(p[p.length - 1]);
+      p = out;
+    }
+    return p;
+  }
+
+  // ── cubic Bézier fitting (Schneider, Graphics Gems 1990) ────────────────
+  function bq(b, t) {
+    const mt = 1 - t, a = mt * mt * mt, c = 3 * mt * mt * t, d = 3 * mt * t * t, e = t * t * t;
+    return [a * b[0][0] + c * b[1][0] + d * b[2][0] + e * b[3][0], a * b[0][1] + c * b[1][1] + d * b[2][1] + e * b[3][1]];
+  }
+  function bq1(b, t) {
+    const mt = 1 - t, a = 3 * mt * mt, c = 6 * mt * t, d = 3 * t * t;
+    return [a * (b[1][0] - b[0][0]) + c * (b[2][0] - b[1][0]) + d * (b[3][0] - b[2][0]),
+            a * (b[1][1] - b[0][1]) + c * (b[2][1] - b[1][1]) + d * (b[3][1] - b[2][1])];
+  }
+  function bq2(b, t) {
+    const a = 6 * (1 - t), c = 6 * t;
+    return [a * (b[2][0] - 2 * b[1][0] + b[0][0]) + c * (b[3][0] - 2 * b[2][0] + b[1][0]),
+            a * (b[2][1] - 2 * b[1][1] + b[0][1]) + c * (b[3][1] - 2 * b[2][1] + b[1][1])];
+  }
+  function chordParams(pts) {
+    const u = [0];
+    for (let i = 1; i < pts.length; i++) u.push(u[i - 1] + dist(pts[i - 1], pts[i]));
+    const L = u[u.length - 1] || 1;
+    return u.map(v => v / L);
+  }
+  function genBezier(pts, u, tl, tr) {
+    const p0 = pts[0], p3 = pts[pts.length - 1];
+    let c00 = 0, c01 = 0, c11 = 0, x0 = 0, x1 = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const t = u[i], mt = 1 - t;
+      const b0 = mt * mt * mt, b1 = 3 * t * mt * mt, b2 = 3 * t * t * mt, b3 = t * t * t;
+      const a0x = tl[0] * b1, a0y = tl[1] * b1, a1x = tr[0] * b2, a1y = tr[1] * b2;
+      c00 += a0x * a0x + a0y * a0y;
+      c01 += a0x * a1x + a0y * a1y;
+      c11 += a1x * a1x + a1y * a1y;
+      const tx = pts[i][0] - (p0[0] * (b0 + b1) + p3[0] * (b2 + b3));
+      const ty = pts[i][1] - (p0[1] * (b0 + b1) + p3[1] * (b2 + b3));
+      x0 += a0x * tx + a0y * ty;
+      x1 += a1x * tx + a1y * ty;
+    }
+    const det = c00 * c11 - c01 * c01;
+    let al = 0, ar = 0;
+    if (Math.abs(det) > 1e-12) { al = (x0 * c11 - x1 * c01) / det; ar = (c00 * x1 - c01 * x0) / det; }
+    const seg = dist(p0, p3), eps = 1e-6 * seg;
+    if (!(al >= eps) || !(ar >= eps)) al = ar = seg / 3;
+    return [p0, [p0[0] + tl[0] * al, p0[1] + tl[1] * al], [p3[0] + tr[0] * ar, p3[1] + tr[1] * ar], p3];
+  }
+  function maxError(pts, bez, u) {
+    let md = 0, split = pts.length >> 1;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const q = bq(bez, u[i]);
+      const d = (q[0] - pts[i][0]) ** 2 + (q[1] - pts[i][1]) ** 2;
+      if (d > md) { md = d; split = i; }
+    }
+    return [md, split];
+  }
+  function reparam(bez, pts, u) {
+    return u.map((t, i) => {
+      const d = bq(bez, t), q1 = bq1(bez, t), q2 = bq2(bez, t);
+      const dx = d[0] - pts[i][0], dy = d[1] - pts[i][1];
+      const num = dx * q1[0] + dy * q1[1];
+      const den = q1[0] * q1[0] + q1[1] * q1[1] + dx * q2[0] + dy * q2[1];
+      if (Math.abs(den) < 1e-12) return t;
+      const r = t - num / den;
+      return r < 0 ? 0 : r > 1 ? 1 : r;
+    });
+  }
+  function fitCubic(pts, tl, tr, err2, out, depth) {
+    const n = pts.length;
+    if (n === 2 || depth > 32) {
+      const d = dist(pts[0], pts[n - 1]) / 3;
+      out.push([pts[0], [pts[0][0] + tl[0] * d, pts[0][1] + tl[1] * d], [pts[n - 1][0] + tr[0] * d, pts[n - 1][1] + tr[1] * d], pts[n - 1]]);
+      return;
+    }
+    let u = chordParams(pts), bez = genBezier(pts, u, tl, tr);
+    let [me, split] = maxError(pts, bez, u);
+    if (me < err2) { out.push(bez); return; }
+    if (me < err2 * 16) {
+      for (let it = 0; it < 6; it++) {
+        const u2 = reparam(bez, pts, u);
+        bez = genBezier(pts, u2, tl, tr);
+        [me, split] = maxError(pts, bez, u2);
+        if (me < err2) { out.push(bez); return; }
+        u = u2;
+      }
+    }
+    split = clamp(split, 1, n - 2);
+    let tc = [pts[split - 1][0] - pts[split + 1][0], pts[split - 1][1] - pts[split + 1][1]];
+    let l = Math.hypot(tc[0], tc[1]);
+    if (l < 1e-9) { tc = [pts[split - 1][0] - pts[split][0], pts[split - 1][1] - pts[split][1]]; l = Math.hypot(tc[0], tc[1]); }
+    tc = l > 1e-9 ? [tc[0] / l, tc[1] / l] : [-1, 0];
+    fitCubic(pts.slice(0, split + 1), tl, tc, err2, out, depth + 1);
+    fitCubic(pts.slice(split), [-tc[0], -tc[1]], tr, err2, out, depth + 1);
+  }
+  // unit tangent at an end, measured over `span` of arc length (raw pen data is noisy up close)
+  function endTangent(pts, atStart, span) {
+    const n = pts.length, p0 = atStart ? pts[0] : pts[n - 1];
+    let q = null, acc = 0;
+    for (let j = 1; j < n; j++) {
+      const a = atStart ? pts[j - 1] : pts[n - j], b = atStart ? pts[j] : pts[n - 1 - j];
+      acc += dist(a, b); q = b;
+      if (acc >= span) break;
+    }
+    if (!q) return [1, 0];
+    const dx = q[0] - p0[0], dy = q[1] - p0[1], l = Math.hypot(dx, dy);
+    return l > 1e-9 ? [dx / l, dy / l] : [1, 0];
+  }
+  // split an evenly resampled stroke at sharp turns (cusps of n, m, v …) so they stay sharp
+  function splitCorners(pts, step, tol) {
+    const n = pts.length, k = Math.max(2, Math.round(Math.max(2.5 * tol, 7) / step));
+    if (n < 2 * k + 1) return [pts];
+    const ang = new Float64Array(n);
+    for (let i = k; i < n - k; i++) {
+      const a = pts[i - k], b = pts[i], c = pts[i + k];
+      const v1x = b[0] - a[0], v1y = b[1] - a[1], v2x = c[0] - b[0], v2y = c[1] - b[1];
+      const d = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y);
+      if (d > 1e-12) ang[i] = Math.acos(clamp((v1x * v2x + v1y * v2y) / d, -1, 1));
+    }
+    const cuts = [];
+    for (let i = k; i < n - k; i++) {
+      if (ang[i] < 1.2 || ang[i] < ang[i - 1] || ang[i] < ang[i + 1]) continue;   // ≈ 69°, local max
+      const last = cuts[cuts.length - 1];
+      if (cuts.length && i - last <= k) { if (ang[i] > ang[last]) cuts[cuts.length - 1] = i; continue; }
+      cuts.push(i);
+    }
+    if (!cuts.length) return [pts];
+    const out = [];
+    let s = 0;
+    for (const c of cuts) { out.push(pts.slice(s, c + 1)); s = c; }
+    out.push(pts.slice(s));
+    return out;
+  }
+  const lineSeg = (a, b) => [a, lerpPt(a, b, 1 / 3), lerpPt(a, b, 2 / 3), b];
+  function fitStroke(pts, tol) {
+    const step = clamp(tol, 1, 10);   // chord error of the resampling ≈ step²/8R — far below tol
+    const r = resample(pts, step);
+    if (r.length < 2) return [];
+    if (r.length === 2) return [lineSeg(r[0], r[1])];
+    const out = [];
+    for (const piece of splitCorners(r, step, tol)) {
+      if (piece.length < 2) continue;
+      if (piece.length === 2) { out.push(lineSeg(piece[0], piece[1])); continue; }
+      const span = Math.min(Math.max(2 * tol, 3 * step), pathLen(piece) / 3);
+      fitCubic(piece, endTangent(piece, true, span), endTangent(piece, false, span), tol * tol, out, 0);
+    }
+    return out;
+  }
+
+  // ── which version is the main one ───────────────────────────────────────
+  const cloudCache = new WeakMap();
+  function cloud(s) {
+    let c = cloudCache.get(s);
+    if (c) return c;
+    const xh = s.guide.xh || 1;
+    const strokes = s.strokes.map(st => {
+      const a = st.pts, n = a.length / NF, p = new Array(n);
+      for (let i = 0; i < n; i++) p[i] = [a[i * NF] / xh, a[i * NF + 1] / xh];
+      return { p, len: pathLen(p) };
+    });
+    const total = strokes.reduce((t, x) => t + x.len, 0), step = Math.max(total / 56, 1e-4);
+    const pts = [];
+    for (const { p, len } of strokes) {
+      if (p.length === 1 || len < step) { pts.push(p[0]); continue; }
+      for (const q of resample(p, step)) pts.push(q);
+    }
+    let mx = 0;
+    for (const q of pts) mx += q[0];
+    mx /= pts.length || 1;
+    c = pts.map(q => [q[0] - mx, q[1]]);
+    cloudCache.set(s, c);
+    return c;
+  }
+  function chamfer(A, B) {
+    const one = (P, Q) => {
+      let sum = 0;
+      for (const a of P) {
+        let m = Infinity;
+        for (const b of Q) { const dx = a[0] - b[0], dy = a[1] - b[1], d = dx * dx + dy * dy; if (d < m) m = d; }
+        sum += Math.sqrt(m);
+      }
+      return sum / P.length;
+    };
+    return (one(A, B) + one(B, A)) / 2;
+  }
+  const rankCache = new Map();
+  // medoid first (smallest summed shape distance to the other versions), then by distance to it
+  function byTypicality(arr) {
+    if (arr.length <= 2) return arr.slice().sort((a, b) => a.slot - b.slot);
+    const sig = arr.map(s => s.id + ':' + s.updated).join('|'), key = arr[0].key;
+    const hit = rankCache.get(key);
+    if (hit && hit.sig === sig) return hit.ids.map(id => arr.find(s => s.id === id));
+    const n = arr.length, D = Array.from({ length: n }, () => new Float64Array(n));
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) D[i][j] = D[j][i] = chamfer(cloud(arr[i]), cloud(arr[j]));
+    let best = 0, bs = Infinity;
+    for (let i = 0; i < n; i++) { let t = 0; for (let j = 0; j < n; j++) t += D[i][j]; if (t < bs) { bs = t; best = i; } }
+    const order = arr.map((s, i) => [s, D[best][i]]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
+    rankCache.set(key, { sig, ids: order.map(s => s.id) });
+    return order;
+  }
+  function orderedVariants(key, mode, seed) {
+    const arr = samplesOf(key).filter(s => s.strokes.length);
+    if (!arr.length) return [];
+    let order;
+    if (mode === 'first') order = arr.slice().sort((a, b) => a.created - b.created);
+    else if (mode === 'latest') order = arr.slice().sort((a, b) => b.created - a.created);
+    else if (mode === 'random') {
+      const rnd = mulberry32(hashStr(key) ^ Math.imul((seed | 0) + 1, 2654435761));
+      order = arr.slice();
+      for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+    } else order = byTypicality(arr);
+    const star = order.find(s => s.starred);
+    return star ? [star, ...order.filter(s => s !== star)] : order;
+  }
+
+  // ── sample → glyph outline ──────────────────────────────────────────────
+  function params() {
+    const F = S.session.font;
+    const cap = clamp(+F.cap || 660, 100, 2000);
+    const tol = F.mode === 'raw' ? 0 : 0.25 * Math.pow(2, (100 - clamp(F.detail, 0, 100)) / 12.5) * cap / 660;
+    const sigma = Math.pow(clamp(F.smooth, 0, 100) / 100, 1.5) * 0.06 * cap;
+    const chaik = F.mode === 'lines' ? clamp(F.chaikin | 0, 0, 4) : 0;
+    const P = { cap, tol, sigma, mode: F.mode, chaikin: chaik, slant: +F.slant || 0, snap: !!F.snap, prec: clamp(F.precision | 0, 0, 3) };
+    P.sig = [cap, tol.toFixed(4), sigma.toFixed(3), P.mode, chaik, P.slant, P.snap].join('|');
+    return P;
+  }
+  function processStroke(pts, P) {
+    if (pts.length === 1) return { kind: 'poly', pts: [pts[0], pts[0]] };   // a dot: pen down, pen up
+    const p = P.sigma > 0.4 ? smoothArc(pts, P.sigma) : pts;
+    if (P.mode === 'raw') return { kind: 'poly', pts: p };
+    if (P.mode === 'lines') {
+      let q = rdp(p, P.tol);
+      if (P.chaikin) q = rdp(chaikin(q, P.chaikin), Math.min(0.4, P.tol / 8));   // drop near-collinear points
+      return { kind: 'poly', pts: q };
+    }
+    const segs = fitStroke(p, P.tol);
+    return segs.length ? { kind: 'bez', segs } : { kind: 'poly', pts: [p[0], p[p.length - 1]] };
+  }
+  const procCache = new Map();
+  function processSample(s, P) {
+    const sig = s.updated + '|' + s.strokes.length + '|' + P.sig;
+    const hit = procCache.get(s.id);
+    if (hit && hit.sig === sig) return hit.res;
+    const k = P.cap / s.guide.cap, tan = Math.tan(P.slant * Math.PI / 180);
+    let rawCount = 0;
+    const raw = s.strokes.map(st => {
+      const a = st.pts, n = a.length / NF, out = [];
+      rawCount += n;
+      for (let i = 0; i < n; i++) { const X = a[i * NF] * k, Y = -a[i * NF + 1] * k; out.push([X + Y * tan, Y]); }
+      return dedupe(out);
+    });
+    if (P.snap && chars(s.key).length === 1 && SNAPS.has(s.key.normalize('NFD')[0])) {
+      let minY = Infinity;
+      for (const st of raw) for (const p of st) if (p[1] < minY) minY = p[1];
+      const xhU = P.cap * s.guide.xh / s.guide.cap;
+      if (Number.isFinite(minY) && Math.abs(minY) < 0.3 * xhU) for (const st of raw) for (const p of st) p[1] -= minY;
+    }
+    const strokes = raw.map(st => processStroke(st, P));
+    const bb = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+    const xhU = P.cap * s.guide.xh / s.guide.cap;
+    const body = { minX: Infinity, maxX: -Infinity, len: 0 };
+    let nodes = 0, len = 0;
+    for (const st of strokes) {
+      let poly;
+      if (st.kind === 'poly') { nodes += st.pts.length; poly = st.pts; }
+      else {
+        nodes += st.segs.length + 1;
+        poly = [st.segs[0][0]];
+        for (const b of st.segs) for (let t = 1; t <= 8; t++) poly.push(bq(b, t / 8));
+      }
+      for (let i = 0; i < poly.length; i++) {
+        const p = poly[i];
+        if (p[0] < bb.minX) bb.minX = p[0]; if (p[0] > bb.maxX) bb.maxX = p[0];
+        if (p[1] < bb.minY) bb.minY = p[1]; if (p[1] > bb.maxY) bb.maxY = p[1];
+        if (i) len += dist(poly[i - 1], p);
+      }
+      bandExtent(poly, -0.1 * xhU, 1.1 * xhU, body);
+    }
+    // Spacing uses the letter's body (the x-height band): ascender / descender loops may overhang
+    // their neighbours, like in a script typeface. Marks that live above the band use the full box.
+    const spacing = Number.isFinite(body.minX) && body.len >= 0.2 * len ? body : bb;
+    const res = { strokes, raw, bbox: bb, spacing, nodes, rawCount };
+    procCache.set(s.id, { sig, res });
+    return res;
+  }
+  // Natural gap between the two letters of a written pair (print style), measured on the letter
+  // bodies like the side bearings. Strokes sorted by centre; the split with the widest gap wins.
+  // Joined-up pairs overlap → null.
+  function pairGap(s, P) {
+    const k = P.cap / s.guide.cap, tan = Math.tan(P.slant * Math.PI / 180), xhU = P.cap * s.guide.xh / s.guide.cap;
+    const boxes = [];
+    for (const st of s.strokes) {
+      const poly = [];
+      for (let i = 0; i < st.pts.length; i += NF) { const Y = -st.pts[i + 1] * k; poly.push([st.pts[i] * k + Y * tan, Y]); }
+      const e = bandExtent(poly, -0.1 * xhU, 1.1 * xhU, { minX: Infinity, maxX: -Infinity, len: 0 });
+      if (Number.isFinite(e.minX)) boxes.push([e.minX, e.maxX, (e.minX + e.maxX) / 2]);   // dots above the band don't count
+    }
+    if (boxes.length < 2) return null;
+    boxes.sort((a, b) => a[2] - b[2]);
+    let best = -Infinity;
+    for (let j = 1; j < boxes.length; j++) {
+      let lmax = -Infinity, rmin = Infinity;
+      for (let i = 0; i < j; i++) lmax = Math.max(lmax, boxes[i][1]);
+      for (let i = j; i < boxes.length; i++) rmin = Math.min(rmin, boxes[i][0]);
+      best = Math.max(best, rmin - lmax);
+    }
+    return best > -0.08 * xhU ? best : null;
+  }
+
+  // ── the font ────────────────────────────────────────────────────────────
+  function buildFont() {
+    const F = S.session.font, P = params();
+    const name = String(F.name || S.session.name || 'Handwriting').trim() || 'Handwriting';
+    const keys = [...S.byKey.keys()].filter(k => samplesOf(k).length);
+    const all = [...S.samples.values()], cp = S.session.capture.prop;
+    const ratio = (f, def) => { const v = all.map(f).filter(Number.isFinite); return v.length ? median(v) : def; };
+    const xhU = P.cap * ratio(s => s.guide.xh / s.guide.cap, 1 / cp.cap);
+    const ascU = P.cap * ratio(s => s.guide.asc / s.guide.cap, cp.asc / cp.cap);
+    const descU = P.cap * ratio(s => s.guide.desc / s.guide.cap, cp.desc / cp.cap);
+
+    const pairGaps = new Map(), gaps = [];
+    for (const k of keys) {
+      if (chars(k).length !== 2) continue;
+      const g = samplesOf(k).map(s => pairGap(s, P)).filter(v => v != null);
+      if (g.length) { const m = median(g); pairGaps.set(k, m); gaps.push(m); }
+    }
+    const fromPairs = gaps.length >= 3;
+    const autoSB = fromPairs ? clamp(median(gaps) / 2, 0.03 * xhU, 0.5 * xhU) : 0.12 * xhU;
+    const SB = F.spacingMode === 'manual' ? +F.spacing || 0 : autoSB;
+    const space = F.space > 0 ? F.space : 0.62 * xhU;
+
+    const glyphs = new Map();
+    let rawPts = 0, nodes = 0, maxLig = 1, nAlt = 0, nLig = 0;
+    for (const k of keys) {
+      const len = chars(k).length, lig = len > 1;
+      if (lig && !F.ligatures) continue;
+      const order = orderedVariants(k, F.variant, F.seed);
+      const variants = (F.alternates ? order : order.slice(0, 1)).map(s => {
+        const pr = processSample(s, P), sp = pr.spacing, ok = Number.isFinite(sp.minX);
+        rawPts += pr.rawCount; nodes += pr.nodes;
+        return { sample: s, proc: pr, dx: ok ? SB - sp.minX : SB, adv: (ok ? sp.maxX - sp.minX : 0) + 2 * SB };
+      });
+      if (!variants.length) continue;
+      if (lig) { nLig++; maxLig = Math.max(maxLig, len); }
+      nAlt += variants.length - 1;
+      glyphs.set(k, { key: k, name: keyName(k), lig, variants });
+    }
+    const kerns = [];
+    if (F.kerning) {
+      for (const [k, g] of pairGaps) {
+        const [a, b] = chars(k);
+        if (a === ',' || b === ',' || !glyphs.has(a) || !glyphs.has(b)) continue;
+        const kv = Math.round(clamp(2 * SB - g, -0.6 * xhU, 0.6 * xhU));
+        if (Math.abs(kv) >= 4) kerns.push({ u1: a, u2: b, k: kv });
+      }
+    }
+    const advs = [...glyphs.values()].filter(g => !g.lig).map(g => g.variants[0].adv);
+    return {
+      name, id: fontId(name), P, xhU, ascU, descU, capU: P.cap, SB, autoSB, fromPairs, space,
+      defAdv: advs.length ? median(advs) : 0.8 * xhU + 2 * SB,
+      glyphs, kerns, kernMap: new Map(kerns.map(x => [x.u1 + x.u2, x.k])),
+      rawPts, nodes, maxLig, nAlt, nLig, nPairs: pairGaps.size,
+    };
+  }
+
+  function fmtNum(v, prec) {
+    const m = Math.pow(10, prec);
+    let r = Math.round(v * m) / m;
+    if (Object.is(r, -0)) r = 0;
+    return String(r);
+  }
+  // path data for processed strokes under X = ax + bx·x, Y = ay + by·y
+  function strokesD(strokes, ax, bx, ay, by, prec) {
+    const P = p => fmtNum(ax + bx * p[0], prec) + ' ' + fmtNum(ay + by * p[1], prec);
+    const out = [];
+    for (const st of strokes) {
+      if (st.kind === 'poly') {
+        let last = P(st.pts[0]), d = 'M ' + last, n = 0;
+        for (let i = 1; i < st.pts.length; i++) { const q = P(st.pts[i]); if (q !== last) { d += ' L ' + q; last = q; n++; } }
+        if (!n) d += ' L ' + last;   // keep dots as zero-length lines: plotters put the pen down
+        out.push(d);
+      } else {
+        let d = 'M ' + P(st.segs[0][0]);
+        for (const s of st.segs) d += ' C ' + P(s[1]) + ' ' + P(s[2]) + ' ' + P(s[3]);
+        out.push(d);
+      }
+    }
+    return out.join(' ');
+  }
+  function rawD(raw, ax, bx, ay, by) {
+    return raw.map(st => 'M' + st.map(p => (ax + bx * p[0]).toFixed(2) + ' ' + (ay + by * p[1]).toFixed(2)).join('L')).join('');
+  }
+  function nodePoints(strokes) {
+    const pts = [];
+    for (const st of strokes) {
+      if (st.kind === 'poly') pts.push(...st.pts);
+      else { pts.push(st.segs[0][0]); for (const s of st.segs) pts.push(s[3]); }
+    }
+    return pts;
+  }
+
+  function fontXML(f) {
+    const F = S.session.font, prec = f.P.prec, n = v => fmtNum(v, prec);
+    const st = sampleStats([...S.samples.values()]);
+    const types = new Set();
+    for (const s of S.samples.values()) for (const k of s.strokes) types.add(k.type);
+    const ligs = [...f.glyphs.values()].filter(g => g.lig).sort((a, b) => chars(b.key).length - chars(a.key).length || (a.key < b.key ? -1 : 1));
+    const singles = [...f.glyphs.values()].filter(g => !g.lig && g.key !== ' ').sort((a, b) => a.key.codePointAt(0) - b.key.codePointAt(0));
+    const outMode = f.P.mode === 'raw' ? 'raw pen points' : f.P.mode === 'lines'
+      ? `polylines, tolerance ${f.P.tol.toFixed(2)}${f.P.chaikin ? `, Chaikin ×${f.P.chaikin}` : ''}` : `cubic Béziers, tolerance ${f.P.tol.toFixed(2)}`;
+    const meta = [
+      `Font name:     ${f.name}`,
+      F.author ? `Created by:    ${F.author}` : null,
+      F.license ? `License:       ${F.license}` : null,
+      `Generated:     ${new Date().toISOString()}`,
+      `Generator:     Handwriting Font — ${APP_URL}`,
+      `Source:        ${st.samples} handwritten samples, ${st.strokes} strokes, ${st.points} pen points (${[...types].join(', ')})`,
+      `Outline:       single-stroke ${outMode}, smoothing ${f.P.sigma.toFixed(1)}, units-per-em 1000`,
+      `Glyphs:        ${singles.length + 1} characters, ${f.nLig} ligatures (multi-character unicode), ${f.nAlt} alternates`,
+      f.nAlt ? `               alternates are in the Private Use Area from U+E000, glyph-name "<name>.altN"` : null,
+      f.kerns.length ? `Kerning:       ${f.kerns.length} hkern pairs measured from handwritten letter pairs` : null,
+    ].filter(Boolean).map(escXml).join('\n');
+    const L = [];
+    L.push('<?xml version="1.0" encoding="UTF-8" ?>');
+    L.push('<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" >');
+    L.push('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1">');
+    L.push('<metadata>', meta, '</metadata>');
+    L.push('<defs>');
+    L.push(`<font id="${escXml(f.id)}" horiz-adv-x="${n(f.defAdv)}" >`);
+    L.push('<font-face', `font-family="${escXml(f.name)}"`, 'units-per-em="1000"', `ascent="${Math.round(f.ascU)}"`,
+           `descent="${-Math.round(f.descU)}"`, `cap-height="${Math.round(f.capU)}"`, `x-height="${Math.round(f.xhU)}"`, '/>');
+    L.push(`<missing-glyph horiz-adv-x="${n(f.defAdv)}" />`);
+    L.push(`<glyph unicode=" " glyph-name="space" horiz-adv-x="${n(f.space)}" />`);
+    const glyph = (uni, name, v) =>
+      `<glyph unicode="${uni}" glyph-name="${escXml(name)}" horiz-adv-x="${n(v.adv)}" d="${strokesD(v.proc.strokes, v.dx, 1, 0, 1, prec)}" />`;
+    // SVG fonts match the first glyph in document order: ligatures go before their components
+    for (const g of ligs) L.push(glyph(unicodeAttr(g.key), g.name, g.variants[0]));
+    for (const g of singles) L.push(glyph(unicodeAttr(g.key), g.name, g.variants[0]));
+    let pua = 0xE000;
+    for (const g of [...singles, ...ligs]) {
+      for (let i = 1; i < g.variants.length && pua <= 0xF8FF; i++) {
+        L.push(glyph('&#x' + (pua++).toString(16).toUpperCase() + ';', `${g.name}.alt${i}`, g.variants[i]));
+      }
+    }
+    for (const kp of f.kerns) L.push(`<hkern u1="${unicodeAttr(kp.u1)}" u2="${unicodeAttr(kp.u2)}" k="${kp.k}" />`);
+    L.push('</font>', '</defs>', '</svg>');
+    return L.join('\n') + '\n';
+  }
+
+  return { orderedVariants, params, processSample, buildFont, fontXML, strokesD, rawD, nodePoints, fmtNum };
+})();
+
+// ════════════════════════════════════════════════════════════════════════
+// FONT — detail controls, preview, SVG font + plottable text export
+// ════════════════════════════════════════════════════════════════════════
+const Font = (() => {
+  const preview = $('ftPreview');
+  let font = null, fontSig = '', xmlCache = null;
+  const PX_PER_MM = 96 / 25.4;
+
+  function currentFont() {
+    const sig = JSON.stringify(S.session.font) + '|' + S.rev + '|' + S.session.name + '|' + JSON.stringify(S.session.capture.prop);
+    if (!font || sig !== fontSig) { font = Geo.buildFont(); fontSig = sig; xmlCache = null; }
+    return font;
+  }
+  function fontXml(f) {
+    if (!xmlCache || xmlCache.f !== f) xmlCache = { f, xml: Geo.fontXML(f) };
+    return xmlCache.xml;
+  }
+
+  // ── text layout: ligatures (longest match), alternates, kerning, wrapping ──
+  function shape(str, f, rnd, occ) {
+    const F = S.session.font, mode = S.session.preview.variation;
+    const cs = chars(str.normalize('NFC')), items = [];
+    let i = 0;
+    while (i < cs.length) {
+      const ch = cs[i];
+      if (ch === ' ' || ch === '\t' || ch === ' ') { items.push({ space: true, adv: f.space * (ch === '\t' ? 4 : 1) }); i++; continue; }
+      let key = ch, g = null;
+      for (let n = Math.min(f.maxLig, cs.length - i); n >= 2; n--) {
+        const kk = cs.slice(i, i + n).join(''), gg = f.glyphs.get(kk);
+        if (gg && gg.lig) { key = kk; g = gg; break; }
+      }
+      if (!g) g = f.glyphs.get(ch) || null;
+      if (!g) { items.push({ missing: true, key: ch, adv: f.defAdv }); i++; continue; }
+      const n = g.variants.length;
+      let vi = 0;
+      if (n > 1 && mode === 'cycle') { const c = occ.get(key) || 0; vi = c % n; occ.set(key, c + 1); }
+      else if (n > 1 && mode === 'random') vi = Math.floor(rnd() * n);
+      items.push({ g, v: g.variants[vi], key, adv: g.variants[vi].adv });
+      i += chars(key).length;
+    }
+    if (F.kerning) {
+      for (let j = 1; j < items.length; j++) {
+        const a = items[j - 1], b = items[j];
+        if (a.g && b.g && !a.g.lig && !b.g.lig) { const kv = f.kernMap.get(a.key + b.key); if (kv) a.kern = -kv; }
+      }
+    }
+    return items;
+  }
+  function layout(f) {
+    const PV = S.session.preview, k = PV.size / 1000;   // mm per font unit
+    const wrapU = PV.wrap > 0 ? PV.wrap / k : Infinity;
+    const rnd = mulberry32((PV.seed | 0) * 7919 + 17), occ = new Map(), lines = [];
+    const w = it => it.adv + (it.kern || 0);
+    for (const para of String(PV.text || '').split('\n')) {
+      const items = shape(para, f, rnd, occ);
+      let line = [], x = 0, lastSpace = -1;
+      for (const it of items) {
+        line.push(it); x += w(it);
+        if (it.space) lastSpace = line.length - 1;
+        if (x > wrapU && lastSpace > 0) {
+          const rest = line.splice(lastSpace + 1);
+          line.pop();
+          lines.push(line);
+          line = []; x = 0; lastSpace = -1;
+          for (const r of rest) { line.push(r); x += w(r); if (r.space) lastSpace = line.length - 1; }
+        }
+      }
+      lines.push(line);
+    }
+    for (const line of lines) {
+      let x = 0;
+      for (const it of line) { it.x = x; x += w(it); }
+      line.width = x;
+    }
+    const m = 6, asc = f.ascU * k, desc = f.descU * k, lh = PV.lineHeight * 1000 * k;
+    const W = Math.max(20, ...lines.map(l => l.width * k)) + 2 * m;
+    const H = asc + desc + Math.max(0, lines.length - 1) * lh + 2 * m;
+    return { lines, k, m, asc, desc, lh, W, H };
+  }
+
+  const r3 = v => Math.round(v * 1000) / 1000;
+  function renderText(f) {
+    const PV = S.session.preview, T = layout(f), { k, m, asc, desc, lh, W, H } = T;
+    const availW = Math.max(200, preview.clientWidth - 36);
+    const dispW = Math.min(W * PX_PER_MM, availW), pxmm = dispW / W;
+    const nodeR = 1.6 / pxmm, missing = new Set();
+    let guides = '', boxes = '', raw = '', ink = '', nodes = '', miss = '';
+    T.lines.forEach((line, li) => {
+      const by = m + asc + li * lh;
+      if (PV.guides) {
+        const hl = (y, dash) => `<line x1="0" x2="${r3(W)}" y1="${r3(y)}" y2="${r3(y)}"${dash ? ' stroke-dasharray="1.2 1.2"' : ''}/>`;
+        guides += hl(by) + hl(by - f.xhU * k, 1) + hl(by - f.capU * k, 1);
+      }
+      for (const it of line) {
+        const ox = m + it.x * k;
+        if (it.space) continue;
+        if (it.missing) {
+          missing.add(it.key);
+          miss += `<rect x="${r3(ox + 0.1 * it.adv * k)}" y="${r3(by - f.capU * k)}" width="${r3(0.8 * it.adv * k)}" height="${r3(f.capU * k)}"/>`;
+          continue;
+        }
+        const v = it.v, gx = ox + v.dx * k;
+        ink += `<path d="${Geo.strokesD(v.proc.strokes, gx, k, by, -k, 3)}"/>`;
+        if (PV.boxes) boxes += `<rect x="${r3(ox)}" y="${r3(by - asc)}" width="${r3(v.adv * k)}" height="${r3(asc + desc)}"/>`;
+        if (PV.raw) raw += `<path d="${Geo.rawD(v.proc.raw, gx, k, by, -k)}"/>`;
+        if (PV.nodes) for (const p of Geo.nodePoints(v.proc.strokes)) {
+          nodes += `M${r3(gx + p[0] * k - nodeR)} ${r3(by - p[1] * k - nodeR)}h${r3(2 * nodeR)}v${r3(2 * nodeR)}h${r3(-2 * nodeR)}z`;
+        }
+      }
+    });
+    const sw = Math.max(PV.stroke, 0.7 / pxmm);
+    preview.innerHTML =
+      `<svg class="page" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${r3(W)} ${r3(H)}" width="${Math.round(dispW)}" height="${Math.round(dispW * H / W)}">` +
+      `<g fill="none" stroke="#35401f" stroke-width="${r3(0.6 / pxmm)}">${guides}</g>` +
+      `<g fill="none" stroke="#2d2d2d" stroke-width="${r3(0.6 / pxmm)}">${boxes}</g>` +
+      `<g fill="none" stroke="#e05656" stroke-width="${r3(0.8 / pxmm)}" stroke-dasharray="${r3(2 / pxmm)} ${r3(2 / pxmm)}">${miss}</g>` +
+      `<g fill="none" stroke="#7ad9f2" stroke-opacity=".75" stroke-width="${r3(0.8 / pxmm)}">${raw}</g>` +
+      `<g fill="none" stroke="#e8e8e8" stroke-width="${r3(sw)}" stroke-linecap="round" stroke-linejoin="round">${ink}</g>` +
+      (nodes ? `<path fill="#c8f060" d="${nodes}"/>` : '') +
+      `</svg>` +
+      (missing.size ? `<div class="ft-missing">Not captured yet: ${[...missing].map(escHtml).join(' ')}</div>` : '');
+  }
+
+  function renderTable(f) {
+    const keys = [], seen = new Set();
+    for (const p of S.queue) if (!seen.has(p.key)) { seen.add(p.key); keys.push(p.key); }
+    for (const kk of f.glyphs.keys()) if (!seen.has(kk)) { seen.add(kk); keys.push(kk); }
+    const pad = 0.12 * f.capU;
+    let html = '<div class="gtable">';
+    for (const key of keys) {
+      const g = f.glyphs.get(key), lig = chars(key).length > 1;
+      if (!g) {
+        if (lig && !S.session.font.ligatures) continue;
+        html += `<div class="gcell miss" data-key="${escHtml(key)}"><svg viewBox="0 0 10 10"></svg><div class="g-foot"><b>${escHtml(key)}</b><span>missing</span></div></div>`;
+        continue;
+      }
+      const v = g.variants[0], w = v.adv + 2 * pad;
+      const ln = (x1, y1, x2, y2, c, dash) =>
+        `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1" vector-effect="non-scaling-stroke"${dash ? ' stroke-dasharray="3 3"' : ''}/>`;
+      html += `<div class="gcell" data-key="${escHtml(key)}" title="${escHtml(g.name)} · advance ${Math.round(v.adv)}">` +
+        `<svg viewBox="${r3(-pad)} ${r3(-(f.ascU + pad))} ${r3(w)} ${r3(f.ascU + f.descU + 2 * pad)}" preserveAspectRatio="xMidYMid meet">` +
+        ln(-pad, 0, v.adv + pad, 0, '#3d4a24') + ln(-pad, r3(-f.xhU), v.adv + pad, r3(-f.xhU), '#262626', 1) +
+        ln(0, r3(-f.ascU), 0, r3(f.descU), '#222') + ln(r3(v.adv), r3(-f.ascU), r3(v.adv), r3(f.descU), '#222') +
+        `<path d="${Geo.strokesD(v.proc.strokes, v.dx, 1, 0, -1, 2)}" fill="none" stroke="#e8e8e8" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>` +
+        `</svg><div class="g-foot"><b>${escHtml(key)}</b><span>${g.variants.length > 1 ? '+' + (g.variants.length - 1) + ' · ' : ''}${Math.round(v.adv)}</span></div></div>`;
+    }
+    html += '</div>';
+    preview.innerHTML = html;
+    preview.querySelectorAll('.gcell').forEach(el => { el.onclick = () => { showView('review'); Review.open(el.dataset.key); }; });
+  }
+
+  function renderInfo(f) {
+    const P = f.P;
+    $('ftTol').textContent = P.mode === 'raw' ? 'every pen point' : `tolerance ${P.tol < 10 ? P.tol.toFixed(1) : Math.round(P.tol)} u`;
+    const xml = f.glyphs.size ? fontXml(f) : '';
+    const pct = f.rawPts ? (100 * f.nodes / f.rawPts) : 0;
+    $('ftDetailStats').textContent = f.glyphs.size
+      ? `${fmtInt(f.nodes)} nodes from ${fmtInt(f.rawPts)} pen points (${pct < 10 ? pct.toFixed(1) : Math.round(pct)}%) · font file ${fmtBytes(xml.length)}`
+      : 'Nothing captured yet.';
+    $('ftMetrics').textContent =
+      `x-height ${Math.round(f.xhU)} · ascender ${Math.round(f.ascU)} · descender −${Math.round(f.descU)} · ` +
+      `side bearing ${Math.round(f.SB)}${S.session.font.spacingMode === 'manual' ? '' : f.fromPairs ? ` (from ${f.nPairs} pairs)` : ' (default — capture pairs to measure)'} · ` +
+      `word space ${Math.round(f.space)}`;
+    // coverage per prompt set
+    const per = new Map();
+    for (const p of S.queue) {
+      if (!per.has(p.set)) per.set(p.set, { have: 0, all: 0, miss: [] });
+      const o = per.get(p.set);
+      o.all++;
+      if (samplesOf(p.key).length) o.have++; else if (o.miss.length < 30) o.miss.push(p.key);
+    }
+    let html = '';
+    for (const [set, o] of per) {
+      html += `<div><b>${escHtml(SET_LABEL[set] || set)}</b> ${o.have}/${o.all}` +
+        (o.miss.length && o.have ? ` · missing ${escHtml(o.miss.join(' '))}${o.all - o.have > o.miss.length ? ' …' : ''}` : '') + '</div>';
+    }
+    html += `<div>${f.nAlt} alternates · ${f.nLig} ligatures · ${f.kerns.length} kerning pairs</div>`;
+    $('ftCoverage').innerHTML = html;
+    $('ftStatus').textContent = f.glyphs.size
+      ? `${f.id}.svg · ${f.glyphs.size - f.nLig} glyphs · ${f.nAlt} alternates · ${f.nLig} ligatures · ${f.kerns.length} kerning pairs · ${fmtInt(f.nodes)} nodes · ${fmtBytes(xml.length)}`
+      : 'No samples yet';
+  }
+
+  function renderPreview() {
+    if (S.view !== 'font') return;
+    const f = currentFont();
+    if (!f.glyphs.size) {
+      preview.innerHTML = '<div class="empty-state">Nothing captured yet.<br>Write some letters in <b>Capture</b> — they show up here as a font.</div>';
+      return;
+    }
+    if (S.session.preview.mode === 'table') renderTable(f); else renderText(f);
+  }
+  function rebuild() {
+    if (S.view !== 'font') return;
+    const f = currentFont();
+    renderInfo(f);
+    renderPreview();
+  }
+  const rebuildSoon = debounce(rebuild, 140);
+  const renderSoon = debounce(renderPreview, 90);
+  function onSetting(path, isFont) {
+    if (S.view !== 'font') return;
+    if (isFont) rebuildSoon(); else renderSoon();
+  }
+
+  function textSVG(f) {
+    const PV = S.session.preview, T = layout(f), { k, m, asc, lh, W, H } = T;
+    const paths = [];
+    T.lines.forEach((line, li) => {
+      const by = m + asc + li * lh;
+      for (const it of line) {
+        if (!it.v) continue;
+        paths.push(`  <path d="${Geo.strokesD(it.v.proc.strokes, m + (it.x + it.v.dx) * k, k, by, -k, 3)}"/>`);
+      }
+    });
+    return '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' +
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" ` +
+      `width="${r3(W)}mm" height="${r3(H)}mm" viewBox="0 0 ${r3(W)} ${r3(H)}">\n` +
+      `<title>${escXml(f.name)}</title>\n` +
+      `<g inkscape:groupmode="layer" inkscape:label="1-${escXml(f.id)}" fill="none" stroke="#000" stroke-width="${PV.stroke}" stroke-linecap="round" stroke-linejoin="round">\n` +
+      paths.join('\n') + '\n</g>\n</svg>\n';
+  }
+
+  function init() {
+    $('ftDlFont').onclick = () => {
+      const f = currentFont();
+      if (!f.glyphs.size) { toast('Nothing to export yet — capture some letters first'); return; }
+      download(new Blob([fontXml(f)], { type: 'image/svg+xml' }), f.id + '.svg');
+      toast(`Saved ${f.id}.svg`);
+    };
+    $('ftDlText').onclick = () => {
+      const f = currentFont();
+      if (!f.glyphs.size) { toast('Nothing to export yet'); return; }
+      download(new Blob([textSVG(f)], { type: 'image/svg+xml' }), f.id + '-text.svg');
+    };
+    $('ftReseed').onclick = () => { S.session.preview.seed = ((S.session.preview.seed | 0) % 9999) + 1; saveSessionSoon(); renderPreview(); };
+    new ResizeObserver(debounce(() => { if (S.view === 'font' && S.session.preview.mode === 'text') renderPreview(); }, 120)).observe(preview);
+  }
+
+  return { init, show: rebuild, onSetting, currentFont, fontXml, textSVG, invalidate: () => { font = null; } };
+})();
+
+// ════════════════════════════════════════════════════════════════════════
+// DATA — sessions, raw export / import, storage status
+// ════════════════════════════════════════════════════════════════════════
+const Data = (() => {
+  let importMode = 'new';
+  const kv = rows => rows.map(([k, v]) => `<span>${escHtml(k)}</span><span>${escHtml(v)}</span>`).join('');
+  const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
+
+  function renderCurrent() {
+    const s = S.session, list = [...S.samples.values()], st = sampleStats(list), pr = progressStats();
+    if (document.activeElement !== $('dtName')) $('dtName').value = s.name;
+    $('dtStats').innerHTML = kv([
+      ['prompts', `${S.byKey.size} written · ${S.queue.length} in the capture list`],
+      ['samples', fmtInt(st.samples)],
+      ['strokes', fmtInt(st.strokes)],
+      ['pen points', fmtInt(st.points)],
+      ['raw data', '≈ ' + fmtBytes(st.bytes)],
+      ['progress', `${Math.round(pr.pct * 100)}% (${pr.got}/${pr.tgt})`],
+      ['created', fmtDate(s.created)],
+      ['last export', fmtDate(s.lastExport)],
+    ]);
+    let newest = 0;
+    for (const x of list) newest = Math.max(newest, x.updated || 0);
+    const stale = list.length && newest > (s.lastExport || 0);
+    const hint = $('dtBackupHint');
+    hint.className = 'hint' + (stale ? ' warn' : '');
+    hint.textContent = !list.length ? '' : stale ? 'Some samples are not in an export yet.' : 'Every sample is in your last export.';
+  }
+  async function renderSessions() {
+    const box = $('dtSessions');
+    let all = [];
+    try { all = (await dbAll('sessions')).map(normalizeSession); } catch (e) { console.error(e); }
+    if (!all.some(x => x.id === S.session.id)) all.unshift(S.session);
+    all = all.map(x => x.id === S.session.id ? S.session : x).sort((a, b) => b.updated - a.updated);
+    const counts = await Promise.all(all.map(x => x.id === S.session.id ? S.samples.size : dbCountSamples(x.id).catch(() => 0)));
+    box.innerHTML = '';
+    all.forEach((x, i) => {
+      const cur = x.id === S.session.id;
+      const row = document.createElement('div');
+      row.className = 'sess' + (cur ? ' cur' : '');
+      row.innerHTML = `<div class="s-name"><b></b><small>${counts[i]} samples · updated ${escHtml(fmtDate(x.updated))}</small></div>`;
+      row.querySelector('b').textContent = x.name + (cur ? '  · open' : '');
+      const mk = (label, cls, title, fn) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'btn tiny ' + cls; b.textContent = label; b.title = title; b.onclick = fn;
+        row.appendChild(b);
+      };
+      if (!cur) mk('Open', '', 'Switch to this session', () => switchTo(x));
+      mk('↓ json', '', 'Export this session', () => exportSession(x, false));
+      mk('Delete', 'danger', 'Delete this session', () => deleteSession(x, counts[i]));
+      box.appendChild(row);
+    });
+  }
+  async function refreshStorage() {
+    const el = $('dtStorage');
+    let usage = '—', quota = '—', pers = 'unknown';
+    try {
+      if (navigator.storage && navigator.storage.estimate) {
+        const e = await navigator.storage.estimate();
+        usage = fmtBytes(e.usage); quota = fmtBytes(e.quota);
+      }
+    } catch (_) { /* ignore */ }
+    try {
+      const p = await persistState(false);
+      pers = p == null ? 'not supported' : p ? 'yes — protected from eviction' : 'no — best effort';
+    } catch (_) { /* ignore */ }
+    el.innerHTML = kv([['database', db ? `IndexedDB · ${DB_NAME}` : 'unavailable — memory only'], ['used', usage], ['quota', quota], ['persistent', pers]]);
+    $('dtPersist').disabled = !db || pers.startsWith('yes') || pers === 'not supported';
+  }
+  function show() { renderCurrent(); renderSessions(); refreshStorage(); }
+
+  // ── export ──────────────────────────────────────────────────────────────
+  function roundPts(a) {
+    const out = new Array(a.length);
+    for (let i = 0; i < a.length; i++) {
+      const v = a[i];
+      if (!Number.isFinite(v)) { out[i] = null; continue; }
+      const m = Math.pow(10, FIELD_DEC[i % NF]);
+      out[i] = Math.round(v * m) / m;
+    }
+    return out;
+  }
+  function sampleForExport(s) {
+    return {
+      id: s.id, key: s.key, slot: s.slot, created: s.created, updated: s.updated, starred: !!s.starred,
+      guide: s.guide, origin: s.origin || null, cellW: s.cellW || 0, viewport: s.viewport || null,
+      strokes: s.strokes.map(st => {
+        const o = { type: st.type, t0: st.t0, n: st.pts.length / NF, pts: roundPts(st.pts) };
+        if (st.cancel) o.cancel = true;
+        return o;
+      }),
+    };
+  }
+  async function exportSession(sess, gz) {
+    try {
+      const isCur = sess.id === S.session.id;
+      const samples = isCur ? [...S.samples.values()] : await dbSessionSamples(sess.id);
+      samples.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.slot - b.slot));
+      const head = JSON.stringify({
+        format: FORMAT, version: FORMAT_VERSION, exported: new Date().toISOString(), app: APP_URL, fields: FIELDS,
+        units: {
+          x: 'CSS px → right, from the cell origin', y: 'CSS px ↓ down, from the baseline', t: 'ms since stroke t0',
+          t0: 'epoch ms', p: 'pressure 0–1', tiltX: 'deg', tiltY: 'deg', twist: 'deg', altitude: 'rad', azimuth: 'rad',
+          guide: 'CSS px from the baseline, slant in deg',
+        },
+        session: { id: sess.id, name: sess.name, created: sess.created, updated: sess.updated, capture: sess.capture,
+                   font: sess.font, preview: sess.preview, device: sess.device || null },
+      });
+      const parts = [head.slice(0, -1) + ',"samples":['];
+      samples.forEach((s, i) => parts.push((i ? ',\n' : '\n') + JSON.stringify(sampleForExport(s))));
+      parts.push('\n]}\n');
+      let blob = new Blob(parts, { type: 'application/json' });
+      let name = `${fontId(sess.name)}-handwriting-${stamp()}.json`;
+      if (gz) {
+        if (typeof CompressionStream === 'undefined') toast('This browser cannot gzip — exporting plain JSON');
+        else { blob = await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob(); name += '.gz'; }
+      }
+      download(blob, name);
+      const rec = isCur ? S.session : sess;
+      rec.lastExport = Date.now();
+      await track(dbPut('sessions', rec));
+      toast(`Exported ${samples.length} samples · ${fmtBytes(blob.size)}`);
+      if (S.view === 'data') show();
+    } catch (err) {
+      console.error(err);
+      toast('Export failed: ' + (err && err.message || err), { err: true });
+    }
+  }
+
+  // ── import ──────────────────────────────────────────────────────────────
+  async function readText(file) {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    if (buf[0] === 0x1f && buf[1] === 0x8b) {
+      if (typeof DecompressionStream === 'undefined') throw new Error('this browser cannot read .gz — unzip the file first');
+      return new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+    }
+    return new TextDecoder().decode(buf);
+  }
+  async function importFile(file, mode) {
+    const data = JSON.parse(await readText(file));
+    if (!data || data.format !== FORMAT || !Array.isArray(data.samples)) throw new Error('not a Handwriting Font session file');
+    const fields = Array.isArray(data.fields) ? data.fields : FIELDS, nf = fields.length;
+    const map = FIELDS.map(f => fields.indexOf(f));
+    let target;
+    if (mode === 'merge') target = S.session;
+    else {
+      const src = data.session || {}, now = Date.now();
+      const names = new Set((await dbAll('sessions')).map(x => x.name));
+      let name = String(src.name || 'Imported'), i = 2;
+      while (names.has(name)) name = `${src.name || 'Imported'} (${i++})`;
+      target = normalizeSession({ ...src, id: uid(), name, created: now, updated: now, lastExport: now, pos: { key: null } });
+      await track(dbPut('sessions', target));
+    }
+    const next = new Map(), recs = [];
+    for (const r of data.samples) {
+      if (!r || typeof r.key !== 'string' || !r.key || !Array.isArray(r.strokes)) continue;
+      const strokes = [];
+      for (const st of r.strokes) {
+        const src = Array.isArray(st.pts) ? st.pts : [], n = Math.floor(src.length / nf);
+        if (!n) continue;
+        const a = new Float32Array(n * NF);
+        for (let i = 0; i < n; i++) for (let f = 0; f < NF; f++) {
+          const j = map[f], v = j >= 0 ? src[i * nf + j] : null;
+          a[i * NF + f] = v == null ? NaN : +v;
+        }
+        const o = { type: String(st.type || 'pen'), t0: +st.t0 || 0, pts: a };
+        if (st.cancel) o.cancel = true;
+        strokes.push(o);
+      }
+      if (!strokes.length) continue;
+      const g = r.guide || {}, xh = +g.xh > 0 ? +g.xh : 44;
+      const key = r.key.normalize('NFC');
+      let slot = Number.isInteger(r.slot) && r.slot >= 0 ? r.slot : 0;
+      if (mode === 'merge') {
+        if (!next.has(key)) next.set(key, maxSlot(key) + 1);
+        slot = next.get(key); next.set(key, slot + 1);
+      }
+      recs.push({
+        id: uid(), sessionId: target.id, key, slot, created: +r.created || Date.now(), updated: Date.now(),
+        starred: mode === 'merge' ? false : !!r.starred,
+        guide: { xh, asc: +g.asc > 0 ? +g.asc : 1.8 * xh, cap: +g.cap > 0 ? +g.cap : 1.6 * xh, desc: +g.desc > 0 ? +g.desc : 0.8 * xh, slant: +g.slant || 0 },
+        origin: r.origin || null, cellW: +r.cellW || 0, viewport: r.viewport || null, strokes,
+      });
+    }
+    await track(dbPutMany('samples', recs));
+    if (mode === 'merge') {
+      for (const s of recs) indexSample(s);
+      Capture.clearHistory();
+      afterSamplesChanged();
+    } else await openSession(target, db ? null : recs);
+    return recs.length;
+  }
+
+  // ── sessions ────────────────────────────────────────────────────────────
+  async function switchTo(x) {
+    const rec = (await dbGet('sessions', x.id)) || x;
+    await openSession(rec);
+    showView('capture');
+  }
+  async function newSession() {
+    const name = prompt('Name for the new session (it becomes the font name):', 'My Hand');
+    if (name == null) return;
+    const rec = newSessionRecord(name.trim() || 'My Hand', S.session);
+    await track(dbPut('sessions', rec));
+    await openSession(rec);
+    showView('capture');
+    toast(`New session “${rec.name}”`);
+  }
+  async function deleteSession(x, count) {
+    if (!confirm(`Delete “${x.name}” and its ${count} samples from this device?\nThis cannot be undone — export it first if in doubt.`)) return;
+    await track(dbDeleteSession(x.id));
+    if (x.id === S.session.id) {
+      const rest = (await dbAll('sessions')).sort((a, b) => b.updated - a.updated);
+      const rec = rest[0] || newSessionRecord('My Hand');
+      if (!rest.length) await track(dbPut('sessions', rec));
+      await openSession(rec);
+    }
+    show();
+    toast(`Deleted “${x.name}”`);
+  }
+
+  function init() {
+    $('dtExport').onclick = () => exportSession(S.session, false);
+    $('dtExportGz').onclick = () => exportSession(S.session, true);
+    $('dtNew').onclick = newSession;
+    $('dtName').addEventListener('input', e => {
+      S.session.name = e.target.value || 'My Hand';
+      saveSessionSoon(); updateHeader(); syncControls();
+    });
+    $('dtImportMode').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      importMode = b.dataset.v;
+      $('dtImportMode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    }));
+    $('dtImportBtn').onclick = () => $('dtImportFile').click();
+    $('dtImportFile').onchange = async e => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      try {
+        const n = await importFile(file, importMode);
+        toast(`Imported ${n} samples${importMode === 'merge' ? ' into this session' : ' as a new session'}`);
+        show();
+      } catch (err) {
+        console.error(err);
+        toast('Import failed: ' + (err && err.message || err), { err: true });
+      }
+    };
+    $('dtPersist').onclick = async () => {
+      const p = await persistState(true);
+      toast(p ? 'Storage is now persistent' : 'The browser said no — keep exporting backups (on iPad, a Home Screen app is more likely to get it)');
+      refreshStorage();
+    };
+  }
+
+  return { init, show, refreshStorage, exportSession, importFile };
+})();
+
+// ════════════════════════════════════════════════════════════════════════
+// APP
+// ════════════════════════════════════════════════════════════════════════
+function updateProgressUI() {
+  const st = progressStats(), pct = Math.round(st.pct * 1000) / 10;
+  $('capBar').style.width = (st.pct * 100).toFixed(2) + '%';
+  $('capPct').textContent = `${pct}% · ${fmtInt(st.got)}/${fmtInt(st.tgt)}`;
+  $('hdrProgress').textContent = pct + '%';
+}
+function updateHeader() {
+  $('hdrSession').textContent = S.session ? S.session.name : '—';
+  updateProgressUI();
+}
+// A sample changed outside the capture page (review, import): refresh whatever is showing.
+function afterSamplesChanged() {
+  updateProgressUI();
+  Capture.buildJump();
+  if (S.view === 'capture') Capture.render();
+  else if (S.view === 'review') Review.render();
+  else if (S.view === 'font') Font.show();
+  else if (S.view === 'data') Data.show();
+}
+function showView(v) {
+  if (v !== 'capture') Capture.exitFocus();
+  S.view = v;
+  for (const id of ['capture', 'review', 'font', 'data']) $('view-' + id).hidden = id !== v;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === v));
+  if (v === 'capture') Capture.show();
+  else if (v === 'review') Review.show();
+  else if (v === 'font') Font.show();
+  else Data.show();
+  track(dbPut('kv', { k: 'ui', v }));
+}
+// Two samples of one prompt in the same slot (older imports, merges) → move the later one to a free slot.
+function fixSlots(list) {
+  const byKey = new Map(), fixed = [];
+  for (const s of list) { if (!byKey.has(s.key)) byKey.set(s.key, []); byKey.get(s.key).push(s); }
+  for (const arr of byKey.values()) {
+    arr.sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0) || a.created - b.created);
+    const used = new Set();
+    for (const s of arr) {
+      if (!Number.isInteger(s.slot) || s.slot < 0 || used.has(s.slot)) {
+        let k = 0;
+        while (used.has(k)) k++;
+        s.slot = k;
+        fixed.push(s);
+      }
+      used.add(s.slot);
+    }
+  }
+  return fixed;
+}
+async function openSession(rec, preloaded) {
+  S.session = normalizeSession(rec);
+  S.samples.clear(); S.byKey.clear(); S.rev++;
+  let list = preloaded || [];
+  if (!preloaded) {
+    try { list = await dbSessionSamples(S.session.id); } catch (e) { console.error(e); toast('Could not read samples: ' + e.message, { err: true }); }
+  }
+  list = list.filter(s => s && s.key && Array.isArray(s.strokes) && s.strokes.length && s.guide && s.guide.xh > 0);
+  const fixed = fixSlots(list);
+  for (const s of list) indexSample(s);
+  if (fixed.length) track(dbPutMany('samples', fixed));
+  rebuildQueue();
+  track(dbPut('kv', { k: 'lastSession', v: S.session.id }));
+  Capture.reset(); Review.reset(); Font.invalidate();
+  syncControls();
+  updateHeader();
+  if (S.view === 'capture') Capture.render();
+}
+
+function buildSetToggles() {
+  const sets = $('capSets'), pairs = $('capPairs');
+  sets.innerHTML = SETS.map(s => `<label class="chk"><input type="checkbox" data-bind="capture.sets.${s.id}"> ${escHtml(s.label)} <span class="cnt">${chars(s.chars).length}</span></label>`).join('');
+  pairs.innerHTML = PAIR_SETS.map(p => `<label class="chk"><input type="checkbox" data-bind="capture.pairs.${p.id}"> ${escHtml(p.label)} <span class="cnt">${pairList(p).length}</span></label>`).join('');
+}
+
+async function init() {
+  buildSetToggles();
+  bindControls();
+  Capture.init(); Review.init(); Font.init(); Data.init();
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => showView(t.dataset.view)));
+  $('hdrSession').onclick = () => showView('data');
+  window.addEventListener('beforeunload', e => { if (pendingWrites > 0) { e.preventDefault(); e.returnValue = ''; } });
+
+  try { db = await idbOpen(); }
+  catch (err) {
+    console.error(err);
+    db = null;
+    showBanner('This browser gives the page no IndexedDB (private mode?) — nothing will be kept after you close it. Export from the Data tab.');
+  }
+  renderSaveState();
+  let rec = null, ui = null;
+  try {
+    const last = await dbGet('kv', 'lastSession');
+    if (last) rec = await dbGet('sessions', last.v);
+    if (!rec) rec = (await dbAll('sessions')).sort((a, b) => b.updated - a.updated)[0] || null;
+    ui = await dbGet('kv', 'ui');
+  } catch (err) { console.error(err); }
+  if (!rec) { rec = newSessionRecord('My Hand'); await track(dbPut('sessions', rec)); }
+  await openSession(rec);
+  const v = ui && ui.v;
+  showView(['capture', 'review', 'font', 'data'].includes(v) ? v : 'capture');
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (S.view === 'capture') Capture.render(); });
+}
+init();
+</script>
+</body>
+</html>
