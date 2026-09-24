@@ -24,6 +24,7 @@ SVG and PDF generators for pen plotters and paper — single-stroke fonts, calib
 
 | Tool | Description |
 |------|-------------|
+| [Handwriting Font](static/tools/handwriting-font.html) | Turns your handwriting into a single-stroke SVG font — guided iPad + Apple Pencil capture of letters and pairs, detail-controlled Hershey Text-compatible export, live preview, local-first sessions |
 | [Hershey Calendar](static/tools/hershey-calendar.html) | Plottable SVG and printable PDF calendars (month, quarter, year) at A6–A4 or custom sizes, portrait or landscape, set in Hershey or EMS vector fonts |
 | [Pixel Art Print](static/tools/pixel-art-print.html) | Print-sized pixel grids — image and text layers rasterized with threshold dithering, noise tints, step or sine wave animation, GIF / MP4 / WebM export |
 | [Plot Prep](static/tools/plot-prep.html) | SVG decorator for pen plotting — adds paper outline, calibration markers, and page boundary layers (Saxi / AxiDraw) |
