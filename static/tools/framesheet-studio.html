@@ -225,11 +225,11 @@
 
     <div class="section">
       <div class="section-label">Template <button class="btn tiny ghost" id="btnClearTemplate" data-tip="Remove the loaded template SVG.">✕</button></div>
-      <div class="dropzone" id="dropTemplate" data-tip="The template is the SVG you plotted, with one extra layer of shapes labelled frame-0, frame-1, … (via id, inkscape:label or data-frame). Page size is read from the SVG width/height. The plotted marks and art in it anchor the frame refinement.">
+      <div class="dropzone" id="dropTemplate" data-tip="The template is the SVG you plotted, with one extra layer of shapes labelled frame-0, frame-1, … (via id, inkscape:label or data-frame). Page size is read from the SVG width/height. The plotted marks and art in it anchor the frame refinement.<br>No template? Drop a plotted page SVG from an RSTR plot prep export as it is: the frames are read off its layout.">
         drop template SVG here<br>or click to choose
       </div>
       <div id="templateInfo" class="sv-meta" style="margin-top:8px;display:none;"></div>
-      <div class="hint" id="templateHint">One template is shared by all sheets. Label frame shapes <b>frame-0 … frame-N</b>; frame number order = animation order. <a href="https://rstr.d17e.dev/prep" target="_blank" rel="noopener" style="color:var(--accent-dim)">RSTR plot prep</a> puts a ready-made <b>_frame-template.svg</b> in its multi-page export zip.</div>
+      <div class="hint" id="templateHint">One template is shared by all sheets. Label frame shapes <b>frame-0 … frame-N</b>; frame number order = animation order. <a href="https://rstr.d17e.dev/prep" target="_blank" rel="noopener" style="color:var(--accent-dim)">RSTR plot prep</a> puts a ready-made <b>_frame-template.svg</b> in its multi-page export zip. For pages exported before that, drop in a plotted page SVG itself (page 1 is safest): the frames are read off its layout.</div>
     </div>
 
     <div class="section">
@@ -632,7 +632,8 @@ const DEFAULTS = {
 };
 const S = {
   mode: DEFAULTS.mode,
-  template: null,          // {name, pageW, pageH (mm), frames:[{n, quad:[{x,y}mm×4]}], raster, rasterPpmm, warn}
+  template: null,          // {name, pageW, pageH (mm), frames:[{n, quad:[{x,y}mm×4]}], raster, rasterPpmm, warn, inferred, source}
+  templateError: null,     // why the last template drop failed, shown until the next one (the status line moves on)
   synthT: null,            // synthesized template for per-frame mode without an SVG
   photos: [],              // {id, name, bmp, w, h, thumbURL, gray, autoQuad, quadScore, manualQuad, rotAuto, rotUser, _detKey}
   detect: { ...DEFAULTS.detect },
@@ -828,6 +829,277 @@ function frameLabelOf(el) {
   return null;
 }
 
+/* ── templates without frame shapes: read the grid off a plotted prep page ──
+   RSTR plot prep lays a frame sequence out as a grid centred on the page and
+   places each frame's artwork with `translate(x,y) scale(sx,sy)`, one group per
+   frame per colour layer. Pages exported before prep added _frame-template.svg
+   carry no frame shapes, so the grid is read back off the page: positions from
+   those groups, the frame size from the per-cell paper outlines, the frame
+   numbers and the centred grid, each estimate checked against the others.
+   Works in viewport units (viewBox units, page corner at 0,0). */
+const PREP_DECOR = new Set(['paper-outline', 'frame-labels', 'calibration', 'page-boundary', 'frame-template']);
+const PREP_TOL_MM = 0.02;   // positions this close are the same position
+const PREP_AGREE_MM = 0.05; // size estimates this close agree
+const toDM = m => new DOMMatrix([m.a, m.b, m.c, m.d, m.e, m.f]);
+
+/** A frame group's prep placement: `translate() scale()`, optionally followed by
+    the frame layer's own transform (ignored), or one axis-aligned transform in
+    case an editor rewrote it. null for anything else. */
+function prepPlacement(g) {
+  const list = g.transform && g.transform.baseVal;
+  const n = list ? list.numberOfItems : 0;
+  if (!n) return null;
+  const T = SVGTransform, a = list.getItem(0);
+  if (n > 1 && a.type === T.SVG_TRANSFORM_TRANSLATE && list.getItem(1).type === T.SVG_TRANSFORM_SCALE)
+    return toDM(a.matrix).multiply(toDM(list.getItem(1).matrix));
+  if (n === 1 && [T.SVG_TRANSFORM_MATRIX, T.SVG_TRANSFORM_TRANSLATE, T.SVG_TRANSFORM_SCALE].includes(a.type)) {
+    const m = a.matrix;
+    if (Math.abs(m.b) < 1e-9 && Math.abs(m.c) < 1e-9 && m.a > 0 && m.d > 0) return toDM(m);
+  }
+  return null;
+}
+
+/** Nearly equal values merged into their mean, ascending. */
+function clusterVals(values, tol) {
+  const groups = [];
+  for (const v of [...values].sort((a, b) => a - b)) {
+    const g = groups[groups.length - 1];
+    if (g && v - g[g.length - 1] <= tol) g.push(v); else groups.push([v]);
+  }
+  return groups.map(g => g.reduce((s, v) => s + v, 0) / g.length);
+}
+
+/** Cell rectangles from the paper-outline layer: a full rectangle per cell, or
+    8 corner / cross lines per cell. null when the layer is neither. */
+function prepOutlineCells(layer) {
+  const rects = [], lines = [];
+  const box = pts => {
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+  };
+  for (const el of layer.querySelectorAll('rect, line')) {
+    const m = toDM(el.getCTM());
+    if (el.localName === 'rect') {
+      const b = el.getBBox();
+      rects.push(box([[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]]
+        .map(([x, y]) => m.transformPoint({ x, y }))));
+    } else {
+      lines.push([m.transformPoint({ x: el.x1.baseVal.value, y: el.y1.baseVal.value }),
+                  m.transformPoint({ x: el.x2.baseVal.value, y: el.y2.baseVal.value })]);
+    }
+  }
+  if (rects.length && !lines.length) return rects;
+  if (!lines.length || rects.length || lines.length % 8) return null;
+  const near = (p, q) => Math.abs(p.x - q.x) < 1e-3 && Math.abs(p.y - q.y) < 1e-3;
+  const mid = l => ({ x: (l[0].x + l[1].x) / 2, y: (l[0].y + l[1].y) / 2 });
+  const cells = [];
+  for (let k = 0; k < lines.length; k += 8) {
+    const corners = [];
+    for (let j = k; j < k + 8; j += 2) {
+      const a = lines[j], b = lines[j + 1];
+      if (near(a[0], b[0])) corners.push(a[0]);            // corner marks: both arms start at the corner
+      else if (near(mid(a), mid(b))) corners.push(mid(a)); // crosses: centred on the corner
+      else return null;
+    }
+    cells.push(box(corners));
+  }
+  return cells;
+}
+
+/** The frame grid of a plotted prep page. svgEl must be attached with its
+    viewport pinned to the viewBox. Returns {cells:[{x,y}], w, h, cols, rows,
+    filled, warn} in viewport units; throws with the reason when the page
+    isn't a prep framesheet or holds too little to rebuild the grid. */
+function inferPrepGrid(svgEl, vb, pageW) {
+  const unit = vb[2] / pageW; // viewport units per mm
+  const TOL = PREP_TOL_MM * unit, AGREE = PREP_AGREE_MM * unit;
+  const mm = v => String(parseFloat((v / unit).toFixed(2)));
+  const warn = [];
+
+  // frame placements: the direct child groups of the artwork layers
+  const placements = [];
+  let ignored = 0, labels = null, outline = null;
+  for (const layer of svgEl.children) {
+    if (layer.localName !== 'g') continue;
+    const name = (layer.getAttribute('inkscape:label') || layer.getAttribute('id') || '').trim();
+    const key = name.startsWith('layer-') ? name.slice(6) : name;
+    if (key === 'frame-labels') labels = layer;
+    else if (key === 'paper-outline') outline = layer;
+    if (PREP_DECOR.has(key)) continue;
+    const layerM = toDM(layer.getCTM());
+    for (const g of layer.children) {
+      if (g.localName !== 'g') continue;
+      const place = prepPlacement(g);
+      if (place) placements.push({ g, m: layerM.multiply(place) });
+      else ignored++;
+    }
+  }
+  if (!placements.length) throw new Error('it has no RSTR prep frame groups (one translate(…) scale(…) group per frame in the artwork layers)');
+  if (ignored) warn.push(`${ignored} artwork group(s) without a frame placement ignored`);
+  if (clusterVals(placements.map(p => p.m.a), 1e-6).length > 1 || clusterVals(placements.map(p => p.m.d), 1e-6).length > 1)
+    throw new Error('its frame groups use different scales, so the frames are not all the same size');
+
+  const xs = clusterVals(placements.map(p => p.m.e), TOL), ys = clusterVals(placements.map(p => p.m.f), TOL);
+  const near = (cl, v) => cl.reduce((best, c, i) => Math.abs(c - v) < Math.abs(cl[best] - v) ? i : best, 0);
+  const occupied = [...new Set(placements.map(p => near(ys, p.m.f) * 1e6 + near(xs, p.m.e)))].sort((a, b) => a - b);
+  const x0 = xs[0], y0 = ys[0];
+  const pitchOf = (cl, what) => {
+    if (cl.length < 2) return null;
+    const steps = cl.slice(1).map((v, i) => v - cl[i]);
+    const p = median(steps);
+    if (steps.some(s => Math.abs(s - p) > TOL)) throw new Error(`its frame ${what}s are not evenly spaced, so it isn't a prep grid`);
+    return p;
+  };
+  const p = pitchOf(xs, 'column'), q = pitchOf(ys, 'row');
+
+  // frame size estimates
+  const W = {}, H = {};
+  if (outline) {
+    const cells = prepOutlineCells(outline);
+    if (cells && cells.length) {
+      const cw = cells[0].w, ch = cells[0].h;
+      const same = cells.every(c => Math.abs(c.w - cw) < TOL && Math.abs(c.h - ch) < TOL);
+      const mx = x0 - Math.min(...cells.map(c => c.x)), my = y0 - Math.min(...cells.map(c => c.y));
+      // a cell is the frame plus the same margin on every side
+      if (same && cells.length === occupied.length && Math.abs(mx - my) < TOL && mx > -TOL) {
+        W['paper outlines'] = cw - (mx + my);
+        H['paper outlines'] = ch - (mx + my);
+      }
+    }
+  }
+  if (labels) {
+    const spots = [...labels.children].filter(el => el.localName === 'path').map(el => el.getCTM());
+    if (spots.length) {
+      const lx = Math.min(...spots.map(s => s.e)), ly = Math.min(...spots.map(s => s.f));
+      // a number sits (offset − margin) left of its frame and (margin + height − offset)
+      // below the frame top, so the two add up to the height. The first multi-frame
+      // prep build set numbers flush with the frame edge instead: no height there.
+      if (Math.abs(lx - x0) >= TOL) H['frame numbers'] = (lx - x0) + (ly - y0);
+    }
+  }
+  // margins are symmetric and the grid is centred, so the frame block is centred
+  // too, as long as its last column / row holds a frame
+  W['centred grid'] = vb[2] - x0 - xs[xs.length - 1];
+  H['centred grid'] = vb[3] - y0 - ys[ys.length - 1];
+
+  // settle width and height: a second occupied row means the first row is full
+  let w = null, wSrc = null, h = null, hSrc = null;
+  for (const k of ['paper outlines', ...(ys.length > 1 ? ['centred grid'] : [])]) if (w == null && k in W) { w = W[k]; wSrc = k; }
+  for (const k of ['paper outlines', 'frame numbers']) if (h == null && k in H) { h = H[k]; hSrc = k; }
+  // columns and rows share margin and gap: column pitch − row pitch = width − height
+  const pitch = p != null && q != null ? p - q : null;
+  if (w == null && h != null && pitch != null) { w = h + pitch; wSrc = 'grid pitch'; }
+  if (h == null && w != null && pitch != null) { h = w - pitch; hSrc = 'grid pitch'; }
+  if (w == null) { w = W['centred grid']; wSrc = 'centred grid'; }
+  if (h == null) { h = H['centred grid']; hSrc = 'centred grid'; }
+  if (!(w > 0 && h > 0)) throw new Error('its frame size comes out empty');
+
+  // the whole grid, columns × rows, past the last plotted frame too
+  const pEff = p ?? (q != null ? q + w - h : null);
+  const qEff = q ?? (p != null ? p + h - w : null);
+  const count = (first, span, size, step, occ, what) => {
+    const rest = span - 2 * first - size;
+    if (Math.abs(rest) < AGREE) return 1;
+    const n = step ? rest / step + 1 : NaN;
+    if (!isFinite(n) || Math.abs(n - Math.round(n)) > 0.01 || Math.round(n) < occ)
+      throw new Error(`the page holds too few frames to rebuild the ${what}s of its grid. Use page 1 of the series, or any full page`);
+    return Math.round(n);
+  };
+  const cols = count(x0, vb[2], w, pEff, xs.length, 'column');
+  const rows = count(y0, vb[3], h, qEff, ys.length, 'row');
+  const cells = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
+    cells.push({ x: c < xs.length ? xs[c] : x0 + c * pEff, y: r < ys.length ? ys[r] : y0 + r * qEff });
+  const filled = occupied.length;
+  if (occupied.some((v, i) => v !== Math.floor(i / cols) * 1e6 + i % cols))
+    warn.push(`the plotted frames aren't the first ${filled} cells in reading order (a blank frame?), check the numbering`);
+
+  // do the independent estimates agree? The centred-grid one is off by whole
+  // pitches when the last column / row is empty, which is expected there
+  const emptyTail = { width: cols > xs.length, height: rows > ys.length };
+  const confirm = { width: [], height: [] };
+  for (const [what, cands, val, src] of [['width', W, w, wSrc], ['height', H, h, hSrc]]) {
+    for (const [k, v] of Object.entries(cands)) {
+      if (k === src) continue;
+      if (Math.abs(v - val) <= AGREE) confirm[what].push(k);
+      else if (!(k === 'centred grid' && emptyTail[what])) warn.push(`frame ${what} ${mm(val)} mm from the ${src}, but ${mm(v)} mm from the ${k}`);
+    }
+  }
+  if (pitch != null && wSrc !== 'grid pitch' && hSrc !== 'grid pitch') {
+    if (Math.abs((w - h) - pitch) <= AGREE) { confirm.width.push('grid pitch'); confirm.height.push('grid pitch'); }
+    else warn.push(`frame width − height (${mm(w - h)} mm) doesn't match column − row pitch (${mm(pitch)} mm)`);
+  }
+  if (wSrc === 'grid pitch' || hSrc === 'grid pitch') { // tied through the pitch: shared evidence
+    const cw = [...confirm.width], ch = [...confirm.height];
+    confirm.width.push(...ch);
+    confirm.height.push(...cw);
+  }
+  for (const [what, src] of [['width', wSrc], ['height', hSrc]])
+    if (!confirm[what].length) warn.push(`frame ${what} rests on the ${src} alone, check the frame borders`);
+
+  // every frame's ink has to sit inside its border
+  let worst = 0;
+  for (const { g, m } of placements) {
+    let b;
+    try { b = g.getBBox(); } catch { continue; }
+    if (!b || (b.width <= 0 && b.height <= 0)) continue;
+    const gm = toDM(g.getCTM());
+    for (const [x, y] of [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]]) {
+      const pt = gm.transformPoint({ x, y });
+      worst = Math.max(worst, m.e - pt.x, pt.x - (m.e + w), m.f - pt.y, pt.y - (m.f + h));
+    }
+  }
+  if (worst > Math.max(0.5 * unit, 0.01 * Math.max(w, h)))
+    warn.push(`frame artwork reaches ${mm(worst)} mm past its border, frame size or position may be off`);
+
+  return { cells, w, h, cols, rows, filled, warn, vbX: vb[0], vbY: vb[1], mmW: w / unit, mmH: h / unit };
+}
+
+/** The template file for a page whose frames were read off its layout: the page
+    as plotted plus the frame-template layer current prep versions write. Same
+    output as the standalone make_frame_templates.py. */
+const PREP_PAGE_COMMENT = /<!--\s*Generated by RSTR plot prep\s*—\s*(\d+) frames?, page (\d+)\/(\d+)\s*-->/;
+function prepTemplateSvg(T) {
+  const inf = T.inferred, n = inf.cells.length;
+  const fmt4 = v => String(parseFloat(v.toFixed(4)));
+  let text = T.source;
+  const m = PREP_PAGE_COMMENT.exec(text);
+  let series = 'total frame count unknown, the page comment is gone';
+  if (m) {
+    const count = +m[1], page = +m[2], pages = +m[3];
+    series = `page ${page} of ${pages} · ` + (page < pages
+      ? `${(pages - 1) * n + 1}–${pages * n} frames in total`
+      : `${(pages - 1) * n + count} frames in total`);
+  }
+  const header = '<!-- Generated by RSTR plot prep · frame template for Framesheet Studio.\n' +
+    `     Rebuilt from ${T.name.replace(/-{2,}/g, '-')}, plotted before prep exported templates:\n` + // no -- in a comment
+    `     that page verbatim plus one rectangle per cell (frame-0 … frame-${n - 1},\n` +
+    '     row major = animation order). Framesheet Studio hides those rectangles and\n' +
+    '     anchors on the plotted ink around them.\n' +
+    `     ${n} frames per page · ${series}.\n` +
+    '     In Framesheet Studio: load this as the template, drop the photos of the\n' +
+    '     plotted pages in page order, then set "frames used" to the total frame\n' +
+    '     count if the last page is only partly filled. -->';
+  if (m) text = text.slice(0, m.index) + header + text.slice(m.index + m[0].length);
+  else {
+    const decl = /^\s*<\?xml[^>]*\?>\s*/.exec(text);
+    const at = decl ? decl[0].length : 0;
+    text = text.slice(0, at) + header + '\n' + text.slice(at);
+  }
+  const rootTag = text.slice(text.indexOf('<svg'), text.indexOf('>', text.indexOf('<svg')) + 1);
+  if (!rootTag.includes('xmlns:inkscape=')) text = text.replace(/<svg\b/, '<svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"');
+  const rects = inf.cells.map((c, i) =>
+    `    <rect id="frame-${i}" inkscape:label="frame-${i}" x="${fmt4(c.x + inf.vbX)}" y="${fmt4(c.y + inf.vbY)}"` +
+    ` width="${fmt4(inf.w)}" height="${fmt4(inf.h)}"/>\n`).join('');
+  const layer = '  <!-- ═══ Frame rectangles — read by Framesheet Studio, not meant to be plotted ═══ -->\n' +
+    '  <g inkscape:label="frame-template" inkscape:groupmode="layer" id="layer-frame-template"\n' +
+    '     fill="none" stroke="#7a5cff" stroke-width="0.2" stroke-dasharray="2 2">\n' +
+    rects + '  </g>\n\n';
+  const close = text.lastIndexOf('</svg>');
+  return text.slice(0, close) + layer + text.slice(close);
+}
+const templateFileName = name => name.replace(/\.svg$/i, '').replace(/[_-]page[-_]?\d+$/i, '') + '_frame-template.svg';
+
 async function parseTemplate(svgText, name) {
   const clean = svgText.replace(/<script[\s\S]*?<\/script\s*>/gi, '');
   let doc = new DOMParser().parseFromString(clean, 'image/svg+xml');
@@ -864,6 +1136,7 @@ async function parseTemplate(svgText, name) {
 
   const warn = [];
   const frames = [];
+  let inferred = null;
   try {
     const seen = new Set();
     for (const el of svgEl.querySelectorAll('*')) {
@@ -890,10 +1163,24 @@ async function parseTemplate(svgText, name) {
         toMm(bb.x + bb.width, bb.y + bb.height), toMm(bb.x, bb.y + bb.height),
       ] });
     }
+    // no frame shapes: a plotted prep page still carries its frame grid
+    if (!frames.length) {
+      try {
+        inferred = inferPrepGrid(svgEl, vb, pageW);
+      } catch (err) {
+        throw new Error('no shapes labelled frame-0…frame-N found (id / inkscape:label / data-frame), ' +
+          'and the frames could not be read off the page either: ' + err.message);
+      }
+      const sx = pageW / vb[2], sy = pageH / vb[3];
+      inferred.cells.forEach((c, n) => {
+        const x0 = c.x * sx, y0 = c.y * sy, x1 = (c.x + inferred.w) * sx, y1 = (c.y + inferred.h) * sy;
+        frames.push({ n, quad: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }] });
+      });
+      warn.push(...inferred.warn);
+    }
   } finally {
     holder.remove();
   }
-  if (!frames.length) throw new Error('no shapes labelled frame-0…frame-N found (id / inkscape:label / data-frame)');
   frames.sort((a, b) => a.n - b.n);
   for (let i = 0; i < frames.length; i++) {
     if (frames[i].n !== i) { warn.push(`frame numbering has gaps (missing frame-${i}) — order of the found numbers is used`); break; }
@@ -924,7 +1211,8 @@ async function parseTemplate(svgText, name) {
     warn.push('template could not be rasterized — orientation guess and frame refinement are off');
   }
 
-  return { name, pageW, pageH, frames, raster, rasterPpmm: TPL_PPMM, warn };
+  // inferred: frames read off a plotted prep page; source keeps that page for saving it as a template
+  return { name, pageW, pageH, frames, raster, rasterPpmm: TPL_PPMM, warn, inferred, source: inferred ? svgText : null };
 }
 
 /* ── photo loading ────────────────────────────────────────────────────────
@@ -2917,6 +3205,11 @@ function showEmpty(html) {
   $('stageEmpty').style.display = 'flex';
 }
 function hideEmpty() { $('stageEmpty').style.display = 'none'; }
+/** The sources step's placeholder, shown only while nothing is loaded. */
+function syncSourcesEmpty() {
+  if (!S.photos.length && !S.template) showEmpty('drop a <b>template SVG</b> + <b>sheet photos</b> in 01 SOURCES<br>to build an animation');
+  else hideEmpty();
+}
 
 let detectViewScale = 1; // photo px → stage canvas px in the detect source view
 
@@ -3313,10 +3606,8 @@ function showStep(step) {
   $('photoNav').hidden = step !== 'detect';
   $('transport').hidden = !(step === 'animate' || step === 'export');
   $('stageInfo').textContent = '';
-  if (step === 'sources') {
-    if (!S.photos.length && !S.template) showEmpty('drop a <b>template SVG</b> + <b>sheet photos</b> in 01 SOURCES<br>to build an animation');
-    else hideEmpty();
-  } else hideEmpty();
+  if (step === 'sources') syncSourcesEmpty();
+  else hideEmpty();
   // the deferred full-quality extraction lands here, on the way out of 02
   if (step === 'animate' || step === 'export') void ensureFrames();
   requestRedraw();
@@ -3415,12 +3706,26 @@ function updateSourcesUI() {
   const info = $('templateInfo');
   if (T) {
     info.style.display = 'block';
+    const inf = T.inferred;
     info.innerHTML = `<b>${T.name}</b><br>page <b>${fmtMm(T.pageW)} × ${fmtMm(T.pageH)} mm</b> · <b>${T.frames.length}</b> frames` +
+      (inf ? `<br>no frame shapes · read off the prep layout: <b>${inf.cols} × ${inf.rows}</b> grid of ` +
+        `<b>${fmtMm(inf.mmW)} × ${fmtMm(inf.mmH)} mm</b> frames` +
+        `<br><button class="btn tiny ghost" id="btnSaveTemplate" data-tip="Save this page plus its frame rectangles as a regular template SVG (<b>…_frame-template.svg</b>), the same file current RSTR plot prep exports. Load that next time, or keep it with the plot files.">↓ SAVE AS TEMPLATE</button>` : '') +
       (T.warn.length ? `<br><span style="color:var(--warn)">⚠ ${T.warn.join(' · ')}</span>` : '');
+    if (inf) on($('btnSaveTemplate'), 'click', () =>
+      download(new Blob([prepTemplateSvg(T)], { type: 'image/svg+xml' }), templateFileName(T.name)));
+  } else if (S.templateError) {
+    info.style.display = 'block';
+    info.textContent = '';
+    const e = mk('span');
+    e.style.color = 'var(--danger)';
+    e.textContent = '✕ ' + S.templateError;
+    info.appendChild(e);
   } else {
     info.style.display = 'none';
   }
   $('photosLabel').textContent = S.mode === 'perframe' ? 'Frames (one photo each)' : 'Sheets';
+  if (S.ui.step === 'sources') syncSourcesEmpty();
   renderSourcesView();
 }
 function renderSourcesView() {
@@ -3453,7 +3758,8 @@ function renderSourcesView() {
     }
     wrap.appendChild(c);
     wrap.appendChild(mk('div', 'sv-meta',
-      `page <b>${fmtMm(T.pageW)} × ${fmtMm(T.pageH)} mm</b><br>frames <b>${T.frames.length}</b><br>` +
+      `page <b>${fmtMm(T.pageW)} × ${fmtMm(T.pageH)} mm</b><br>frames <b>${T.frames.length}</b>` +
+      (T.inferred ? ` · read off the prep layout (${T.inferred.filled} plotted)` : '') + '<br>' +
       `raster ${T.raster ? '<b>ok</b> — refinement available' : '<span style="color:var(--warn)">failed — refinement off</span>'}`));
     block.appendChild(wrap);
     view.appendChild(block);
@@ -3865,7 +4171,7 @@ function wireControls() {
   on($('fileTemplate'), 'change', e => { loadTemplateFiles(e.target.files); e.target.value = ''; });
   on($('filePhotos'), 'change', e => { addPhotos(e.target.files); e.target.value = ''; });
   on($('btnClearTemplate'), 'click', () => {
-    S.template = null; _tplSmall = null;
+    S.template = null; S.templateError = null; _tplSmall = null;
     updateSourcesUI();
     rebuildPipeline();
   });
@@ -4064,12 +4370,15 @@ async function loadTemplateFiles(files) {
   try {
     const text = await f.text();
     S.template = await parseTemplate(text, f.name);
+    S.templateError = null;
     _tplSmall = null;
     S.photos.forEach(ph => { ph.frameLayerQuad = null; }); // bounds belong to the old template
     status(`template ✓ — ${S.template.frames.length} frames on ${fmtMm(S.template.pageW)}×${fmtMm(S.template.pageH)} mm` +
+      (S.template.inferred ? ' · read off the prep layout' : '') +
       (S.template.warn.length ? ' · ⚠ ' + S.template.warn.join(' · ') : ''), S.template.warn.length ? 'warn' : '');
   } catch (err) {
     S.template = null;
+    S.templateError = `${f.name}: ${err && err.message || err}`;
     status('template error: ' + (err && err.message || err), 'err');
   }
   updateSourcesUI();
