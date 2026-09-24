@@ -225,7 +225,7 @@
 
     <div class="section">
       <div class="section-label">Template <button class="btn tiny ghost" id="btnClearTemplate" data-tip="Remove the loaded template SVG.">✕</button></div>
-      <div class="dropzone" id="dropTemplate" data-tip="The template is the SVG you plotted, with one extra layer of shapes labelled frame-0, frame-1, … (via id, inkscape:label or data-frame). Page size is read from the SVG width/height. The plotted marks and art in it anchor the frame refinement.<br>No template? Drop a plotted page SVG from an RSTR plot prep export as it is: the frames are read off its layout.">
+      <div class="dropzone" id="dropTemplate" data-tip="The template is the SVG you plotted, with one extra layer of shapes labelled frame-0, frame-1, … (via id, inkscape:label or data-frame). Page size is read from the SVG width/height. The plotted marks and art in it anchor the frame refinement, so frame shapes align best drawn on printed marks, like the paper outline RSTR plot prep draws around each frame. Older prep templates with the shapes around the artwork are moved out onto those outlines.<br>No template? Drop a plotted page SVG from an RSTR plot prep export as it is: the frames are read off its layout.">
         drop template SVG here<br>or click to choose
       </div>
       <div id="templateInfo" class="sv-meta" style="margin-top:8px;display:none;"></div>
@@ -954,6 +954,7 @@ function inferPrepGrid(svgEl, vb, pageW) {
 
   // frame size estimates
   const W = {}, H = {};
+  let outlineCells = null; // the paper outline around each frame, when the page draws one
   if (outline) {
     const cells = prepOutlineCells(outline);
     if (cells && cells.length) {
@@ -962,6 +963,7 @@ function inferPrepGrid(svgEl, vb, pageW) {
       const mx = x0 - Math.min(...cells.map(c => c.x)), my = y0 - Math.min(...cells.map(c => c.y));
       // a cell is the frame plus the same margin on every side
       if (same && cells.length === occupied.length && Math.abs(mx - my) < TOL && mx > -TOL) {
+        outlineCells = cells;
         W['paper outlines'] = cw - (mx + my);
         H['paper outlines'] = ch - (mx + my);
       }
@@ -1052,7 +1054,52 @@ function inferPrepGrid(svgEl, vb, pageW) {
   if (worst > Math.max(0.5 * unit, 0.01 * Math.max(w, h)))
     warn.push(`frame artwork reaches ${mm(worst)} mm past its border, frame size or position may be off`);
 
-  return { cells, w, h, cols, rows, filled, warn, vbX: vb[0], vbY: vb[1], mmW: w / unit, mmH: h / unit };
+  // the frame boxes: on the paper outline around each frame when the page draws
+  // one (printed marks to align on, where the artwork has no clean edge), else
+  // around the artwork. The same rule prep follows for its own templates.
+  let boxes = cells, bw = w, bh = h;
+  if (outlineCells) {
+    const ox = clusterVals(outlineCells.map(c => c.x), TOL), oy = clusterVals(outlineCells.map(c => c.y), TOL);
+    bw = outlineCells[0].w;
+    bh = outlineCells[0].h;
+    boxes = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
+      boxes.push({ x: c < ox.length ? ox[c] : ox[0] + c * pEff, y: r < oy.length ? oy[r] : oy[0] + r * qEff });
+  }
+  return {
+    cells: boxes, w: bw, h: bh, onOutline: !!outlineCells, cols, rows, filled, warn,
+    vbX: vb[0], vbY: vb[1], mmW: bw / unit, mmH: bh / unit,
+  };
+}
+
+/** Prep templates exported before the frame boxes moved onto the paper outlines
+    put each box around the artwork, inside the outline prep draws around every
+    frame. The outline is the clean printed edge to align on, so those boxes are
+    moved out onto it, all by the same margin (the empty cells' too). Returns the
+    margin in mm, or 0 when the boxes don't sit evenly inside per-frame outlines:
+    already on them, or another kind of template. */
+function snapFramesToOutlines(svgEl, frames, vb, pageW, pageH) {
+  const layer = [...svgEl.children].find(el => el.localName === 'g' &&
+    /^(layer-)?paper-outline$/.test((el.getAttribute('inkscape:label') || el.getAttribute('id') || '').trim()));
+  const cells = layer && prepOutlineCells(layer);
+  if (!cells || !cells.length) return 0;
+  const sx = pageW / vb[2], sy = pageH / vb[3], tol = PREP_TOL_MM;
+  const outlines = cells.map(c => ({ x: c.x * sx, y: c.y * sy, w: c.w * sx, h: c.h * sy }));
+  const insets = [];
+  for (const f of frames) {
+    const xs = f.quad.map(p => p.x), ys = f.quad.map(p => p.y);
+    const x0 = Math.min(...xs), y0 = Math.min(...ys), x1 = Math.max(...xs), y1 = Math.max(...ys);
+    const o = outlines.find(b => b.x <= x0 + tol && b.y <= y0 + tol && b.x + b.w >= x1 - tol && b.y + b.h >= y1 - tol);
+    if (!o) continue; // an empty cell has no outline
+    const m = [x0 - o.x, y0 - o.y, o.x + o.w - x1, o.y + o.h - y1];
+    if (Math.max(...m) - Math.min(...m) > tol) return 0;
+    insets.push((m[0] + m[1] + m[2] + m[3]) / 4);
+  }
+  if (!insets.length) return 0;
+  const inset = median(insets);
+  if (inset <= tol || insets.some(v => Math.abs(v - inset) > tol)) return 0;
+  for (const f of frames) f.quad = expandQuadMm(f.quad, inset);
+  return inset;
 }
 
 /** The template file for a page whose frames were read off its layout: the page
@@ -1074,8 +1121,9 @@ function prepTemplateSvg(T) {
   const header = '<!-- Generated by RSTR plot prep · frame template for Framesheet Studio.\n' +
     `     Rebuilt from ${T.name.replace(/-{2,}/g, '-')}, plotted before prep exported templates:\n` + // no -- in a comment
     `     that page verbatim plus one rectangle per cell (frame-0 … frame-${n - 1},\n` +
-    '     row major = animation order). Framesheet Studio hides those rectangles and\n' +
-    '     anchors on the plotted ink around them.\n' +
+    `     row major = animation order), ${inf.onOutline ? "on each frame's paper outline" : "around each frame's artwork (no paper outline per frame)"}.\n` +
+    '     Framesheet Studio hides those rectangles and anchors on the plotted ink\n' +
+    '     around them.\n' +
     `     ${n} frames per page · ${series}.\n` +
     '     In Framesheet Studio: load this as the template, drop the photos of the\n' +
     '     plotted pages in page order, then set "frames used" to the total frame\n' +
@@ -1136,7 +1184,7 @@ async function parseTemplate(svgText, name) {
 
   const warn = [];
   const frames = [];
-  let inferred = null;
+  let inferred = null, snapped = 0;
   try {
     const seen = new Set();
     for (const el of svgEl.querySelectorAll('*')) {
@@ -1163,6 +1211,7 @@ async function parseTemplate(svgText, name) {
         toMm(bb.x + bb.width, bb.y + bb.height), toMm(bb.x, bb.y + bb.height),
       ] });
     }
+    if (frames.length) snapped = snapFramesToOutlines(svgEl, frames, vb, pageW, pageH);
     // no frame shapes: a plotted prep page still carries its frame grid
     if (!frames.length) {
       try {
@@ -1211,8 +1260,9 @@ async function parseTemplate(svgText, name) {
     warn.push('template could not be rasterized — orientation guess and frame refinement are off');
   }
 
-  // inferred: frames read off a plotted prep page; source keeps that page for saving it as a template
-  return { name, pageW, pageH, frames, raster, rasterPpmm: TPL_PPMM, warn, inferred, source: inferred ? svgText : null };
+  // inferred: frames read off a plotted prep page; source keeps that page for saving it as a template.
+  // snapped: mm the frame boxes of an older prep template moved out onto the paper outlines
+  return { name, pageW, pageH, frames, raster, rasterPpmm: TPL_PPMM, warn, inferred, snapped, source: inferred ? svgText : null };
 }
 
 /* ── photo loading ────────────────────────────────────────────────────────
@@ -3708,9 +3758,11 @@ function updateSourcesUI() {
     info.style.display = 'block';
     const inf = T.inferred;
     info.innerHTML = `<b>${T.name}</b><br>page <b>${fmtMm(T.pageW)} × ${fmtMm(T.pageH)} mm</b> · <b>${T.frames.length}</b> frames` +
-      (inf ? `<br>no frame shapes · read off the prep layout: <b>${inf.cols} × ${inf.rows}</b> grid of ` +
-        `<b>${fmtMm(inf.mmW)} × ${fmtMm(inf.mmH)} mm</b> frames` +
+      (inf ? `<br>no frame shapes · read off the prep layout: <b>${inf.cols} × ${inf.rows}</b> grid, ` +
+        `<b>${fmtMm(inf.mmW)} × ${fmtMm(inf.mmH)} mm</b> frame boxes ` +
+        (inf.onOutline ? 'on the paper outlines' : 'around the artwork (no paper outline per frame)') +
         `<br><button class="btn tiny ghost" id="btnSaveTemplate" data-tip="Save this page plus its frame rectangles as a regular template SVG (<b>…_frame-template.svg</b>), the same file current RSTR plot prep exports. Load that next time, or keep it with the plot files.">↓ SAVE AS TEMPLATE</button>` : '') +
+      (T.snapped ? `<br>frame boxes moved <b>${fmtMm(T.snapped)} mm</b> out, onto the paper outlines` : '') +
       (T.warn.length ? `<br><span style="color:var(--warn)">⚠ ${T.warn.join(' · ')}</span>` : '');
     if (inf) on($('btnSaveTemplate'), 'click', () =>
       download(new Blob([prepTemplateSvg(T)], { type: 'image/svg+xml' }), templateFileName(T.name)));
@@ -3759,7 +3811,8 @@ function renderSourcesView() {
     wrap.appendChild(c);
     wrap.appendChild(mk('div', 'sv-meta',
       `page <b>${fmtMm(T.pageW)} × ${fmtMm(T.pageH)} mm</b><br>frames <b>${T.frames.length}</b>` +
-      (T.inferred ? ` · read off the prep layout (${T.inferred.filled} plotted)` : '') + '<br>' +
+      (T.inferred ? ` · read off the prep layout (${T.inferred.filled} plotted)` : '') +
+      (T.inferred?.onOutline || T.snapped ? ' · on the paper outlines' : '') + '<br>' +
       `raster ${T.raster ? '<b>ok</b> — refinement available' : '<span style="color:var(--warn)">failed — refinement off</span>'}`));
     block.appendChild(wrap);
     view.appendChild(block);
@@ -4375,6 +4428,7 @@ async function loadTemplateFiles(files) {
     S.photos.forEach(ph => { ph.frameLayerQuad = null; }); // bounds belong to the old template
     status(`template ✓ — ${S.template.frames.length} frames on ${fmtMm(S.template.pageW)}×${fmtMm(S.template.pageH)} mm` +
       (S.template.inferred ? ' · read off the prep layout' : '') +
+      (S.template.snapped ? ' · boxes moved onto the paper outlines' : '') +
       (S.template.warn.length ? ' · ⚠ ' + S.template.warn.join(' · ') : ''), S.template.warn.length ? 'warn' : '');
   } catch (err) {
     S.template = null;
