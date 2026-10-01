@@ -635,7 +635,7 @@ const S = {
   template: null,          // {name, pageW, pageH (mm), frames:[{n, quad:[{x,y}mm×4]}], raster, rasterPpmm, warn, inferred, source}
   templateError: null,     // why the last template drop failed, shown until the next one (the status line moves on)
   synthT: null,            // synthesized template for per-frame mode without an SVG
-  photos: [],              // {id, name, bmp, w, h, thumbURL, gray, autoQuad, quadScore, manualQuad, rotAuto, rotUser, _detKey}
+  photos: [],              // {id, name, file, w, h, work, workScale, thumbURL, gray, autoQuad, quadScore, manualQuad, rotAuto, rotUser, _detKey}
   detect: { ...DEFAULTS.detect },
   anim: { ...DEFAULTS.anim },
   crop: freshCrop(),
@@ -644,10 +644,11 @@ const S = {
   out: { ...DEFAULTS.out },
   ui: { step: 'sources', detectView: 'source', photoIdx: 0, playing: true, pos: 0, cropSides: false, cropEndSides: false },
 };
-const G = { perPhoto: new Map(), outPpmm: 0, pending: new Set() }; // geometry: photoId → {H, quadsMm, anchors, rect, rectPpmm}; pending = photo ids awaiting full-quality extraction
+const G = { perPhoto: new Map(), outPpmm: 0, outCapped: false, pending: new Set() }; // geometry: photoId → {H, quadsMm, anchors, rect, rectPpmm}; pending = photo ids awaiting full-quality extraction
 const F = { base: new Map() };                    // frame gIdx → {canvas (padded), pad, w, h}
 const ST = { match: new Map(), edges: null, marks: null, offsets: null, measuring: false, token: 0, solvedMode: '' };
 let pipeGen = 0;
+let frameSeq = 0; // bumps per extracted frame, so scratch-canvas keys never match a replaced one
 let photoIdSeq = 1;
 
 const STAB_MODES = ['off', 'marks', 'neighbors'];
@@ -1271,30 +1272,47 @@ async function parseTemplate(svgText, name) {
    template anchoring — runs on a downsampled *work* bitmap. WORK_MAX is well
    above what those stages can resolve (the stage tops out at 1600 px, page
    detection at 2200, anchor matching at 4 px/mm of page), so the results are
-   unchanged while the per-photo cost stops scaling with scan resolution. */
+   unchanged while the per-photo cost stops scaling with scan resolution.
+
+   The full-resolution decode is *not* kept: a 48 MP scan is ~190 MB of RGBA,
+   and holding one per sheet is what ran the tab out of memory past ~8 sheets.
+   Each photo keeps its source File and re-decodes it only for the moment the
+   full resolution is needed (frame extraction, the corner magnifier). */
 const WORK_MAX = 3200;
-async function ensureWork(photo) {
+/** Decode the full-resolution scan. The caller owns the bitmap and must
+    close() it when done, unless it is the photo's own work bitmap. */
+async function decodeFull(photo) {
+  if (photo.workScale === 1 && photo.work) return photo.work; // small photo: work is full res
+  return createImageBitmap(photo.file, { imageOrientation: 'from-image' });
+}
+function releaseFull(photo, bmp) {
+  if (bmp && bmp !== photo.work) bmp.close?.();
+}
+async function ensureWork(photo, full) {
   if (photo.work) return photo.work;
   const cap = Math.min(WORK_MAX, glm.ok ? glm.maxTex : WORK_MAX);
   const big = Math.max(photo.w, photo.h);
-  if (big <= cap) { photo.work = photo.bmp; photo.workScale = 1; return photo.work; }
+  const own = !full;
+  if (!full) full = await createImageBitmap(photo.file, { imageOrientation: 'from-image' });
+  if (big <= cap) { photo.work = full; photo.workScale = 1; return photo.work; }
   const s = cap / big;
   try {
-    photo.work = await createImageBitmap(photo.bmp, {
+    photo.work = await createImageBitmap(full, {
       resizeWidth: Math.max(1, Math.round(photo.w * s)),
       resizeHeight: Math.max(1, Math.round(photo.h * s)),
       resizeQuality: 'high',
     });
+    if (own) full.close?.();
   } catch {
-    photo.work = photo.bmp; // resize unsupported — full res still works, just slower
+    photo.work = full; // resize unsupported — full res still works, just slower and heavier
   }
   photo.workScale = photo.work.width / photo.w;
   return photo.work;
 }
 function freePhotoCaches(photo) {
-  if (photo.work && photo.work !== photo.bmp) photo.work.close?.();
-  if (photo._texBmp && photo._texBmp !== photo.bmp) photo._texBmp.close?.();
-  photo.work = null; photo._texBmp = null;
+  photo.work?.close?.();
+  photo.work = null;
+  if (magFull.id === photo.id) dropMagFull();
   stageBases.delete(photo.id);
 }
 async function addPhotos(files) {
@@ -1304,15 +1322,16 @@ async function addPhotos(files) {
   status(`loading ${list.length} photo${list.length > 1 ? 's' : ''}…`);
   for (const f of list) {
     try {
-      const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
+      const full = await createImageBitmap(f, { imageOrientation: 'from-image' });
       const photo = {
-        id: photoIdSeq++, name: f.name, bmp, w: bmp.width, h: bmp.height,
+        id: photoIdSeq++, name: f.name, file: f, w: full.width, h: full.height,
         work: null, workScale: 1, thumbURL: '',
         gray: null, autoQuad: null, quadScore: 0, manualQuad: null, frameLayerQuad: null,
         rotAuto: 0, rotUser: 0, _detKey: '',
       };
-      await ensureWork(photo);
-      const tw = 150, th = Math.max(1, Math.round(tw * bmp.height / bmp.width));
+      await ensureWork(photo, full);
+      if (photo.work !== full) full.close?.();
+      const tw = 150, th = Math.max(1, Math.round(tw * photo.h / photo.w));
       const tc = canvas2d(tw, th);
       tc.getContext('2d').drawImage(photo.work, 0, 0, tw, th);
       photo.thumbURL = tc.toDataURL('image/jpeg', 0.7);
@@ -1329,7 +1348,6 @@ function removePhoto(id) {
   const i = S.photos.findIndex(p => p.id === id);
   if (i < 0) return;
   freePhotoCaches(S.photos[i]);
-  S.photos[i].bmp?.close?.();
   G.pending.delete(id);
   S.photos.splice(i, 1);
   S.ui.photoIdx = clamp(S.ui.photoIdx, 0, Math.max(0, S.photos.length - 1));
@@ -1363,7 +1381,7 @@ function grayFrom(source, maxDim) {
 /** Grayscale of a photo at `maxDim`, taken from its work bitmap. `scale` maps
     gray px → full-resolution photo px, whatever the work bitmap's size. */
 function grayOfPhoto(photo, maxDim) {
-  const src = photo.work || photo.bmp;
+  const src = photo.work;
   const g = grayFrom(src, maxDim);
   g.scale *= photo.w / src.width;
   return g;
@@ -2171,23 +2189,21 @@ function evalOrientation(T, texInfo, texScale, texScaleH, quad0, k) {
 
 /** Full-resolution GL texture of a photo — only the exported frames are warped
     from it, so the big upload happens once per extraction pass and is freed
-    straight after. */
-async function fullResTexture(photo) {
+    straight after. The decoded bitmap is released as soon as it is on the GPU. */
+async function fullResTexture(photo, full) {
   if (!glm.ok) return null;
-  let src = photo.bmp, texScale = 1;
+  let src = full, texScale = 1, scaled = null;
   if (Math.max(photo.w, photo.h) > glm.maxTex) {
     texScale = glm.maxTex / Math.max(photo.w, photo.h);
-    if (!photo._texBmp || photo._texScale !== texScale) {
-      photo._texBmp = await createImageBitmap(photo.bmp, {
-        resizeWidth: Math.round(photo.w * texScale),
-        resizeHeight: Math.round(photo.h * texScale),
-        resizeQuality: 'high',
-      });
-      photo._texScale = texScale;
-    }
-    src = photo._texBmp;
+    scaled = await createImageBitmap(full, {
+      resizeWidth: Math.round(photo.w * texScale),
+      resizeHeight: Math.round(photo.h * texScale),
+      resizeQuality: 'high',
+    });
+    src = scaled;
   }
   try { return { info: glTexture(src), texScale }; } catch { return null; }
+  finally { scaled?.close?.(); }
 }
 
 /** Geometry pass: page orientation, sheet-wide plot offset, per-frame corner
@@ -2207,7 +2223,7 @@ async function buildPhotoGeometry(photo, sheetIdx, gen) {
   let texInfo = null;
   const texScale = photo.work ? photo.work.width / photo.w : 1;
   if (glm.ok) {
-    try { texInfo = glTexture(photo.work || photo.bmp); } catch { texInfo = null; }
+    try { texInfo = glTexture(photo.work); } catch { texInfo = null; }
   }
   const texScaleH = [texScale, 0, 0, 0, texScale, 0, 0, 0, 1];
 
@@ -2266,7 +2282,7 @@ async function buildPhotoGeometry(photo, sheetIdx, gen) {
         glWarp(texInfo, multH(texScaleH, multH(H, A)), prevW, prevH);
         geo.rect = glCanvasCopy(prevW, prevH);
       } else {
-        geo.rect = cpuWarpToCanvas(photo.work || photo.bmp, multH(texScaleH, multH(H, A)), prevW, prevH);
+        geo.rect = cpuWarpToCanvas(photo.work, multH(texScaleH, multH(H, A)), prevW, prevH);
       }
       geo.rectPpmm = ppmm;
     }
@@ -2351,8 +2367,11 @@ async function extractPhotoFrames(photo, sheetIdx, gen) {
   const geo = G.perPhoto.get(photo.id);
   if (!geo) { for (let li = 0; li < fpsN; li++) F.base.set(sheetIdx * fpsN + li, null); return; }
   const H = geo.H;
-  const tex = await fullResTexture(photo);
-  if (gen !== pipeGen) { if (tex) glm.gl.deleteTexture(tex.info.tex); return; }
+  let full = await decodeFull(photo);
+  const tex = await fullResTexture(photo, full);
+  // the GPU copy is all the warp needs — drop the CPU decode right away
+  if (tex) { releaseFull(photo, full); full = null; }
+  if (gen !== pipeGen) { if (tex) glm.gl.deleteTexture(tex.info.tex); releaseFull(photo, full); return; }
   const texScaleH = tex ? [tex.texScale, 0, 0, 0, tex.texScale, 0, 0, 0, 1] : null;
   try {
     for (let li = 0; li < fpsN; li++) {
@@ -2379,9 +2398,9 @@ async function extractPhotoFrames(photo, sheetIdx, gen) {
         glWarp(tex.info, multH(texScaleH, multH(H, A)), W, Hh);
         canvas = glCanvasCopy(W, Hh);
       } else {
-        canvas = cpuWarpToCanvas(photo.bmp, multH(H, A), W, Hh);
+        canvas = cpuWarpToCanvas(full, multH(H, A), W, Hh);
       }
-      F.base.set(sheetIdx * fpsN + li, { canvas, pad, w: wPx, h: hPx, final: null, finalKey: '' });
+      F.base.set(sheetIdx * fpsN + li, { canvas, pad, w: wPx, h: hPx, seq: ++frameSeq });
       if ((li & 3) === 3) {
         status(`extracting sheet ${sheetIdx + 1}/${S.photos.length} — frame ${li + 1}/${fpsN}`);
         progress((sheetIdx * fpsN + li + 1) / Math.max(1, globalFrameCount()));
@@ -2392,6 +2411,7 @@ async function extractPhotoFrames(photo, sheetIdx, gen) {
     }
   } finally {
     if (tex) glm.gl.deleteTexture(tex.info.tex);
+    releaseFull(photo, full);
   }
 }
 
@@ -2418,7 +2438,7 @@ function ensureFrames() {
         G.pending.delete(id);
       }
       ST.match.clear(); ST.edges = null; ST.marks = null; ST.offsets = null;
-      status(`✓ ${framesBuilt()} frames extracted at ${G.outPpmm.toFixed(1)} px/mm`);
+      status(`✓ ${framesBuilt()} frames extracted at ${G.outPpmm.toFixed(1)} px/mm${G.outCapped ? ' (lowered to fit memory)' : ''}`);
       syncBadge();
       updateStepGates();
       updateExportInfo();
@@ -2443,6 +2463,21 @@ function ensureFrames() {
  * whole set, and letting one nudged corner resize every already-extracted
  * frame would be both wrong and expensive.
  */
+/** Frame storage budget, in pixels across all extracted frames (×4 bytes). */
+const FRAME_BUDGET_PX = 240e6;
+/** Padded pixel count of one sheet's frames at `ppmm` — mirrors the sizing in
+    extractPhotoFrames. */
+function framePixelsPerSheet(ppmm) {
+  let px = 0;
+  for (const f of frameDefs()) {
+    const q = f.quad;
+    const wPx = Math.max(8, Math.round((Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) + Math.hypot(q[2].x - q[3].x, q[2].y - q[3].y)) / 2 * ppmm));
+    const hPx = Math.max(8, Math.round((Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y) + Math.hypot(q[2].x - q[1].x, q[2].y - q[1].y)) / 2 * ppmm));
+    const pad = Math.ceil(0.12 * Math.max(wPx, hPx));
+    px += (wPx + 2 * pad) * (hPx + 2 * pad);
+  }
+  return px;
+}
 async function rebuildPipeline(opts) {
   const onlyId = opts && opts.only != null ? opts.only : null;
   const onlyIdx = onlyId != null ? S.photos.findIndex(p => p.id === onlyId) : -1;
@@ -2522,6 +2557,18 @@ async function rebuildPipeline(opts) {
     densities.push((dW + dH) / 2);
   }
   G.outPpmm = clamp(median(densities) || 4, 0.5, 40);
+  G.outCapped = false;
+  {
+    // every extracted frame lives in memory as a padded RGBA canvas for the
+    // whole session — past the budget, lower the output density rather than
+    // let a long set of high-res scans take the tab down
+    const sheets = S.photos.filter(p => effQuad(p)).length;
+    const px = framePixelsPerSheet(G.outPpmm) * sheets;
+    if (px > FRAME_BUDGET_PX) {
+      G.outPpmm = Math.max(0.5, G.outPpmm * Math.sqrt(FRAME_BUDGET_PX / px));
+      G.outCapped = true;
+    }
+  }
 
   for (let i = 0; i < S.photos.length; i++) {
     await buildPhotoGeometry(S.photos[i], i, gen);
@@ -2531,7 +2578,7 @@ async function rebuildPipeline(opts) {
   const missing = S.photos.filter(p => !effQuad(p)).length;
   status(missing
     ? `✓ ${framesReady()} frames — ${missing} photo${missing > 1 ? 's' : ''} without a detected page (fix in 02 DETECT)`
-    : `✓ ${framesReady()} frames aligned at ${G.outPpmm.toFixed(1)} px/mm`, missing ? 'warn' : '');
+    : `✓ ${framesReady()} frames aligned at ${G.outPpmm.toFixed(1)} px/mm${G.outCapped ? ' (lowered to fit memory)' : ''}`, missing ? 'warn' : '');
   syncBadge();
   updateSourcesUI();
   updateStepGates();
@@ -3140,19 +3187,22 @@ function outCropSize(fr) {
   const c0 = cropPx(ref, 0);
   return { w: c0.w, h: c0.h };
 }
+/** The cropped, stabilized frame `g`. One shared scratch canvas, like the
+    alignment view: every caller consumes it straight away, and a per-frame
+    cache would hold a second full-resolution copy of the whole animation. */
+let _finalScratch = null, _finalKey = '';
 function finalFrame(g) {
   const fr = F.base.get(g);
   if (!fr || !fr.canvas) return null;
   const o = stabOffsetOf(g);
   const cp = cropPx(fr, g);
   const out = outCropSize(fr);
-  const key = `${o.x.toFixed(2)}:${o.y.toFixed(2)}:${o.a.toFixed(5)}:${o.b.toFixed(5)}:${cp.l.toFixed(1)}:${cp.t.toFixed(1)}:${cp.w}x${cp.h}:${out.w}x${out.h}`;
-  if (fr.final && fr.finalKey === key) return fr.final;
-  const c = fr.final && fr.final.width === out.w && fr.final.height === out.h ? fr.final : canvas2d(out.w, out.h);
-  drawCorrected(c.getContext('2d'), fr, o, fr.pad + cp.l, fr.pad + cp.t, cp.w, cp.h, out.w, out.h);
-  fr.final = c;
-  fr.finalKey = key;
-  return c;
+  const key = `${fr.seq}:${o.x.toFixed(2)}:${o.y.toFixed(2)}:${o.a.toFixed(5)}:${o.b.toFixed(5)}:${cp.l.toFixed(1)}:${cp.t.toFixed(1)}:${cp.w}x${cp.h}:${out.w}x${out.h}`;
+  if (_finalScratch && _finalKey === key) return _finalScratch;
+  if (!_finalScratch || _finalScratch.width !== out.w || _finalScratch.height !== out.h) _finalScratch = canvas2d(out.w, out.h);
+  drawCorrected(_finalScratch.getContext('2d'), fr, o, fr.pad + cp.l, fr.pad + cp.t, cp.w, cp.h, out.w, out.h);
+  _finalKey = key;
+  return _finalScratch;
 }
 /** How far the 03 ANIMATE view pulls back from the frame border, in frame px.
     Most of the extraction margin, so the printed marks and the frame edge stay
@@ -3170,7 +3220,7 @@ function alignFrame(g) {
   const w = fr.w + 2 * m, h = fr.h + 2 * m;
   // one scratch canvas for the whole preview — playback moves on every frame,
   // so a per-frame cache would only pile up copies of the extraction
-  const key = `${g}:${o.x.toFixed(2)}:${o.y.toFixed(2)}:${o.a.toFixed(5)}:${o.b.toFixed(5)}:${w}x${h}`;
+  const key = `${fr.seq}:${o.x.toFixed(2)}:${o.y.toFixed(2)}:${o.a.toFixed(5)}:${o.b.toFixed(5)}:${w}x${h}`;
   if (_alignScratch && _alignKey === key) return _alignScratch;
   if (!_alignScratch || _alignScratch.width !== w || _alignScratch.height !== h) _alignScratch = canvas2d(w, h);
   drawCorrected(_alignScratch.getContext('2d'), fr, o, fr.pad - m, fr.pad - m, w, h);
@@ -3343,7 +3393,7 @@ function detectBaseCanvas(p, w, h) {
   const ctx = c.getContext('2d');
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(p.work || p.bmp, 0, 0, w, h);
+  ctx.drawImage(p.work, 0, 0, w, h);
   stageBases.delete(p.id);
   stageBases.set(p.id, c);
   while (stageBases.size > STAGE_BASE_KEEP) stageBases.delete(stageBases.keys().next().value);
@@ -3567,6 +3617,7 @@ on(stage, 'pointerdown', e => {
     if (!p.frameLayerQuad) p.frameLayerQuad = fl.map(pt => ({ x: pt.x, y: pt.y }));
     drag = { p, idx: best.idx, type: 'frame', Hinv, liveH };
   }
+  ensureMagFull(p);
   stage.setPointerCapture(e.pointerId);
   stage.classList.add('grabber');
   magEl.hidden = false;
@@ -3595,9 +3646,28 @@ function updateDrag(e) {
   drag.clientY = e.clientY;
   requestRedraw();
 }
+/** Full-resolution decode for the magnifier — one photo at a time, decoded
+    when a corner drag starts and dropped when the user leaves 02 DETECT. Until
+    it lands the magnifier reads the work bitmap. */
+const magFull = { id: null, bmp: null, loading: null };
+function dropMagFull() {
+  magFull.bmp?.close?.();
+  magFull.id = null; magFull.bmp = null; magFull.loading = null;
+}
+function ensureMagFull(p) {
+  if (magFull.id === p.id) return;
+  dropMagFull();
+  if (p.workScale === 1) return; // the work bitmap already is full res
+  magFull.id = p.id;
+  const job = magFull.loading = decodeFull(p).then(bmp => {
+    if (magFull.loading !== job) { releaseFull(p, bmp); return; }
+    magFull.bmp = bmp;
+    requestRedraw();
+  }, () => { if (magFull.loading === job) magFull.loading = null; });
+}
 /** Magnifier: zoom around the dragged corner, placed near the pointer. Reads
-    the full-resolution scan — magnifying the downsampled work bitmap would
-    defeat the purpose. */
+    the full-resolution scan once decoded — magnifying the downsampled work
+    bitmap would defeat the purpose. */
 function drawMagnifier() {
   const p = drag.p, cp = drag.corner;
   if (!cp) return;
@@ -3606,7 +3676,9 @@ function drawMagnifier() {
   mctx.imageSmoothingEnabled = false;
   mctx.fillStyle = '#000';
   mctx.fillRect(0, 0, 132, 132);
-  mctx.drawImage(p.bmp, cp.x - r, cp.y - r, 2 * r, 2 * r, 0, 0, 132, 132);
+  const src = magFull.id === p.id && magFull.bmp ? magFull.bmp : p.work;
+  const k = src.width / p.w;
+  mctx.drawImage(src, (cp.x - r) * k, (cp.y - r) * k, 2 * r * k, 2 * r * k, 0, 0, 132, 132);
   /* crosshair on the exact drop point (the view is centred on it): full-length
      hairlines with a gap around the centre so the pixel underneath stays
      visible, each drawn dark-then-accent so they read over paper and ink. */
@@ -3646,6 +3718,7 @@ on(stage, 'pointerup', e => {
 /* ── steps / toolbar / transport ──────────────────────────────────────── */
 function showStep(step) {
   S.ui.step = step;
+  if (step !== 'detect') dropMagFull();
   document.querySelectorAll('.step-tab').forEach(b => b.classList.toggle('active', b.dataset.step === step));
   for (const s of ['sources', 'detect', 'animate', 'export']) {
     $('panel-' + s).hidden = s !== step;
@@ -4284,14 +4357,24 @@ function wireControls() {
   on($('btnNextPhoto'), 'click', () => { S.ui.photoIdx = Math.min(S.photos.length - 1, S.ui.photoIdx + 1); renderPhotoList(); requestRedraw(); });
 
   // animate
-  bindNumber('inTrim', S.anim, 'trim', () => {
-    S.anim.trim = Math.max(0, Math.round(S.anim.trim || 0));
+  // applied on every keystroke, not just on blur, and an emptied field means
+  // "all frames" (its placeholder shows that count) instead of being ignored
+  const applyTrim = () => {
+    const v = parseFloat($('inTrim').value);
+    const t = isNaN(v) ? 0 : Math.max(0, Math.round(v));
+    if (t === S.anim.trim) return;
+    S.anim.trim = t;
+    saveSettings();
     invalidPlaylist = true;
     ST.edges = null; ST.marks = null; ST.offsets = null; ST.token++;
+    ST.measuring = false; // the superseded measurement bails on the token — let a fresh one start
     updateExportInfo();
+    updateStabHint();
     if (stabOn()) ensureStab();
     requestRedraw();
-  });
+  };
+  on($('inTrim'), 'input', applyTrim);
+  on($('inTrim'), 'change', () => { applyTrim(); $('inTrim').value = S.anim.trim || ''; });
   bindNumber('inFps', S.anim, 'fps', () => {
     S.anim.fps = clamp(Math.round(S.anim.fps) || 12, 1, 60);
     $('inFps').value = S.anim.fps;
