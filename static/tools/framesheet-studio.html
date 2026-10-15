@@ -359,7 +359,7 @@
   <div class="panel" id="panel-export" hidden>
     <div class="section">
       <div class="section-label">Frame crop
-        <input type="number" id="inCropAll" step="0.5" value="0" data-tip="One crop offset for all four sides, in mm. Positive trims into the frame, negative grows the frame into the surrounding sheet (limited by the extraction margin, ~12% of the frame). Expand with the arrow to override single sides.">
+        <input type="number" id="inCropAll" step="0.5" value="0" data-tip="One crop offset for all four sides, in mm. Positive trims into the frame (up to 45% of it per side), negative grows the frame into the surrounding sheet (limited by the extraction margin, ~12% of the frame). Expand with the arrow to override single sides.">
         <button class="btn tiny ghost chev" id="btnCropSides" aria-expanded="false" data-tip="Per-side overrides. Each side follows the shared value above until you type into it; clear the field and it follows again.">&#9656;</button>
         <button class="btn tiny ghost" id="btnResetCrop" data-tip="Reset the crop to 0 mm — shared value, per-side overrides and the animation.">RESET</button>
       </div>
@@ -606,7 +606,6 @@ function download(blob, name) {
 
 /* ── state ────────────────────────────────────────────────────────────── */
 const CROP_SIDES = ['l', 'r', 't', 'b'];
-const CROP_MAX = 25;                       // mm, per side
 /** A crop spec is one shared `all` offset plus per-side overrides; a side
     holding null follows `all`. The export crop is two of them — the first
     frame's and, when the crop is animated, the last frame's. */
@@ -695,7 +694,7 @@ function loadSettings() {
 function adoptCrop(src) {
   assignCrop(S.crop, freshCrop());
   if (!src || typeof src !== 'object') return;
-  const num = v => (typeof v === 'number' && isFinite(v) ? clamp(v, -CROP_MAX, CROP_MAX) : null);
+  const num = v => (typeof v === 'number' && isFinite(v) ? v : null);
   const spec = (into, from) => {
     if (!from || typeof from !== 'object') return;
     into.all = num(from.all) ?? 0;
@@ -1762,6 +1761,41 @@ function glCanvasCopy(outW, outH) {
   c.getContext('2d').drawImage(glm.c, 0, 0);
   return c;
 }
+/** Largest square the GL canvas reliably gets a full drawing buffer for. A
+    bigger canvas is silently handed a smaller buffer, so a one-pass warp would
+    render only its lower-left part and stretch that over the whole output. */
+let _glTile = 0;
+function glTileSize() {
+  if (_glTile) return _glTile;
+  const gl = glm.gl;
+  const dims = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
+  let t = Math.min(4096, glm.maxTex, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || 4096, dims ? dims[0] : 4096, dims ? dims[1] : 4096);
+  while (t > 256) {
+    glm.c.width = t; glm.c.height = t;
+    if (gl.drawingBufferWidth === t && gl.drawingBufferHeight === t) break;
+    t >>= 1;
+  }
+  return (_glTile = t);
+}
+/** glWarp + glCanvasCopy for any output size: outputs past the tile size are
+    warped tile by tile, each through M shifted to the tile's origin. */
+function glWarpToCanvas(texInfo, M, outW, outH) {
+  const t = glTileSize();
+  if (outW <= t && outH <= t) {
+    glWarp(texInfo, M, outW, outH);
+    return glCanvasCopy(outW, outH);
+  }
+  const c = canvas2d(outW, outH);
+  const ctx = c.getContext('2d');
+  for (let y0 = 0; y0 < outH; y0 += t) {
+    for (let x0 = 0; x0 < outW; x0 += t) {
+      const tw = Math.min(t, outW - x0), th = Math.min(t, outH - y0);
+      glWarp(texInfo, multH(M, [1, 0, x0, 0, 1, y0, 0, 0, 1]), tw, th);
+      ctx.drawImage(glm.c, 0, 0, tw, th, x0, y0, tw, th);
+    }
+  }
+  return c;
+}
 function glReadGray(outW, outH) {
   const gl = glm.gl;
   const px = new Uint8Array(outW * outH * 4);
@@ -2395,8 +2429,7 @@ async function extractPhotoFrames(photo, sheetIdx, gen) {
       if (!A) { F.base.set(sheetIdx * fpsN + li, null); continue; }
       let canvas;
       if (tex) {
-        glWarp(tex.info, multH(texScaleH, multH(H, A)), W, Hh);
-        canvas = glCanvasCopy(W, Hh);
+        canvas = glWarpToCanvas(tex.info, multH(texScaleH, multH(H, A)), W, Hh);
       } else {
         canvas = cpuWarpToCanvas(full, multH(H, A), W, Hh);
       }
@@ -4415,14 +4448,14 @@ function wireControls() {
   /** The shared value: blank or junk reads as 0. */
   const bindCropAll = (id, spec) => on($(id), 'change', () => {
     const v = parseFloat($(id).value);
-    spec().all = isNaN(v) ? 0 : clamp(v, -CROP_MAX, CROP_MAX);
+    spec().all = isNaN(v) ? 0 : v;
     cropChanged();
   });
   /** A per-side override: blank clears it, so the side follows the shared value. */
   const bindCropSide = (id, spec, k) => on($(id), 'change', () => {
     const raw = $(id).value.trim();
     const v = parseFloat(raw);
-    spec()[k] = raw === '' || isNaN(v) ? null : clamp(v, -CROP_MAX, CROP_MAX);
+    spec()[k] = raw === '' || isNaN(v) ? null : v;
     cropChanged();
   });
   for (const [prefix, spec] of [['', () => S.crop], ['End', () => S.crop.end]]) {
