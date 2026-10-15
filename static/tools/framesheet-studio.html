@@ -93,6 +93,7 @@
   .side-grid input[type=number]{color:var(--accent);border-color:var(--accent-dim);}
   .side-grid input.inherit{color:var(--text-dim);border-color:var(--border);}
   .side-grid input::placeholder{color:var(--text-dim);opacity:1;}
+  .pan-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-top:9px;}
   .hint{font-size:10px;color:var(--text-dim);line-height:1.5;margin-top:6px;}
   .hint.warn{color:var(--warn);}
   .kv{display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim);padding:1px 0;}
@@ -141,6 +142,8 @@
   #stageCanvas{max-width:100%;max-height:100%;background:#000;border:1px solid var(--border);
                box-shadow:0 0 40px rgba(0,0,0,.5);}
   #stageCanvas.grabber{cursor:crosshair;}
+  #stageCanvas.pannable{cursor:grab;touch-action:none;}
+  #stageCanvas.pannable.panning{cursor:grabbing;}
   #stageEmpty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
               color:var(--text-dim);font-size:11px;pointer-events:none;text-align:center;line-height:2;}
   #stageEmpty b{color:var(--text);font-weight:400;}
@@ -361,7 +364,7 @@
       <div class="section-label">Frame crop
         <input type="number" id="inCropAll" step="0.5" value="0" data-tip="One crop offset for all four sides, in mm. Positive trims into the frame (up to 45% of it per side), negative grows the frame into the surrounding sheet (limited by the extraction margin, ~12% of the frame). Expand with the arrow to override single sides.">
         <button class="btn tiny ghost chev" id="btnCropSides" aria-expanded="false" data-tip="Per-side overrides. Each side follows the shared value above until you type into it; clear the field and it follows again.">&#9656;</button>
-        <button class="btn tiny ghost" id="btnResetCrop" data-tip="Reset the crop to 0 mm — shared value, per-side overrides and the animation.">RESET</button>
+        <button class="btn tiny ghost" id="btnResetCrop" data-tip="Reset the crop and pan to 0 mm — shared value, per-side overrides, pan and the animation.">RESET</button>
       </div>
       <div class="side-grid" id="cropSides" hidden>
         <div class="ctl-row" style="margin:0;">
@@ -381,8 +384,18 @@
           <input type="number" id="inCropB" step="0.5" placeholder="0" style="width:56px;">
         </div>
       </div>
+      <div class="pan-grid">
+        <div class="ctl-row" style="margin:0;">
+          <label data-tip="Slides the crop window horizontally across the frame, in mm, keeping its size. Positive moves the view right. Stops where the window meets the edge of the extraction margin.">pan x</label>
+          <input type="number" id="inPanX" step="0.5" value="0" style="width:56px;">
+        </div>
+        <div class="ctl-row" style="margin:0;">
+          <label data-tip="Slides the crop window vertically across the frame, in mm, keeping its size. Positive moves the view down. Stops where the window meets the edge of the extraction margin.">pan y</label>
+          <input type="number" id="inPanY" step="0.5" value="0" style="width:56px;">
+        </div>
+      </div>
       <div class="ctl-row" style="margin-top:9px;">
-        <label data-tip="Ramps the crop across the animation: the value above becomes the first frame's crop, the end crop below the last frame's, and every frame in between is interpolated along the curve.">animate crop</label>
+        <label data-tip="Ramps the crop and pan across the animation: the values above become the first frame's, the end crop and pan below the last frame's, and every frame in between is interpolated along the curve.">animate crop</label>
         <input type="checkbox" id="inCropAnim">
       </div>
       <div id="cropAnimBlock" hidden>
@@ -408,8 +421,18 @@
             <input type="number" id="inCropEndB" step="0.5" placeholder="0" style="width:56px;">
           </div>
         </div>
+        <div class="pan-grid">
+          <div class="ctl-row" style="margin:0;">
+            <label data-tip="Where the last frame's crop window sits horizontally, in mm. Positive moves the view right.">pan x</label>
+            <input type="number" id="inPanEndX" step="0.5" value="0" style="width:56px;">
+          </div>
+          <div class="ctl-row" style="margin:0;">
+            <label data-tip="Where the last frame's crop window sits vertically, in mm. Positive moves the view down.">pan y</label>
+            <input type="number" id="inPanEndY" step="0.5" value="0" style="width:56px;">
+          </div>
+        </div>
         <div class="ctl-row" style="margin-top:9px;">
-          <label data-tip="How the crop travels from start to end over the frames — the same easing curves as CSS/After Effects.">curve</label>
+          <label data-tip="How the crop and pan travel from start to end over the frames — the same easing curves as CSS/After Effects.">curve</label>
           <select id="inCropEase">
             <option value="linear">linear</option>
             <option value="quad-in">quad in</option>
@@ -426,6 +449,7 @@
         </div>
         <div class="hint">Every frame is written at the <b>start</b> crop's size, so a tightening crop reads as a zoom in rather than a shrinking canvas.</div>
       </div>
+      <div class="hint">Drag the preview to pan. With an animated crop, dragging on the first or last frame sets that end's pan; anywhere in between moves both.</div>
       <div class="hint">Shapes the exported frame only — 03 ANIMATE keeps showing the full extraction, with the crop drawn as a dashed box so you can judge the alignment.</div>
     </div>
 
@@ -607,9 +631,10 @@ function download(blob, name) {
 /* ── state ────────────────────────────────────────────────────────────── */
 const CROP_SIDES = ['l', 'r', 't', 'b'];
 /** A crop spec is one shared `all` offset plus per-side overrides; a side
-    holding null follows `all`. The export crop is two of them — the first
-    frame's and, when the crop is animated, the last frame's. */
-const freshCropSpec = () => ({ all: 0, l: null, r: null, t: null, b: null });
+    holding null follows `all`; `x`/`y` pan the resulting window across the
+    frame. The export crop is two of them — the first frame's and, when the
+    crop is animated, the last frame's. */
+const freshCropSpec = () => ({ all: 0, l: null, r: null, t: null, b: null, x: 0, y: 0 });
 const freshCrop = () => ({ ...freshCropSpec(), animate: false, ease: 'linear', end: freshCropSpec() });
 /** Copy `src` into `target` in place — the control bindings hold on to the
     live crop objects, so a reset must never swap them out. */
@@ -618,6 +643,8 @@ function assignCrop(target, src) {
   target.animate = !!src.animate;
   target.ease = src.ease;
   target.end.all = src.end.all;
+  target.x = src.x; target.y = src.y;
+  target.end.x = src.end.x; target.end.y = src.end.y;
   for (const k of CROP_SIDES) { target[k] = src[k]; target.end[k] = src.end[k]; }
 }
 const DEFAULTS = {
@@ -698,6 +725,8 @@ function adoptCrop(src) {
   const spec = (into, from) => {
     if (!from || typeof from !== 'object') return;
     into.all = num(from.all) ?? 0;
+    into.x = num(from.x) ?? 0;
+    into.y = num(from.y) ?? 0;
     for (const k of CROP_SIDES) into[k] = num(from[k]);
   };
   spec(S.crop, src);
@@ -3180,6 +3209,7 @@ const cropSideMm = (spec, k) => (spec[k] == null ? (spec.all || 0) : spec[k]);
 const cropSpecMm = spec => ({
   l: cropSideMm(spec, 'l'), r: cropSideMm(spec, 'r'),
   t: cropSideMm(spec, 't'), b: cropSideMm(spec, 'b'),
+  x: spec.x || 0, y: spec.y || 0,
 });
 /** The crop of frame `g` in mm. Static unless the crop is animated, in which
     case it eases from the start spec on frame 0 to the end spec on the last
@@ -3193,11 +3223,12 @@ function cropMmAt(g) {
   const e = (CROP_EASES[S.crop.ease] || CROP_EASES.linear)(u);
   const b = cropSpecMm(S.crop.end);
   const out = {};
-  for (const k of CROP_SIDES) out[k] = a[k] + (b[k] - a[k]) * e;
+  for (const k of [...CROP_SIDES, 'x', 'y']) out[k] = a[k] + (b[k] - a[k]) * e;
   return out;
 }
 /** Effective crop window of frame `g` in frame px: its crop (mm, both
-    directions) clamped so expansion stays inside the extraction margin. */
+    directions) clamped so expansion stays inside the extraction margin, then
+    panned — the pan slides the window and stops at that margin's edge. */
 function cropPx(fr, g) {
   const p = G.outPpmm || 4;
   const maxOut = fr.pad * 0.85;
@@ -3206,10 +3237,13 @@ function cropPx(fr, g) {
   const r = clamp(mm.r * p, -maxOut, fr.w * 0.45);
   const t = clamp(mm.t * p, -maxOut, fr.h * 0.45);
   const b = clamp(mm.b * p, -maxOut, fr.h * 0.45);
+  const w = Math.max(8, Math.round(fr.w - l - r));
+  const h = Math.max(8, Math.round(fr.h - t - b));
   return {
-    l, t,
-    w: Math.max(8, Math.round(fr.w - l - r)),
-    h: Math.max(8, Math.round(fr.h - t - b)),
+    l: clamp(l + mm.x * p, -maxOut, Math.max(-maxOut, fr.w + maxOut - w)),
+    t: clamp(t + mm.y * p, -maxOut, Math.max(-maxOut, fr.h + maxOut - h)),
+    w, h,
+    l0: l, t0: t, // the window before panning
   };
 }
 /** The size every final frame is written at — the first frame's crop window.
@@ -3748,10 +3782,71 @@ on(stage, 'pointerup', e => {
   rebuildPipeline({ only: id }); // only the dragged sheet moved
 });
 
+/* ── 04 EXPORT: drag the preview to pan the crop ──────────────────────── */
+let panDrag = null;
+/** The crop specs a pan drag moves on frame `g`. Static crop: the one spec.
+    Animated: the start or end spec when parked on the first or last frame, so
+    each end can be framed on its own; anywhere in between both shift
+    together, which moves the whole path and keeps its motion. */
+function panTargets(g) {
+  if (!S.crop.animate) return [S.crop];
+  const n = trimmedCount();
+  if (g <= 0) return [S.crop];
+  if (g >= n - 1) return [S.crop.end];
+  return [S.crop, S.crop.end];
+}
+on(stage, 'pointerdown', e => {
+  if (S.ui.step !== 'export' || e.button !== 0) return;
+  const pl = playlist();
+  if (!pl.length) return;
+  const g = pl[clamp(S.ui.pos, 0, pl.length - 1)];
+  const fr = F.base.get(g);
+  const r = stage.getBoundingClientRect();
+  if (!fr || !fr.canvas || !r.width || !r.height) return;
+  const p = G.outPpmm || 4;
+  const cp = cropPx(fr, g);
+  const mm = cropMmAt(g);
+  // a stored pan can sit past the margin (cropPx stops it there): start from
+  // where the window actually is, so the drag never has a dead zone
+  const fixX = (cp.l - cp.l0) / p - mm.x, fixY = (cp.t - cp.t0) / p - mm.y;
+  panDrag = {
+    fr, cp, p, cx: e.clientX, cy: e.clientY,
+    kx: cp.w / r.width, ky: cp.h / r.height, // frame px per screen px
+    specs: panTargets(g).map(s => ({ s, x: s.x + fixX, y: s.y + fixY })),
+  };
+  stage.setPointerCapture(e.pointerId);
+  stage.classList.add('panning');
+});
+on(stage, 'pointermove', e => {
+  if (!panDrag) return;
+  const { fr, cp, p } = panDrag;
+  const maxOut = fr.pad * 0.85;
+  // dragging the picture right shows what lies left of it: the window moves against the pointer
+  const l = clamp(cp.l - (e.clientX - panDrag.cx) * panDrag.kx, -maxOut, Math.max(-maxOut, fr.w + maxOut - cp.w));
+  const t = clamp(cp.t - (e.clientY - panDrag.cy) * panDrag.ky, -maxOut, Math.max(-maxOut, fr.h + maxOut - cp.h));
+  const dx = (l - cp.l) / p, dy = (t - cp.t) / p;
+  for (const d of panDrag.specs) {
+    d.s.x = Math.round((d.x + dx) * 100) / 100;
+    d.s.y = Math.round((d.y + dy) * 100) / 100;
+  }
+  syncCropUI();
+  requestRedraw();
+});
+const endPanDrag = e => {
+  if (!panDrag) return;
+  panDrag = null;
+  stage.classList.remove('panning');
+  try { stage.releasePointerCapture(e.pointerId); } catch { /* released */ }
+  saveSettings();
+};
+on(stage, 'pointerup', endPanDrag);
+on(stage, 'pointercancel', endPanDrag);
+
 /* ── steps / toolbar / transport ──────────────────────────────────────── */
 function showStep(step) {
   S.ui.step = step;
   if (step !== 'detect') dropMagFull();
+  stage.classList.toggle('pannable', step === 'export');
   document.querySelectorAll('.step-tab').forEach(b => b.classList.toggle('active', b.dataset.step === step));
   for (const s of ['sources', 'detect', 'animate', 'export']) {
     $('panel-' + s).hidden = s !== step;
@@ -4239,6 +4334,8 @@ function syncCropUI() {
     ['End', S.crop.end, S.ui.cropEndSides, 'btnCropEndSides', 'cropEndSides'],
   ]) {
     $('inCrop' + prefix + 'All').value = spec.all;
+    $('inPan' + prefix + 'X').value = spec.x;
+    $('inPan' + prefix + 'Y').value = spec.y;
     for (const k of CROP_SIDES) {
       const el = $('inCrop' + prefix + k.toUpperCase());
       el.value = spec[k] == null ? '' : spec[k];
@@ -4458,8 +4555,16 @@ function wireControls() {
     spec()[k] = raw === '' || isNaN(v) ? null : v;
     cropChanged();
   });
+  /** A pan offset: blank or junk reads as 0. */
+  const bindPan = (id, spec, k) => on($(id), 'change', () => {
+    const v = parseFloat($(id).value);
+    spec()[k] = isNaN(v) ? 0 : v;
+    cropChanged();
+  });
   for (const [prefix, spec] of [['', () => S.crop], ['End', () => S.crop.end]]) {
     bindCropAll('inCrop' + prefix + 'All', spec);
+    bindPan('inPan' + prefix + 'X', spec, 'x');
+    bindPan('inPan' + prefix + 'Y', spec, 'y');
     for (const k of CROP_SIDES) bindCropSide('inCrop' + prefix + k.toUpperCase(), spec, k);
   }
   for (const [id, key] of [['btnCropSides', 'cropSides'], ['btnCropEndSides', 'cropEndSides']]) {
