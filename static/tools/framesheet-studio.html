@@ -618,11 +618,24 @@ function status(text, kind) {
   const el = $('statusText');
   el.textContent = text;
   el.className = kind || '';
+  noteBusy();
 }
 function progress(frac) {
   $('progressWrap').classList.toggle('on', frac != null);
   if (frac != null) $('progressBar').style.width = (clamp(frac, 0, 1) * 100).toFixed(1) + '%';
+  noteBusy();
 }
+/* A browser that runs out of memory (iOS Safari above all) reloads the page,
+   which reads as a random refresh. While work is under way the status line is
+   mirrored to storage, and a normal unload clears it, so a page that comes back
+   with it still set knows it was killed and what it was doing. */
+const BUSY_KEY = 'framesheet-studio:busy';
+function noteBusy() {
+  const text = $('statusText').textContent;
+  const busy = $('progressWrap').classList.contains('on') || text.endsWith('…');
+  try { if (busy) localStorage.setItem(BUSY_KEY, text); else localStorage.removeItem(BUSY_KEY); } catch { /* private mode etc. */ }
+}
+on(window, 'pagehide', () => { try { localStorage.removeItem(BUSY_KEY); } catch { /* ignore */ } });
 function download(blob, name) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1368,6 +1381,30 @@ async function makeWork(photo, full) {
   }
   photo.workScale = photo.work.width / photo.w;
 }
+/** On iOS a photo bigger than this is scaled down once, as it loads, and the
+    whole pipeline only ever sees that copy, as if a smaller export had been
+    loaded. A 4 GB iPad ran 24 photos of 1280 px but lost the tab on the same
+    24 at 2362 px, with every buffer the tool holds already bounded: each
+    full-size decode and upload costs Safari more than it gives back. For a
+    couple dozen frames the iOS frame budget caps the output below what 1600 px
+    photos carry anyway. */
+const IOS_PHOTO_MAX = 1600;
+/** A scaled-down JPEG copy of `full` and its decode, or null if the browser
+    can't encode one (the caller then keeps the original). */
+async function shrinkPhoto(full) {
+  const s = IOS_PHOTO_MAX / Math.max(full.width, full.height);
+  const c = canvas2d(full.width * s, full.height * s);
+  // a CPU canvas: a GPU one uploads every full-size photo as a texture, and
+  // the browser holds on to those well after the canvas is gone
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(full, 0, 0, c.width, c.height);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+  if (!blob) { freeCanvas(c); return null; }
+  const bmp = await createImageBitmap(c);
+  freeCanvas(c);
+  return { blob, bmp };
+}
 function freePhotoCaches(photo) {
   photo.work?.close?.();
   photo.work = null;
@@ -1379,12 +1416,17 @@ async function addPhotos(files) {
   const list = [...files].filter(f => /image\//.test(f.type) || /\.(png|jpe?g|webp)$/i.test(f.name));
   if (!list.length) return;
   list.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  status(`loading ${list.length} photo${list.length > 1 ? 's' : ''}…`);
-  for (const f of list) {
+  for (const [i, f] of list.entries()) {
+    status(`loading photo ${i + 1}/${list.length}…`);
     try {
-      const full = await createImageBitmap(f, { imageOrientation: 'from-image' });
+      let full = await createImageBitmap(f, { imageOrientation: 'from-image' });
+      let file = f;
+      if (IOS && Math.max(full.width, full.height) > IOS_PHOTO_MAX) {
+        const small = await shrinkPhoto(full);
+        if (small) { full.close?.(); full = small.bmp; file = small.blob; }
+      }
       const photo = {
-        id: photoIdSeq++, name: f.name, file: f, w: full.width, h: full.height,
+        id: photoIdSeq++, name: f.name, file, w: full.width, h: full.height,
         work: null, workScale: 1, thumbURL: '',
         gray: null, autoQuad: null, quadScore: 0, manualQuad: null, frameLayerQuad: null,
         rotAuto: 0, rotUser: 0, _detKey: '',
@@ -1397,9 +1439,11 @@ async function addPhotos(files) {
       photo.thumbURL = tc.toDataURL('image/jpeg', 0.7);
       freeCanvas(tc);
       // page detection reads these; take them while the decode is at hand, so
-      // detecting never has to decode an evicted photo again
+      // detecting never has to decode an evicted photo again. On iOS the edge
+      // gray waits for detection instead, which drops it straight after: the
+      // shrunk photos are quick to decode, and 24 of them were 116 MB at once
       grayOf(photo);
-      if (!S.detect.skip) photo._gray2200 = grayOfPhoto(photo, 2200);
+      if (!S.detect.skip && !IOS) photo._gray2200 = grayOfPhoto(photo, 2200);
       S.photos.push(photo);
     } catch {
       status(`could not decode ${f.name}`, 'warn');
@@ -2551,6 +2595,7 @@ function ensureFrames() {
         const id = G.pending.values().next().value;
         const idx = S.photos.findIndex(p => p.id === id);
         if (idx >= 0) {
+          status(`extracting sheet ${idx + 1}/${S.photos.length}…`);
           await extractPhotoFrames(S.photos[idx], idx, gen);
           if (gen !== pipeGen) return;
         }
@@ -2697,6 +2742,7 @@ async function rebuildPipeline(opts) {
   }
 
   for (let i = 0; i < S.photos.length; i++) {
+    status(`aligning sheet ${i + 1}/${S.photos.length}…`);
     await buildPhotoGeometry(S.photos[i], i, gen);
     if (gen !== pipeGen) return;
   }
@@ -4759,7 +4805,12 @@ updateSourcesUI();
 updateStepGates();
 showStep('sources');
 syncBadge();
-status(glm.ok ? 'ready — drop a template SVG and sheet photos' : 'ready (no WebGL — slower, FX limited)', glm.ok ? '' : 'warn');
+{
+  let killedDuring = null;
+  try { killedDuring = localStorage.getItem(BUSY_KEY); } catch { /* private mode etc. */ }
+  if (killedDuring) status(`the page reloaded during “${killedDuring}”, most likely out of memory — try fewer or smaller photos`, 'warn');
+  else status(glm.ok ? 'ready — drop a template SVG and sheet photos' : 'ready (no WebGL — slower, FX limited)', glm.ok ? '' : 'warn');
+}
 // minimal debug handle (drives automated tests; harmless in normal use)
 window.__fs = { S, G, F, ST, glm, playlist, finalFrame, cropMmAt, cropPx, syncCropUI, alignFrame, alignMargin, stabOffsetOf, rebuildPipeline, ensureFrames, ensureStab, addPhotos, exportDims, frameLayerBoundsMm };
 requestAnimationFrame(tick);
