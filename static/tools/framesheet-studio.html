@@ -1307,22 +1307,51 @@ async function parseTemplate(svgText, name) {
    Each photo keeps its source File and re-decodes it only for the moment the
    full resolution is needed (frame extraction, the corner magnifier). */
 const WORK_MAX = 3200;
+/** iPhone / iPad. iPadOS Safari reports itself as a Mac; the touch screen gives it away. */
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+/** How many photos keep their work bitmap decoded. A photo up to WORK_MAX is
+    its own work bitmap, so a set of scans holds its full decode per photo: 24
+    scans of 2362 px are ~510 MB of bitmaps, and iOS Safari kills the tab well
+    before that adds up with the frames. There only the most recently used few
+    stay decoded; the rest are closed and decoded again from the File when a
+    step needs them. Everywhere else every photo keeps its bitmap. */
+const WORK_KEEP = IOS ? 3 : Infinity;
+const workLru = []; // photos holding a work bitmap, least recently used first
+function touchWork(photo) {
+  if (WORK_KEEP === Infinity) return;
+  const i = workLru.indexOf(photo);
+  if (i >= 0) workLru.splice(i, 1);
+  if (photo.work) workLru.push(photo);
+  while (workLru.length > WORK_KEEP) {
+    const old = workLru.shift();
+    old.work?.close?.();
+    old.work = null;
+  }
+}
 /** Decode the full-resolution scan. The caller owns the bitmap and must
     close() it when done, unless it is the photo's own work bitmap. */
 async function decodeFull(photo) {
-  if (photo.workScale === 1 && photo.work) return photo.work; // small photo: work is full res
+  if (photo.workScale === 1 && photo.work) { touchWork(photo); return photo.work; } // small photo: work is full res
   return createImageBitmap(photo.file, { imageOrientation: 'from-image' });
 }
 function releaseFull(photo, bmp) {
   if (bmp && bmp !== photo.work) bmp.close?.();
 }
 async function ensureWork(photo, full) {
-  if (photo.work) return photo.work;
+  if (!photo.work) {
+    // one decode at a time per photo: the detect view and the pipeline can both ask
+    photo._workJob ||= makeWork(photo, full).finally(() => { photo._workJob = null; });
+    await photo._workJob;
+  }
+  touchWork(photo);
+  return photo.work;
+}
+async function makeWork(photo, full) {
   const cap = Math.min(WORK_MAX, glm.ok ? glm.maxTex : WORK_MAX);
   const big = Math.max(photo.w, photo.h);
   const own = !full;
   if (!full) full = await createImageBitmap(photo.file, { imageOrientation: 'from-image' });
-  if (big <= cap) { photo.work = full; photo.workScale = 1; return photo.work; }
+  if (big <= cap) { photo.work = full; photo.workScale = 1; return; }
   const s = cap / big;
   try {
     photo.work = await createImageBitmap(full, {
@@ -1335,11 +1364,11 @@ async function ensureWork(photo, full) {
     photo.work = full; // resize unsupported — full res still works, just slower and heavier
   }
   photo.workScale = photo.work.width / photo.w;
-  return photo.work;
 }
 function freePhotoCaches(photo) {
   photo.work?.close?.();
   photo.work = null;
+  touchWork(photo); // drops it from the LRU
   if (magFull.id === photo.id) dropMagFull();
   stageBases.delete(photo.id);
 }
@@ -1363,6 +1392,10 @@ async function addPhotos(files) {
       const tc = canvas2d(tw, th);
       tc.getContext('2d').drawImage(photo.work, 0, 0, tw, th);
       photo.thumbURL = tc.toDataURL('image/jpeg', 0.7);
+      // page detection reads these; take them while the decode is at hand, so
+      // detecting never has to decode an evicted photo again
+      grayOf(photo);
+      if (!S.detect.skip) photo._gray2200 = grayOfPhoto(photo, 2200);
       S.photos.push(photo);
     } catch {
       status(`could not decode ${f.name}`, 'warn');
@@ -1639,6 +1672,13 @@ function lineIntersect(l1, l2) {
   return { x: l1.px + l1.dx * t, y: l1.py + l1.dy * t };
 }
 
+/** The edge refinement's grayscale is taken at load, unless detection was
+    skipped then; the work bitmap it comes from may since have been evicted. */
+async function ensureDetectGray(photo) {
+  if (S.detect.skip || photo._gray2200) return;
+  await ensureWork(photo);
+  photo._gray2200 = grayOfPhoto(photo, 2200);
+}
 /** Page quad covering the whole photo (TL, TR, BR, BL) — used when detection is skipped. */
 function wholePhotoQuad(photo) {
   return [{ x: 0, y: 0 }, { x: photo.w, y: 0 }, { x: photo.w, y: photo.h }, { x: 0, y: photo.h }];
@@ -1740,8 +1780,12 @@ function glProgram(gl, fsSrc) {
 function initGL() {
   try {
     const c = document.createElement('canvas');
-    const gl = c.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true })
-            || c.getContext('experimental-webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true });
+    // every pass is one quad over the whole viewport: no edges to antialias and
+    // nothing to depth-test. Left at their defaults, the multisample colour and
+    // depth buffers come on top of the colour buffer at whatever size the canvas
+    // is set to, several times its memory (iOS Safari allocates them in full)
+    const attrs = { premultipliedAlpha: false, preserveDrawingBuffer: true, antialias: false, depth: false, stencil: false };
+    const gl = c.getContext('webgl', attrs) || c.getContext('experimental-webgl', attrs);
     if (!gl) return;
     glm.c = c; glm.gl = gl;
     glm.warp = glProgram(gl, FS_WARP);
@@ -1792,13 +1836,15 @@ function glCanvasCopy(outW, outH) {
 }
 /** Largest square the GL canvas reliably gets a full drawing buffer for. A
     bigger canvas is silently handed a smaller buffer, so a one-pass warp would
-    render only its lower-left part and stretch that over the whole output. */
+    render only its lower-left part and stretch that over the whole output.
+    Capped at 2048: tiles stitch seamlessly, so a bigger one buys nothing, and
+    probing 4096² allocates a 64 MB+ drawing buffer just to measure it. */
 let _glTile = 0;
 function glTileSize() {
   if (_glTile) return _glTile;
   const gl = glm.gl;
   const dims = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
-  let t = Math.min(4096, glm.maxTex, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || 4096, dims ? dims[0] : 4096, dims ? dims[1] : 4096);
+  let t = Math.min(2048, glm.maxTex, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || 2048, dims ? dims[0] : 2048, dims ? dims[1] : 2048);
   while (t > 256) {
     glm.c.width = t; glm.c.height = t;
     if (gl.drawingBufferWidth === t && gl.drawingBufferHeight === t) break;
@@ -2525,8 +2571,11 @@ function ensureFrames() {
  * whole set, and letting one nudged corner resize every already-extracted
  * frame would be both wrong and expensive.
  */
-/** Frame storage budget, in pixels across all extracted frames (×4 bytes). */
-const FRAME_BUDGET_PX = 240e6;
+/** Frame storage budget, in pixels across all extracted frames (×4 bytes).
+    iOS Safari caps the canvases of a tab at a fraction of its memory limit (a
+    few hundred MB on most iPads) and kills the tab outright once the page as a
+    whole passes that limit, so frames get a fifth of the desktop budget there. */
+const FRAME_BUDGET_PX = IOS ? 48e6 : 240e6;
 /** Padded pixel count of one sheet's frames at `ppmm` — mirrors the sizing in
     extractPhotoFrames. */
 function framePixelsPerSheet(ppmm) {
@@ -2563,6 +2612,8 @@ async function rebuildPipeline(opts) {
   if (partial) {
     const p = S.photos[onlyIdx];
     status(`re-aligning sheet ${onlyIdx + 1}…`);
+    await ensureDetectGray(p);
+    if (gen !== pipeGen) return;
     detectPage(p);
     await buildPhotoGeometry(p, onlyIdx, gen);
     if (gen !== pipeGen) return;
@@ -2578,6 +2629,8 @@ async function rebuildPipeline(opts) {
   status('detecting pages…');
   progress(0);
   for (let i = 0; i < S.photos.length; i++) {
+    await ensureDetectGray(S.photos[i]);
+    if (gen !== pipeGen) return;
     detectPage(S.photos[i]);
     progress((i + 1) / S.photos.length);
     await nextFramePaint();
@@ -3456,6 +3509,8 @@ const stageBases = new Map();
 function detectBaseCanvas(p, w, h) {
   const hit = stageBases.get(p.id);
   if (hit && hit.width === w && hit.height === h) return hit;
+  if (!p.work) { ensureWork(p).then(requestRedraw, () => {}); return null; } // evicted: back in a moment
+  touchWork(p);
   const c = canvas2d(w, h);
   const ctx = c.getContext('2d');
   ctx.imageSmoothingEnabled = true;
@@ -3471,7 +3526,9 @@ function drawDetectSource(p) {
   const w = Math.round(p.w * sc), h = Math.round(p.h * sc);
   detectViewScale = sc;
   setStageSize(w, h);
-  stageCtx.drawImage(detectBaseCanvas(p, w, h), 0, 0);
+  const base = detectBaseCanvas(p, w, h);
+  if (base) stageCtx.drawImage(base, 0, 0);
+  else { stageCtx.fillStyle = '#0a0a0a'; stageCtx.fillRect(0, 0, w, h); }
   const quad = p._previewQuad || effQuad(p);
   const ctx = stageCtx;
   if (quad) {
@@ -3744,6 +3801,7 @@ function drawMagnifier() {
   mctx.fillStyle = '#000';
   mctx.fillRect(0, 0, 132, 132);
   const src = magFull.id === p.id && magFull.bmp ? magFull.bmp : p.work;
+  if (!src) { ensureWork(p).then(requestRedraw, () => {}); return; }
   const k = src.width / p.w;
   mctx.drawImage(src, (cp.x - r) * k, (cp.y - r) * k, 2 * r * k, 2 * r * k, 0, 0, 132, 132);
   /* crosshair on the exact drop point (the view is centred on it): full-length
