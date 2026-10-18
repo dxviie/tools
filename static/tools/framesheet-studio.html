@@ -609,6 +609,9 @@ const mk = (tag, cls, html) => { const e = document.createElement(tag); if (cls)
 const fmtMm = v => (Math.round(v * 10) / 10).toString();
 const median = arr => { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m] : 0.5 * (s[m - 1] + s[m]); };
 const canvas2d = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
+/** Release a scratch canvas's pixels now instead of whenever it is collected:
+    iOS Safari counts a dropped canvas against the tab's memory until then. */
+const freeCanvas = c => { c.width = 0; c.height = 0; };
 const nextFramePaint = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 
 function status(text, kind) {
@@ -1392,6 +1395,7 @@ async function addPhotos(files) {
       const tc = canvas2d(tw, th);
       tc.getContext('2d').drawImage(photo.work, 0, 0, tw, th);
       photo.thumbURL = tc.toDataURL('image/jpeg', 0.7);
+      freeCanvas(tc);
       // page detection reads these; take them while the decode is at hand, so
       // detecting never has to decode an evicted photo again
       grayOf(photo);
@@ -1433,6 +1437,7 @@ function grayFrom(source, maxDim) {
   const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(source, 0, 0, w, h);
   const d = ctx.getImageData(0, 0, w, h).data;
+  freeCanvas(c);
   const g = new Uint8Array(w * h);
   for (let i = 0, j = 0; j < g.length; i += 4, j++) {
     g[j] = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0;
@@ -1673,18 +1678,20 @@ function lineIntersect(l1, l2) {
 }
 
 /** The edge refinement's grayscale is taken at load, unless detection was
-    skipped then; the work bitmap it comes from may since have been evicted. */
+    skipped then, and on iOS dropped once used. A new threshold or paper setting
+    needs it back, from a work bitmap that may since have been evicted. */
 async function ensureDetectGray(photo) {
-  if (S.detect.skip || photo._gray2200) return;
+  if (S.detect.skip || photo._gray2200 || photo._detKey === detectKey()) return; // nothing new to refine
   await ensureWork(photo);
   photo._gray2200 = grayOfPhoto(photo, 2200);
 }
+const detectKey = () => (S.detect.skip ? 'skip' : `${S.detect.thresholdOff}:${S.detect.polarity}`);
 /** Page quad covering the whole photo (TL, TR, BR, BL) — used when detection is skipped. */
 function wholePhotoQuad(photo) {
   return [{ x: 0, y: 0 }, { x: photo.w, y: 0 }, { x: photo.w, y: photo.h }, { x: 0, y: photo.h }];
 }
 function detectPage(photo) {
-  const key = S.detect.skip ? 'skip' : `${S.detect.thresholdOff}:${S.detect.polarity}`;
+  const key = detectKey();
   if (photo._detKey === key && photo.autoQuad) return;
   if (S.detect.skip) { // no detection: the entire input is the page
     photo._detKey = key;
@@ -1711,6 +1718,9 @@ function detectPage(photo) {
   const full = best.quad.map(p => ({ x: p.x * g.scale, y: p.y * g.scale }));
   photo.autoQuad = refineQuadEdges(photo, full);
   photo.quadScore = best.score;
+  // only a new threshold or paper setting reads it again, and on iOS a photo is
+  // cheaper to decode once more then than to keep this around for every photo
+  if (IOS) photo._gray2200 = null;
 }
 
 /* ── WebGL: perspective warp + FX ─────────────────────────────────────── */
@@ -2099,6 +2109,7 @@ function grayAtSize(source, w, h) {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(source, 0, 0, w, h);
   const d = ctx.getImageData(0, 0, w, h).data;
+  freeCanvas(c);
   const g = new Float32Array(w * h);
   for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
   return g;
@@ -2574,8 +2585,8 @@ function ensureFrames() {
 /** Frame storage budget, in pixels across all extracted frames (×4 bytes).
     iOS Safari caps the canvases of a tab at a fraction of its memory limit (a
     few hundred MB on most iPads) and kills the tab outright once the page as a
-    whole passes that limit, so frames get a fifth of the desktop budget there. */
-const FRAME_BUDGET_PX = IOS ? 48e6 : 240e6;
+    whole passes that limit, so frames get a fraction of the desktop budget there. */
+const FRAME_BUDGET_PX = IOS ? 36e6 : 240e6;
 /** Padded pixel count of one sheet's frames at `ppmm` — mirrors the sizing in
     extractPhotoFrames. */
 function framePixelsPerSheet(ppmm) {
@@ -4217,6 +4228,7 @@ async function exportZip() {
       const snap = canvas2d(w, h);
       snap.getContext('2d').drawImage(out, 0, 0);
       const blob = await new Promise(r => snap.toBlob(r, 'image/png'));
+      freeCanvas(snap);
       entries.push({ name: `frame-${String(g).padStart(3, '0')}.png`, data: new Uint8Array(await blob.arrayBuffer()) });
       await nextFramePaint();
     }
