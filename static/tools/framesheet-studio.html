@@ -609,17 +609,33 @@ const mk = (tag, cls, html) => { const e = document.createElement(tag); if (cls)
 const fmtMm = v => (Math.round(v * 10) / 10).toString();
 const median = arr => { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m] : 0.5 * (s[m - 1] + s[m]); };
 const canvas2d = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
+/** Release a scratch canvas's pixels now instead of whenever it is collected:
+    iOS Safari counts a dropped canvas against the tab's memory until then. */
+const freeCanvas = c => { c.width = 0; c.height = 0; };
 const nextFramePaint = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 
 function status(text, kind) {
   const el = $('statusText');
   el.textContent = text;
   el.className = kind || '';
+  noteBusy();
 }
 function progress(frac) {
   $('progressWrap').classList.toggle('on', frac != null);
   if (frac != null) $('progressBar').style.width = (clamp(frac, 0, 1) * 100).toFixed(1) + '%';
+  noteBusy();
 }
+/* A browser that runs out of memory (iOS Safari above all) reloads the page,
+   which reads as a random refresh. While work is under way the status line is
+   mirrored to storage, and a normal unload clears it, so a page that comes back
+   with it still set knows it was killed and what it was doing. */
+const BUSY_KEY = 'framesheet-studio:busy';
+function noteBusy() {
+  const text = $('statusText').textContent;
+  const busy = $('progressWrap').classList.contains('on') || text.endsWith('…');
+  try { if (busy) localStorage.setItem(BUSY_KEY, text); else localStorage.removeItem(BUSY_KEY); } catch { /* private mode etc. */ }
+}
+on(window, 'pagehide', () => { try { localStorage.removeItem(BUSY_KEY); } catch { /* ignore */ } });
 function download(blob, name) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1307,22 +1323,51 @@ async function parseTemplate(svgText, name) {
    Each photo keeps its source File and re-decodes it only for the moment the
    full resolution is needed (frame extraction, the corner magnifier). */
 const WORK_MAX = 3200;
+/** iPhone / iPad. iPadOS Safari reports itself as a Mac; the touch screen gives it away. */
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+/** How many photos keep their work bitmap decoded. A photo up to WORK_MAX is
+    its own work bitmap, so a set of scans holds its full decode per photo: 24
+    scans of 2362 px are ~510 MB of bitmaps, and iOS Safari kills the tab well
+    before that adds up with the frames. There only the most recently used few
+    stay decoded; the rest are closed and decoded again from the File when a
+    step needs them. Everywhere else every photo keeps its bitmap. */
+const WORK_KEEP = IOS ? 3 : Infinity;
+const workLru = []; // photos holding a work bitmap, least recently used first
+function touchWork(photo) {
+  if (WORK_KEEP === Infinity) return;
+  const i = workLru.indexOf(photo);
+  if (i >= 0) workLru.splice(i, 1);
+  if (photo.work) workLru.push(photo);
+  while (workLru.length > WORK_KEEP) {
+    const old = workLru.shift();
+    old.work?.close?.();
+    old.work = null;
+  }
+}
 /** Decode the full-resolution scan. The caller owns the bitmap and must
     close() it when done, unless it is the photo's own work bitmap. */
 async function decodeFull(photo) {
-  if (photo.workScale === 1 && photo.work) return photo.work; // small photo: work is full res
+  if (photo.workScale === 1 && photo.work) { touchWork(photo); return photo.work; } // small photo: work is full res
   return createImageBitmap(photo.file, { imageOrientation: 'from-image' });
 }
 function releaseFull(photo, bmp) {
   if (bmp && bmp !== photo.work) bmp.close?.();
 }
 async function ensureWork(photo, full) {
-  if (photo.work) return photo.work;
+  if (!photo.work) {
+    // one decode at a time per photo: the detect view and the pipeline can both ask
+    photo._workJob ||= makeWork(photo, full).finally(() => { photo._workJob = null; });
+    await photo._workJob;
+  }
+  touchWork(photo);
+  return photo.work;
+}
+async function makeWork(photo, full) {
   const cap = Math.min(WORK_MAX, glm.ok ? glm.maxTex : WORK_MAX);
   const big = Math.max(photo.w, photo.h);
   const own = !full;
   if (!full) full = await createImageBitmap(photo.file, { imageOrientation: 'from-image' });
-  if (big <= cap) { photo.work = full; photo.workScale = 1; return photo.work; }
+  if (big <= cap) { photo.work = full; photo.workScale = 1; return; }
   const s = cap / big;
   try {
     photo.work = await createImageBitmap(full, {
@@ -1335,11 +1380,35 @@ async function ensureWork(photo, full) {
     photo.work = full; // resize unsupported — full res still works, just slower and heavier
   }
   photo.workScale = photo.work.width / photo.w;
-  return photo.work;
+}
+/** On iOS a photo bigger than this is scaled down once, as it loads, and the
+    whole pipeline only ever sees that copy, as if a smaller export had been
+    loaded. A 4 GB iPad ran 24 photos of 1280 px but lost the tab on the same
+    24 at 2362 px, with every buffer the tool holds already bounded: each
+    full-size decode and upload costs Safari more than it gives back. For a
+    couple dozen frames the iOS frame budget caps the output below what 1600 px
+    photos carry anyway. */
+const IOS_PHOTO_MAX = 1600;
+/** A scaled-down JPEG copy of `full` and its decode, or null if the browser
+    can't encode one (the caller then keeps the original). */
+async function shrinkPhoto(full) {
+  const s = IOS_PHOTO_MAX / Math.max(full.width, full.height);
+  const c = canvas2d(full.width * s, full.height * s);
+  // a CPU canvas: a GPU one uploads every full-size photo as a texture, and
+  // the browser holds on to those well after the canvas is gone
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(full, 0, 0, c.width, c.height);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+  if (!blob) { freeCanvas(c); return null; }
+  const bmp = await createImageBitmap(c);
+  freeCanvas(c);
+  return { blob, bmp };
 }
 function freePhotoCaches(photo) {
   photo.work?.close?.();
   photo.work = null;
+  touchWork(photo); // drops it from the LRU
   if (magFull.id === photo.id) dropMagFull();
   stageBases.delete(photo.id);
 }
@@ -1347,12 +1416,17 @@ async function addPhotos(files) {
   const list = [...files].filter(f => /image\//.test(f.type) || /\.(png|jpe?g|webp)$/i.test(f.name));
   if (!list.length) return;
   list.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  status(`loading ${list.length} photo${list.length > 1 ? 's' : ''}…`);
-  for (const f of list) {
+  for (const [i, f] of list.entries()) {
+    status(`loading photo ${i + 1}/${list.length}…`);
     try {
-      const full = await createImageBitmap(f, { imageOrientation: 'from-image' });
+      let full = await createImageBitmap(f, { imageOrientation: 'from-image' });
+      let file = f;
+      if (IOS && Math.max(full.width, full.height) > IOS_PHOTO_MAX) {
+        const small = await shrinkPhoto(full);
+        if (small) { full.close?.(); full = small.bmp; file = small.blob; }
+      }
       const photo = {
-        id: photoIdSeq++, name: f.name, file: f, w: full.width, h: full.height,
+        id: photoIdSeq++, name: f.name, file, w: full.width, h: full.height,
         work: null, workScale: 1, thumbURL: '',
         gray: null, autoQuad: null, quadScore: 0, manualQuad: null, frameLayerQuad: null,
         rotAuto: 0, rotUser: 0, _detKey: '',
@@ -1363,6 +1437,13 @@ async function addPhotos(files) {
       const tc = canvas2d(tw, th);
       tc.getContext('2d').drawImage(photo.work, 0, 0, tw, th);
       photo.thumbURL = tc.toDataURL('image/jpeg', 0.7);
+      freeCanvas(tc);
+      // page detection reads these; take them while the decode is at hand, so
+      // detecting never has to decode an evicted photo again. On iOS the edge
+      // gray waits for detection instead, which drops it straight after: the
+      // shrunk photos are quick to decode, and 24 of them were 116 MB at once
+      grayOf(photo);
+      if (!S.detect.skip && !IOS) photo._gray2200 = grayOfPhoto(photo, 2200);
       S.photos.push(photo);
     } catch {
       status(`could not decode ${f.name}`, 'warn');
@@ -1400,6 +1481,7 @@ function grayFrom(source, maxDim) {
   const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(source, 0, 0, w, h);
   const d = ctx.getImageData(0, 0, w, h).data;
+  freeCanvas(c);
   const g = new Uint8Array(w * h);
   for (let i = 0, j = 0; j < g.length; i += 4, j++) {
     g[j] = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0;
@@ -1639,12 +1721,21 @@ function lineIntersect(l1, l2) {
   return { x: l1.px + l1.dx * t, y: l1.py + l1.dy * t };
 }
 
+/** The edge refinement's grayscale is taken at load, unless detection was
+    skipped then, and on iOS dropped once used. A new threshold or paper setting
+    needs it back, from a work bitmap that may since have been evicted. */
+async function ensureDetectGray(photo) {
+  if (S.detect.skip || photo._gray2200 || photo._detKey === detectKey()) return; // nothing new to refine
+  await ensureWork(photo);
+  photo._gray2200 = grayOfPhoto(photo, 2200);
+}
+const detectKey = () => (S.detect.skip ? 'skip' : `${S.detect.thresholdOff}:${S.detect.polarity}`);
 /** Page quad covering the whole photo (TL, TR, BR, BL) — used when detection is skipped. */
 function wholePhotoQuad(photo) {
   return [{ x: 0, y: 0 }, { x: photo.w, y: 0 }, { x: photo.w, y: photo.h }, { x: 0, y: photo.h }];
 }
 function detectPage(photo) {
-  const key = S.detect.skip ? 'skip' : `${S.detect.thresholdOff}:${S.detect.polarity}`;
+  const key = detectKey();
   if (photo._detKey === key && photo.autoQuad) return;
   if (S.detect.skip) { // no detection: the entire input is the page
     photo._detKey = key;
@@ -1671,6 +1762,9 @@ function detectPage(photo) {
   const full = best.quad.map(p => ({ x: p.x * g.scale, y: p.y * g.scale }));
   photo.autoQuad = refineQuadEdges(photo, full);
   photo.quadScore = best.score;
+  // only a new threshold or paper setting reads it again, and on iOS a photo is
+  // cheaper to decode once more then than to keep this around for every photo
+  if (IOS) photo._gray2200 = null;
 }
 
 /* ── WebGL: perspective warp + FX ─────────────────────────────────────── */
@@ -1740,8 +1834,12 @@ function glProgram(gl, fsSrc) {
 function initGL() {
   try {
     const c = document.createElement('canvas');
-    const gl = c.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true })
-            || c.getContext('experimental-webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true });
+    // every pass is one quad over the whole viewport: no edges to antialias and
+    // nothing to depth-test. Left at their defaults, the multisample colour and
+    // depth buffers come on top of the colour buffer at whatever size the canvas
+    // is set to, several times its memory (iOS Safari allocates them in full)
+    const attrs = { premultipliedAlpha: false, preserveDrawingBuffer: true, antialias: false, depth: false, stencil: false };
+    const gl = c.getContext('webgl', attrs) || c.getContext('experimental-webgl', attrs);
     if (!gl) return;
     glm.c = c; glm.gl = gl;
     glm.warp = glProgram(gl, FS_WARP);
@@ -1792,13 +1890,15 @@ function glCanvasCopy(outW, outH) {
 }
 /** Largest square the GL canvas reliably gets a full drawing buffer for. A
     bigger canvas is silently handed a smaller buffer, so a one-pass warp would
-    render only its lower-left part and stretch that over the whole output. */
+    render only its lower-left part and stretch that over the whole output.
+    Capped at 2048: tiles stitch seamlessly, so a bigger one buys nothing, and
+    probing 4096² allocates a 64 MB+ drawing buffer just to measure it. */
 let _glTile = 0;
 function glTileSize() {
   if (_glTile) return _glTile;
   const gl = glm.gl;
   const dims = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
-  let t = Math.min(4096, glm.maxTex, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || 4096, dims ? dims[0] : 4096, dims ? dims[1] : 4096);
+  let t = Math.min(2048, glm.maxTex, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || 2048, dims ? dims[0] : 2048, dims ? dims[1] : 2048);
   while (t > 256) {
     glm.c.width = t; glm.c.height = t;
     if (gl.drawingBufferWidth === t && gl.drawingBufferHeight === t) break;
@@ -2053,6 +2153,7 @@ function grayAtSize(source, w, h) {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(source, 0, 0, w, h);
   const d = ctx.getImageData(0, 0, w, h).data;
+  freeCanvas(c);
   const g = new Float32Array(w * h);
   for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
   return g;
@@ -2494,6 +2595,7 @@ function ensureFrames() {
         const id = G.pending.values().next().value;
         const idx = S.photos.findIndex(p => p.id === id);
         if (idx >= 0) {
+          status(`extracting sheet ${idx + 1}/${S.photos.length}…`);
           await extractPhotoFrames(S.photos[idx], idx, gen);
           if (gen !== pipeGen) return;
         }
@@ -2525,8 +2627,11 @@ function ensureFrames() {
  * whole set, and letting one nudged corner resize every already-extracted
  * frame would be both wrong and expensive.
  */
-/** Frame storage budget, in pixels across all extracted frames (×4 bytes). */
-const FRAME_BUDGET_PX = 240e6;
+/** Frame storage budget, in pixels across all extracted frames (×4 bytes).
+    iOS Safari caps the canvases of a tab at a fraction of its memory limit (a
+    few hundred MB on most iPads) and kills the tab outright once the page as a
+    whole passes that limit, so frames get a fraction of the desktop budget there. */
+const FRAME_BUDGET_PX = IOS ? 36e6 : 240e6;
 /** Padded pixel count of one sheet's frames at `ppmm` — mirrors the sizing in
     extractPhotoFrames. */
 function framePixelsPerSheet(ppmm) {
@@ -2563,6 +2668,8 @@ async function rebuildPipeline(opts) {
   if (partial) {
     const p = S.photos[onlyIdx];
     status(`re-aligning sheet ${onlyIdx + 1}…`);
+    await ensureDetectGray(p);
+    if (gen !== pipeGen) return;
     detectPage(p);
     await buildPhotoGeometry(p, onlyIdx, gen);
     if (gen !== pipeGen) return;
@@ -2578,6 +2685,8 @@ async function rebuildPipeline(opts) {
   status('detecting pages…');
   progress(0);
   for (let i = 0; i < S.photos.length; i++) {
+    await ensureDetectGray(S.photos[i]);
+    if (gen !== pipeGen) return;
     detectPage(S.photos[i]);
     progress((i + 1) / S.photos.length);
     await nextFramePaint();
@@ -2633,6 +2742,7 @@ async function rebuildPipeline(opts) {
   }
 
   for (let i = 0; i < S.photos.length; i++) {
+    status(`aligning sheet ${i + 1}/${S.photos.length}…`);
     await buildPhotoGeometry(S.photos[i], i, gen);
     if (gen !== pipeGen) return;
   }
@@ -3456,6 +3566,8 @@ const stageBases = new Map();
 function detectBaseCanvas(p, w, h) {
   const hit = stageBases.get(p.id);
   if (hit && hit.width === w && hit.height === h) return hit;
+  if (!p.work) { ensureWork(p).then(requestRedraw, () => {}); return null; } // evicted: back in a moment
+  touchWork(p);
   const c = canvas2d(w, h);
   const ctx = c.getContext('2d');
   ctx.imageSmoothingEnabled = true;
@@ -3471,7 +3583,9 @@ function drawDetectSource(p) {
   const w = Math.round(p.w * sc), h = Math.round(p.h * sc);
   detectViewScale = sc;
   setStageSize(w, h);
-  stageCtx.drawImage(detectBaseCanvas(p, w, h), 0, 0);
+  const base = detectBaseCanvas(p, w, h);
+  if (base) stageCtx.drawImage(base, 0, 0);
+  else { stageCtx.fillStyle = '#0a0a0a'; stageCtx.fillRect(0, 0, w, h); }
   const quad = p._previewQuad || effQuad(p);
   const ctx = stageCtx;
   if (quad) {
@@ -3744,6 +3858,7 @@ function drawMagnifier() {
   mctx.fillStyle = '#000';
   mctx.fillRect(0, 0, 132, 132);
   const src = magFull.id === p.id && magFull.bmp ? magFull.bmp : p.work;
+  if (!src) { ensureWork(p).then(requestRedraw, () => {}); return; }
   const k = src.width / p.w;
   mctx.drawImage(src, (cp.x - r) * k, (cp.y - r) * k, 2 * r * k, 2 * r * k, 0, 0, 132, 132);
   /* crosshair on the exact drop point (the view is centred on it): full-length
@@ -4159,6 +4274,7 @@ async function exportZip() {
       const snap = canvas2d(w, h);
       snap.getContext('2d').drawImage(out, 0, 0);
       const blob = await new Promise(r => snap.toBlob(r, 'image/png'));
+      freeCanvas(snap);
       entries.push({ name: `frame-${String(g).padStart(3, '0')}.png`, data: new Uint8Array(await blob.arrayBuffer()) });
       await nextFramePaint();
     }
@@ -4689,7 +4805,12 @@ updateSourcesUI();
 updateStepGates();
 showStep('sources');
 syncBadge();
-status(glm.ok ? 'ready — drop a template SVG and sheet photos' : 'ready (no WebGL — slower, FX limited)', glm.ok ? '' : 'warn');
+{
+  let killedDuring = null;
+  try { killedDuring = localStorage.getItem(BUSY_KEY); } catch { /* private mode etc. */ }
+  if (killedDuring) status(`the page reloaded during “${killedDuring}”, most likely out of memory — try fewer or smaller photos`, 'warn');
+  else status(glm.ok ? 'ready — drop a template SVG and sheet photos' : 'ready (no WebGL — slower, FX limited)', glm.ok ? '' : 'warn');
+}
 // minimal debug handle (drives automated tests; harmless in normal use)
 window.__fs = { S, G, F, ST, glm, playlist, finalFrame, cropMmAt, cropPx, syncCropUI, alignFrame, alignMargin, stabOffsetOf, rebuildPipeline, ensureFrames, ensureStab, addPhotos, exportDims, frameLayerBoundsMm };
 requestAnimationFrame(tick);
